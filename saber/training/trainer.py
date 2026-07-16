@@ -36,8 +36,8 @@ from typing import Any, Dict, List, Optional
 class TrainConfig:
     """Configuration for a single training run.
 
-    Defaults are optimized for H200 (80 GB VRAM) with a
-    Qwen2.5-7B-Instruct base model.
+    Defaults are optimized for H100 (80 GB HBM3 VRAM) with a
+    Qwen2.5-7B-Instruct base model + LoRA.
     """
 
     domain: str = "medical"
@@ -45,7 +45,7 @@ class TrainConfig:
     base_model: str = "Qwen/Qwen2.5-7B-Instruct"
     output_dir: str = "models/medical_v2"
     epochs: int = 3
-    batch_size: int = 4                     # Per-device; fits comfortably in 48 GB
+    batch_size: int = 8                     # Per-device; safe for 80 GB H100
     learning_rate: float = 2e-4
     max_seq_length: int = 2048              # Increased for CoT reasoning chains
     lora_r: int = 16
@@ -54,15 +54,15 @@ class TrainConfig:
     lora_target_modules: List[str] = field(
         default_factory=lambda: ["q_proj", "v_proj", "k_proj", "o_proj"]
     )
-    gradient_accumulation_steps: int = 4    # Effective batch = 4 × 4 = 16
+    gradient_accumulation_steps: int = 4    # Effective batch = 8 × 4 = 32
     warmup_ratio: float = 0.03
-    fp16: bool = False                      # Set automatically by device detection
-    bf16: bool = False
+    fp16: bool = False
+    bf16: bool = True                       # H100 has native bf16 support
     logging_steps: int = 25
     save_steps: int = 500
     eval_steps: int = 500
     seed: int = 42
-    packing: bool = True                    # SFTTrainer sequence packing
+    packing: bool = True
     gpu_id: int = 0                         # Which GPU to target
 
 
