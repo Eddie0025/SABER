@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SABER - Specialist Agent Based Expert Reasoning</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=3">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>SABER</h2>
+                <span class="version-badge">v0.1.0</span>
+            </div>
+            
+            <div class="sidebar-section history-section">
+                <h3>Chat History</h3>
+                <div class="chat-history-list" id="chat-history-list">
+                    <div class="history-item active" id="new-chat-btn" style="cursor:pointer;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        <span>New Conversation</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-container">
+            <header class="chat-header">
+                <button id="toggle-sidebar" class="toggle-sidebar-btn" aria-label="Toggle Sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+                <div class="header-info">
+                    <h1>SENTINEL Core</h1>
+                    <p>Verification-first reasoning engine</p>
+                </div>
+            </header>
+
+            <div class="chat-history" id="chat-history">
+                <div class="message system-message">
+                    <div class="avatar system-avatar">S</div>
+                    <div class="message-content">
+                        <p>Welcome to SABER. Please enter your query. The Orchestrator will route it to the appropriate specialists and verify the outputs.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-container">
+                <form id="chat-form" class="chat-form">
+                    <textarea 
+                        id="user-input" 
+                        placeholder="Message SABER..." 
+                        rows="1"
+                        autofocus
+                    ></textarea>
+                    <div class="chat-form-footer">
+                        <div class="dropdown tier-dropdown" id="tier-dropdown">
+                            <button type="button" class="dropdown-toggle" id="tier-dropdown-toggle">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                <span>Tier 2 (Enhanced)</span>
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                            <div class="dropdown-menu" id="tier-dropdown-menu">
+                                <div class="dropdown-item" data-value="0">
+                                    <div class="item-title">Tier 0 (No Verification)</div>
+                                    <div class="item-desc">Fastest, no cycles</div>
+                                </div>
+                                <div class="dropdown-item" data-value="1">
+                                    <div class="item-title">Tier 1 (Basic)</div>
+                                    <div class="item-desc">2 verification cycles</div>
+                                </div>
+                                <div class="dropdown-item active" data-value="2">
+                                    <div class="item-title">Tier 2 (Enhanced)</div>
+                                    <div class="item-desc">4 verification cycles</div>
+                                </div>
+                                <div class="dropdown-item" data-value="3">
+                                    <div class="item-title">Tier 3 (Maximum)</div>
+                                    <div class="item-desc">6 verification cycles</div>
+                                </div>
+                            </div>
+                        </div>
+                        <input type="hidden" id="selected-tier" name="tier" value="2">
+                        <button type="submit" id="send-btn" class="send-btn" disabled>
+                            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
+                    </div>
+                </form>
+                <div class="input-footer">
+                    SABER validates claims through multi-agent semantic verification.
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals or tooltips for flags could go here -->
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="app.js?v=3"></script>
+</body>
+</html>

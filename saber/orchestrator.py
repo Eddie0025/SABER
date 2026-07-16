@@ -1,0 +1,255 @@
+# -*- coding: utf-8 -*-
+"""saber.orchestrator
+
+The Orchestrator is the entry point of the SABER system.
+
+Responsibilities
+~~~~~~~~~~~~~~~~
+1. **Ambiguity Detection** — reject or clarify ambiguous queries before
+   they enter the reasoning pipeline.
+2. **Dynamic Domain Classification** — build the routing table from
+   registered specialists' keywords at runtime.  No hardcoded keyword
+   banks — add a new specialist .py file and it's instantly routable.
+3. **Specialist Selection** — score each specialist and activate only
+   those above the activation threshold.
+4. **Verification Tier Assignment** — apply the user-chosen (or default)
+   verification depth.
+5. **Pipeline Coordination** — hand the decomposed query to the Meta-Reasoning Layer,
+   receive the compiled output, run audit logging, and return the
+   final answer to the caller.
+"""
+
+from __future__ import annotations
+
+import re
+import uuid
+from typing import Any, Dict, List, Optional, Tuple
+
+from saber.audit import AuditLogger
+from saber.config import SaberConfig, VerificationTier
+from saber.meta_reasoner import MetaReasoner
+from saber.registry import SpecialistRegistry
+
+
+class Orchestrator:
+    """Entry point of the SABER pipeline.
+
+    Parameters
+    ----------
+    config : SaberConfig
+        System-wide configuration.
+    registry : SpecialistRegistry
+        The specialist registry (pre-populated or auto-discovered).
+    audit : AuditLogger
+        The audit log writer.
+    """
+
+    def __init__(
+        self,
+        config: SaberConfig,
+        registry: SpecialistRegistry,
+        audit: AuditLogger,
+    ) -> None:
+        self.config = config
+        self.registry = registry
+        self.audit = audit
+        self.meta_reasoner = MetaReasoner(config=config, registry=registry, audit=audit)
+
+    # ------------------------------------------------------------------
+    # 1. Ambiguity Detection
+    # ------------------------------------------------------------------
+
+    def detect_ambiguity(self, query: str) -> float:
+        """Return an ambiguity score in [0, 1].
+
+        A high score means the query is vague or underspecified.
+        The heuristic checks for:
+        * Very short queries (< 5 words).
+        * Excessive use of pronouns without antecedents.
+        * Missing domain indicators.
+        """
+        words = query.split()
+        score = 0.0
+
+        # Short queries are more ambiguous
+        if len(words) < 5:
+            score += 0.4
+        elif len(words) < 10:
+            score += 0.15
+
+        # Pronoun density
+        pronouns = {"it", "they", "this", "that", "those", "these", "he", "she"}
+        pronoun_count = sum(1 for w in words if w.lower() in pronouns)
+        if len(words) > 0:
+            score += min(0.3, (pronoun_count / len(words)) * 1.5)
+
+        # No domain keywords detected at all → more ambiguous
+        domain_scores = self.classify_domains(query)
+        if all(s < 0.1 for s in domain_scores.values()):
+            score += 0.3
+
+        return min(1.0, score)
+
+    # ------------------------------------------------------------------
+    # 2. Dynamic Domain Classification
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _stem(word: str) -> str:
+        """Crude but effective suffix stripper."""
+        for suffix in ("tion", "sion", "ing", "ment", "ness", "ity", "ies", "es", "ed", "ly", "er", "s"):
+            if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+                return word[:-len(suffix)]
+        return word
+
+    def classify_domains(self, query: str) -> Dict[str, float]:
+        """Return a relevance score for each registered specialist domain.
+
+        Dynamically builds the keyword table from the registry, so new
+        specialists are automatically included with zero code changes.
+
+        Supports both single-word keywords (exact word match) and
+        multi-word phrases (substring match in the query).
+        """
+        query_lower = query.lower()
+        query_words = set(re.findall(r"\w+", query_lower))
+        stemmed_query_words = {self._stem(w) for w in query_words}
+        scores: Dict[str, float] = {}
+
+        for domain, specialist in self.registry.all().items():
+            keywords = getattr(specialist, "keywords", [])
+            capabilities = specialist.meta.capabilities
+            cap_words = []
+            for cap in capabilities:
+                cap_words.extend(cap.split("_"))
+            all_keywords = keywords + cap_words
+
+            hits = 0
+            for kw in all_keywords:
+                kw_lower = kw.lower()
+                if " " in kw_lower:
+                    # Multi-word keyword: substring match in full query
+                    if kw_lower in query_lower:
+                        hits += 1
+                else:
+                    # Single-word keyword: exact word match or stemmed match
+                    stemmed_kw = self._stem(kw_lower)
+                    if kw_lower in query_words or stemmed_kw in stemmed_query_words:
+                        hits += 1
+            # Normalise to [0, 1] — tuned so 1-2 keyword hits
+            # are enough to exceed the 0.30 activation threshold.
+            scores[domain] = min(1.0, hits / max(len(all_keywords) * 0.12, 2.0))
+
+        return scores
+
+    # ------------------------------------------------------------------
+    # 3. Specialist Selection
+    # ------------------------------------------------------------------
+
+    def select_specialists(
+        self, domain_scores: Dict[str, float]
+    ) -> List[str]:
+        """Return domains whose score exceeds the activation threshold."""
+        threshold = self.config.activation_threshold
+        activated = [
+            domain
+            for domain, score in domain_scores.items()
+            if score >= threshold and self.registry.get(domain) is not None
+        ]
+        return activated
+
+    # ------------------------------------------------------------------
+    # 4. Verification Tier Assignment
+    # ------------------------------------------------------------------
+
+    def assign_verification_tier(
+        self, tier: Optional[VerificationTier] = None
+    ) -> VerificationTier:
+        """Return the verification tier to use for this query."""
+        return tier if tier is not None else self.config.verification_tier
+
+    # ------------------------------------------------------------------
+    # 5. Full Pipeline
+    # ------------------------------------------------------------------
+
+    def process_query(
+        self,
+        query: str,
+        tier: Optional[VerificationTier] = None,
+    ) -> Dict[str, Any]:
+        """Run the full SABER pipeline for a user query.
+
+        Returns a dict with keys:
+            ``query_id``, ``answer``, ``confidence``, ``flags``,
+            ``domains_activated``, ``verification_tier``,
+            ``verification_cycles``, ``audit_records``.
+        """
+        query_id = str(uuid.uuid4())
+        self.audit.log_query(query_id, query)
+
+        # --- Ambiguity check ---
+        ambiguity = self.detect_ambiguity(query)
+        if ambiguity >= self.config.ambiguity_threshold:
+            result = {
+                "query_id": query_id,
+                "status": "clarification_needed",
+                "ambiguity_score": ambiguity,
+                "answer": (
+                    "Your query appears ambiguous.  Could you provide more "
+                    "detail or specify the domain (medical, legal, cyber, finance)?"
+                ),
+                "confidence": 0.0,
+                "flags": [],
+                "domains_activated": [],
+                "verification_tier": 0,
+                "verification_cycles": 0,
+            }
+            self.audit.log_output(query_id, result["answer"])
+            return result
+
+        # --- Domain classification & specialist selection ---
+        domain_scores = self.classify_domains(query)
+        activated = self.select_specialists(domain_scores)
+
+        if not activated and domain_scores:
+            best_domain = max(domain_scores, key=domain_scores.get)
+            if domain_scores[best_domain] > 0.0:
+                activated = [best_domain]
+                self.audit.log("forced_activation", query_id, {
+                    "domain": best_domain,
+                    "score": domain_scores[best_domain],
+                }, component="orchestrator")
+
+        if not activated:
+            from saber.errors import FailureCategory
+            self.audit.log("failure", query_id, {"category": FailureCategory.ROUTING_FAILURE.value, "reason": "No specialists activated"}, "orchestrator")
+            result = {
+                "query_id": query_id,
+                "status": "no_specialists",
+                "answer": (
+                    "No domain specialists were activated for this query.  "
+                    "Please include domain-relevant terms or specify the domain."
+                ),
+                "confidence": 0.0,
+                "flags": [],
+                "domains_activated": [],
+                "verification_tier": 0,
+                "verification_cycles": 0,
+                "domain_scores": domain_scores,
+            }
+            self.audit.log_output(query_id, result["answer"])
+            return result
+
+        # --- Verification tier ---
+        ver_tier = self.assign_verification_tier(tier)
+
+        # --- Delegate to Meta-Reasoning Layer ---
+        result = self.meta_reasoner.execute(
+            query=query,
+            query_id=query_id,
+            activated_domains=activated,
+            verification_tier=ver_tier,
+        )
+
+        self.audit.log_output(query_id, result.get("answer", ""))
+        return result

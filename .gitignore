@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+pylintrc
+jasmin.log
+.pytest_cache/
+
+# Databases & local registry
+*.db
+*.sqlite
+saber_registry.db
+
+# Datasets and logs (avoid uploading GBs of processed/raw files)
+data/
+!data/benchmark/
+!data/benchmark/*.jsonl
+logs/
+data/benchmark/audit_benchmark.jsonl
+*.log
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,5 @@
+{"timestamp": "2026-06-17T16:55:45.745332+00:00", "event_type": "signal_sent", "query_id": "test-query-123", "component": "specialist", "data": {}}
+{"timestamp": "2026-06-17T16:55:45.745781+00:00", "event_type": "signal_sent", "query_id": "test-query-123", "component": "specialist", "data": {}}
+{"timestamp": "2026-06-17T16:58:36.452487+00:00", "event_type": "failure", "query_id": "meta-test-001", "component": "manager", "data": {"category": "synthesis_failure", "reason": "Meta-reasoning synthesis failed or JSON parsing failed: Expecting ',' delimiter: line 9 column 4 (char 1966)"}}
+{"timestamp": "2026-06-17T17:04:31.670891+00:00", "event_type": "meta_reasoning_synthesis", "query_id": "meta-test-001", "component": "manager", "data": {"status": "success", "sections_parsed": [], "conflicts_detected": 0}}
+{"timestamp": "2026-06-17T17:06:46.072115+00:00", "event_type": "meta_reasoning_synthesis", "query_id": "meta-test-001", "component": "manager", "data": {"status": "success", "sections_parsed": ["CLAIM EXTRACTION", "CONFIDENCE ANALYSIS", "CONFLICT DETECTION", "TRADEOFF EVALUATION", "RESOLUTION PATH", "FINAL ANSWER"], "conflicts_detected": 1}}
