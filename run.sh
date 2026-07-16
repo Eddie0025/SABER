@@ -2,9 +2,28 @@
 set -e
 
 echo "=========================================================="
-echo "          SABER Automation Entrypoint (v2.0)"
+echo "          SABER Automation Entrypoint (v2.1)"
 echo "=========================================================="
 
+# ------------------------------------------------------------------
+# Step 0: Install / upgrade all required dependencies
+# ------------------------------------------------------------------
+echo "[+] Step 0: Installing dependencies..."
+pip install -q --upgrade \
+    transformers \
+    datasets \
+    peft \
+    trl \
+    accelerate \
+    sentencepiece \
+    protobuf \
+    "numpy<2.0.0"
+echo "[+] Dependencies installed."
+echo ""
+
+# ------------------------------------------------------------------
+# Step 1: Prepare datasets (skipped if already generated)
+# ------------------------------------------------------------------
 echo "[+] Step 1: Downloading & preparing CoT datasets..."
 PYTHONPATH=. python3 -m saber.training.dataset_loader
 
