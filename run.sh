@@ -13,7 +13,6 @@ pip install -q --upgrade \
     transformers \
     datasets \
     peft \
-    trl==0.8.1 \
     accelerate \
     sentencepiece \
     protobuf \

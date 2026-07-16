@@ -201,25 +201,20 @@ def train(cfg: TrainConfig) -> str:
         AutoTokenizer,
         TrainingArguments,
         EarlyStoppingCallback,
+        Trainer,
+        DataCollatorForLanguageModeling,
     )
     from peft import LoraConfig, get_peft_model, TaskType
-    from trl import SFTTrainer
     from datasets import Dataset
 
     # --- Device selection -------------------------------------------------
     if torch.cuda.is_available():
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu_id)
-        device = "cuda"
-        cfg.bf16 = True          # Ada / Ampere GPUs have native bf16
-        cfg.fp16 = False
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        device = "mps"
-        cfg.bf16 = False
-        cfg.fp16 = False
+        device = f"cuda:{cfg.gpu_id}"
+        torch.cuda.set_device(device)
     else:
         device = "cpu"
 
-    print(f"[trainer] Device ........... {device} (GPU {cfg.gpu_id})")
+    print(f"[trainer] Device ........... {device} ({'GPU ' + str(cfg.gpu_id) if 'cuda' in device else 'CPU'})")
     print(f"[trainer] Base model ....... {cfg.base_model}")
     print(f"[trainer] Domain ........... {cfg.domain}")
     print(f"[trainer] Packing .......... {cfg.packing}")
@@ -228,15 +223,19 @@ def train(cfg: TrainConfig) -> str:
     print(f"[trainer] Grad accum ....... {cfg.gradient_accumulation_steps}")
     print(f"[trainer] Effective batch .. {cfg.batch_size * cfg.gradient_accumulation_steps}")
 
-    # 1. Load base model & tokenizer ------------------------------------
-    tokenizer = AutoTokenizer.from_pretrained(cfg.base_model)
+    # 1. Load base model + tokenizer ------------------------------------
+    tokenizer = AutoTokenizer.from_pretrained(
+        cfg.base_model,
+        trust_remote_code=True,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
         cfg.base_model,
-        torch_dtype=torch.bfloat16 if cfg.bf16 else torch.float16,
-        device_map="auto" if device == "cuda" else None,
+        torch_dtype=torch.bfloat16 if cfg.bf16 else (torch.float16 if cfg.fp16 else torch.float32),
+        device_map=device,
+        trust_remote_code=True,
     )
 
     # 2. Apply LoRA -----------------------------------------------------
@@ -261,12 +260,25 @@ def train(cfg: TrainConfig) -> str:
     formatted = format_for_sft(records, cfg.domain)
     print(f"[trainer] Formatted {len(formatted)} records for SFT")
 
+    # 3b. Tokenize dataset directly (no trl dependency) -----------------
+    def tokenize_fn(examples):
+        tokenized = tokenizer(
+            examples["text"],
+            truncation=True,
+            max_length=cfg.max_seq_length,
+            padding="max_length",
+        )
+        tokenized["labels"] = tokenized["input_ids"].copy()
+        return tokenized
+
     dataset = Dataset.from_list(formatted)
 
     # Split 95/5 — maximise training data, minimal eval set
     split = dataset.train_test_split(test_size=0.05, seed=cfg.seed)
-    train_ds = split["train"]
-    eval_ds = split["test"]
+    train_ds = split["train"].map(tokenize_fn, batched=True, remove_columns=["text"])
+    eval_ds = split["test"].map(tokenize_fn, batched=True, remove_columns=["text"])
+
+    print(f"[trainer] Tokenized {len(train_ds)} train / {len(eval_ds)} eval samples")
 
     # 4. Training arguments ---------------------------------------------
     training_args = TrainingArguments(
@@ -295,16 +307,15 @@ def train(cfg: TrainConfig) -> str:
         optim="adamw_torch_fused" if device == "cuda" else "adamw_torch",
     )
 
-    # 5. SFTTrainer with packing ----------------------------------------
-    trainer = SFTTrainer(
+    # 5. Standard Trainer (no trl needed) --------------------------------
+    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+
+    trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        tokenizer=tokenizer,
-        packing=cfg.packing,
-        max_seq_length=cfg.max_seq_length,
-        dataset_text_field="text",
+        data_collator=data_collator,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=1)],
     )
 
