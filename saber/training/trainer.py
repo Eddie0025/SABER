@@ -382,13 +382,13 @@ _DOMAIN_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "data_path": "data/processed/orchestrator.jsonl",
         "base_model": "Qwen/Qwen2.5-7B-Instruct",
         "output_dir": "models/orchestrator_v2",
-        "epochs": 5,
+        "epochs": 8,
     },
     "meta_reasoner": {
         "data_path": "data/processed/meta_reasoner.jsonl",
         "base_model": "Qwen/Qwen2.5-7B-Instruct",
         "output_dir": "models/meta_reasoner_v2",
-        "epochs": 4,
+        "epochs": 6,
     },
 }
 

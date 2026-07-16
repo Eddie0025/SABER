@@ -1611,9 +1611,83 @@ def fetch_orchestrator():
     records.extend(hard_negatives)
     print(f"[dataset_loader]   Hard-Negative Routing: {len(hard_negatives)} records generated")
 
+    # 6. Additional diverse single-domain/technical routing scenarios
+    print("[dataset_loader] [4/4] Generating 500 diverse single-domain routing records...")
+    synth_routing = []
+    
+    routing_templates = {
+        "medical": [
+            "What is the mechanism of action of {med} in treating {cond}?",
+            "Detail the clinical trial phase outcomes for the new {med} inhibitor.",
+            "A patient presents with acute {cond} and {symptom}. What is the differential diagnosis?",
+            "Explain the pharmacokinetics of {med} in renal-impaired patients."
+        ],
+        "cyber": [
+            "How does one analyze a heap dump for a suspected execution of {malware}?",
+            "Provide the Yara rule syntax to detect {malware} payload indicators.",
+            "Explain how to configure iptables to mitigate a SYN flood attack on port {port}.",
+            "What indicators of compromise (IoCs) are associated with the {malware} threat actor group?"
+        ],
+        "science": [
+            "Derive the Schrödinger equation for a particle in a {dim} potential well.",
+            "Explain the thermodynamic cycle efficiency of a {cycle} engine under high pressure.",
+            "What is the chemical reaction pathway for the synthesis of {compound}?",
+            "Describe the mitotic spindle assembly checkpoint mechanism during cellular division."
+        ],
+        "coding": [
+            "Write a Python script using asyncio to concurrently poll {count} endpoints.",
+            "How do I override the default serializer behaviour in Django Rest Framework for nested fields?",
+            "Refactor this recursive algorithm to use dynamic programming and reduce space complexity.",
+            "Explain the difference between a prototype-based inheritance and class-based inheritance in JS."
+        ],
+        "architecture": [
+            "Design a multi-tenant database partitioning scheme for SaaS applications scaling to {count} users.",
+            "How do we configure a distributed lock manager using Redis Redlock for distributed consistency?",
+            "Outline the load balancer topology required to terminate TLS and route gRPC traffic.",
+            "Explain the trade-offs of choosing event sourcing over a traditional CRUD architecture."
+        ],
+        "finance": [
+            "Calculate the Black-Scholes options pricing model variables for a call option valued at {val}.",
+            "How does the yield curve inversion predict long-term macroeconomic recession trends?",
+            "What is the impact of international double taxation treaties on corporate tax liability?",
+            "Outline a portfolio risk management model using Monte Carlo simulations for {val} assets."
+        ]
+    }
+    
+    meds = ["metformin", "lisinopril", "atorvastatin", "albuterol", "ibuprofen"]
+    conds = ["type 2 diabetes", "hypertension", "hypercholesterolemia", "asthma", "inflammation"]
+    symptoms = ["shortness of breath", "chest pain", "severe headache", "nausea", "dizziness"]
+    malware = ["Cobalt Strike", "Emotet", "Mimikatz", "WannaCry", "Log4j exploit"]
+    ports = ["80", "443", "22", "3389", "8080"]
+    dims = ["one-dimensional", "three-dimensional", "spherical", "cylindrical"]
+    cycles = ["Carnot", "Rankine", "Otto", "Diesel"]
+    compounds = ["aspirin", "paracetamol", "caffeine", "ethanol", "benzene"]
+    counts = ["10k", "50k", "100k", "1m", "10m"]
+    vals = ["$10M", "$100M", "$1B", "10,000 contracts"]
+    
+    random.seed(101)
+    for domain, prompts in routing_templates.items():
+        for _ in range(85): # ~510 total records
+            prompt_template = random.choice(prompts)
+            text = prompt_template.format(
+                med=random.choice(meds), cond=random.choice(conds), symptom=random.choice(symptoms),
+                malware=random.choice(malware), port=random.choice(ports), dim=random.choice(dims),
+                cycle=random.choice(cycles), compound=random.choice(compounds), count=random.choice(counts),
+                val=random.choice(vals)
+            )
+            label_json = json.dumps({"route": [domain], "confidence": 0.95, "multi_domain": False, "query_summary": text[:60]})
+            synth_routing.append({
+                "id": f"orch_synth_route_{uuid.uuid4().hex[:8]}",
+                "text": text,
+                "label": label_json,
+                "domain": "orchestrator"
+            })
+    records.extend(synth_routing)
+    print(f"[dataset_loader]   Diverse Single-Domain Routing: {len(synth_routing)} records generated")
+
     records = _quality_filter(records, min_label_len=15)
     random.shuffle(records)
-    records = records[:5000]
+    records = records[:5500]
     _jsonl_write(records, "data/processed/orchestrator.jsonl")
 
 
@@ -1678,9 +1752,67 @@ def fetch_meta_reasoner():
             added_synth += 1
     print(f"[dataset_loader]   Synthetic Contradictions: {added_synth} records")
 
+    # Synthetic Conflicting Specialist Scenarios (+500 records)
+    print("[dataset_loader] Generating 500 synthetic conflicting specialist scenarios...")
+    added_conflict = 0
+    conflict_scenarios = [
+        # Medical / Science conflict
+        ("A patient shows symptoms of elevated enzyme levels. Specialist 1 suggests instant surgical excision. Specialist 2 argues for non-invasive metabolic diagnostic checks first.",
+         "The recommendation from Specialist 2 is correct. Surgical intervention without preliminary non-invasive diagnostic confirmation represents an unnecessary clinical risk."),
+        # Cyber / Architecture conflict
+        ("How should we secure microservices communication? Specialist 1 recommends leaving internal networks unencrypted for latency optimization. Specialist 2 insists on Mutual TLS (mTLS).",
+         "Specialist 2 is correct. Latency considerations do not justify leaving internal microservice communications unencrypted. Mutual TLS (mTLS) is standard zero-trust architecture practice."),
+        # Finance / Coding conflict
+        ("How to implement an automated stock arbitrage algorithm? Specialist 1 suggests running floating-point arithmetic for price precision. Specialist 2 recommends decimal/fixed-point arithmetic to avoid rounding bugs.",
+         "Specialist 2 is correct. Floating-point arithmetic introduces rounding inaccuracies that degrade financial transaction systems. Fixed-point or Decimal types must be used."),
+        # Coding / Architecture conflict
+        ("How to handle distributed transaction failures? Specialist 1 suggests implementing a basic HTTP retry loop. Specialist 2 recommends implementing the Saga pattern with rollback compensating transactions.",
+         "Specialist 2 is correct. HTTP retries alone cannot maintain eventual consistency across distributed datastores during network failures. The Saga pattern provides robust rollback logic.")
+    ]
+    
+    for prompt, resolution in conflict_scenarios * 125: # ~500 records
+        val = {
+            "input": f"Resolve the following specialist disagreement:\n{prompt}",
+            "verdict": "conflict_resolved",
+            "corrected_output": resolution
+        }
+        records.append({
+            "id": f"meta_conflict_{uuid.uuid4().hex[:8]}",
+            "text": val["input"],
+            "label": json.dumps(val),
+            "domain": "meta_reasoner"
+        })
+        added_conflict += 1
+    print(f"[dataset_loader]   Synthetic Conflicts: {added_conflict} records generated")
+
+    # Synthetic CoT Chain Evaluation Scenarios (+500 records)
+    print("[dataset_loader] Generating 500 synthetic CoT chain evaluation records...")
+    added_cot_eval = 0
+    cot_eval_scenarios = [
+        ("Chain A steps: [1: Identify symptom] -> [2: Diagnose without tests] -> [3: Conclude treatment]. Chain B steps: [1: Identify symptom] -> [2: Analyze clinical lab results] -> [3: Formulate differential diagnosis] -> [4: Conclude target treatment]. Which chain is logically valid?",
+         "Chain B is logically valid. Chain A contains a logical gap between steps 1 and 2 by attempting to diagnose without evaluating tests."),
+        ("Chain A steps: [1: Parse server log] -> [2: Note suspicious payload IP] -> [3: Conclude zero malicious activity]. Chain B steps: [1: Parse server log] -> [2: Note suspicious payload IP] -> [3: Cross-reference threat intelligence database] -> [4: Conclude block traffic from IP]. Which chain is logically valid?",
+         "Chain B is logically valid. Chain A draws a conclusion in Step 3 that contradicts the evidence noted in Step 2 without performing any verification or cross-referencing.")
+    ]
+    
+    for prompt, resolution in cot_eval_scenarios * 250: # ~500 records
+        val = {
+            "input": f"Analyze these reasoning chains and select the correct logical approach:\n{prompt}",
+            "verdict": "cot_evaluated",
+            "corrected_output": resolution
+        }
+        records.append({
+            "id": f"meta_cot_eval_{uuid.uuid4().hex[:8]}",
+            "text": val["input"],
+            "label": json.dumps(val),
+            "domain": "meta_reasoner"
+        })
+        added_cot_eval += 1
+    print(f"[dataset_loader]   Synthetic CoT Eval: {added_cot_eval} records generated")
+
     records = _quality_filter(records)
     records = _convert_to_cot(records, fraction=0.30)
-    records = records[:5000]
+    records = records[:6000]
     _jsonl_write(records, "data/processed/meta_reasoner.jsonl")
 
 
