@@ -268,7 +268,6 @@ def train(cfg: TrainConfig) -> str:
             max_length=cfg.max_seq_length,
             padding=False,
         )
-        tokenized["labels"] = tokenized["input_ids"].copy()
         return tokenized
 
     dataset = Dataset.from_list(formatted)
