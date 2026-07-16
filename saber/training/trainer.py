@@ -199,11 +199,10 @@ def train(cfg: TrainConfig) -> str:
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
-        TrainingArguments,
         EarlyStoppingCallback,
     )
     from peft import LoraConfig, get_peft_model, TaskType
-    from trl import SFTTrainer
+    from trl import SFTTrainer, SFTConfig
     from datasets import Dataset
 
     # --- Device selection -------------------------------------------------
@@ -269,7 +268,7 @@ def train(cfg: TrainConfig) -> str:
     eval_ds = split["test"]
 
     # 4. Training arguments ---------------------------------------------
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir=cfg.output_dir,
         num_train_epochs=cfg.epochs,
         per_device_train_batch_size=cfg.batch_size,
@@ -293,6 +292,11 @@ def train(cfg: TrainConfig) -> str:
         gradient_checkpointing=True,
         dataloader_pin_memory=True if device == "cuda" else False,
         optim="adamw_torch_fused" if device == "cuda" else "adamw_torch",
+        
+        # SFTConfig specific properties
+        packing=cfg.packing,
+        max_seq_length=cfg.max_seq_length,
+        dataset_text_field="text",
     )
 
     # 5. SFTTrainer with packing ----------------------------------------
@@ -302,9 +306,6 @@ def train(cfg: TrainConfig) -> str:
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         processing_class=tokenizer,
-        packing=cfg.packing,
-        max_seq_length=cfg.max_seq_length,
-        dataset_text_field="text",
         callbacks=[EarlyStoppingCallback(early_stopping_patience=1)],
     )
 
