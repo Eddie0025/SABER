@@ -32,8 +32,8 @@ echo "[+] Step 2: Creating log directory..."
 mkdir -p logs
 
 echo ""
-echo "[+] Step 3: Launching sequential model training (Batch Size: 16)..."
-# Sequential run optimized for 7B models on 192GB VRAM B200 GPU
+echo "[+] Step 3: Launching sequential model training (Batch Size: 8)..."
+# Sequential run optimized for 7B models on 80GB VRAM H100 GPU
 for domain in medical meta_reasoner science finance coding architecture cyber orchestrator
 do
     echo "----------------------------------------------------------"
@@ -42,7 +42,7 @@ do
     PYTHONPATH=. python3 -m saber.training.trainer \
         --domain "$domain" \
         --gpu 0 \
-        --batch-size 16 \
+        --batch-size 8 \
         2>&1 | tee "logs/train_${domain}.log"
 done
 
