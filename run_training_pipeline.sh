@@ -52,7 +52,7 @@ echo ""
 # existing files and skip re-downloading (saves ~15-30 min).
 # ------------------------------------------------------------------
 echo "[pipeline] Step 1: Downloading and preparing datasets..."
-python -m saber.training.dataset_loader
+PYTHONPATH=. python -m saber.training.dataset_loader
 echo "[pipeline] Datasets ready."
 echo ""
 
@@ -74,10 +74,10 @@ train_model() {
     echo "[pipeline]   Start time: $(date '+%H:%M:%S')"
     echo "------------------------------------------------------------"
 
-    python -m saber.training.trainer \
+    PYTHONPATH=. python -m saber.training.trainer \
         --domain "$domain" \
         --gpu 0 \
-        --batch-size 4 \
+        --batch-size ${BATCH_SIZE:-16} \
         2>&1 | tee "logs/train_${domain}.log"
 
     local elapsed=$(( SECONDS - start ))
