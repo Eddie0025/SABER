@@ -266,7 +266,7 @@ def train(cfg: TrainConfig) -> str:
             examples["text"],
             truncation=True,
             max_length=cfg.max_seq_length,
-            padding="max_length",
+            padding=False,
         )
         tokenized["labels"] = tokenized["input_ids"].copy()
         return tokenized
@@ -303,7 +303,7 @@ def train(cfg: TrainConfig) -> str:
         seed=cfg.seed,
         report_to="none",
         gradient_checkpointing=True,
-        dataloader_pin_memory=True if device == "cuda" else False,
+        dataloader_pin_memory="cuda" in device,
         optim="adamw_torch_fused" if device == "cuda" else "adamw_torch",
     )
 
