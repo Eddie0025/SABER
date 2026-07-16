@@ -448,7 +448,9 @@ def main() -> None:
     parser.add_argument("--no-packing", action="store_true", help="Disable data packing.")
     parser.add_argument("--max-seq-len", type=int, default=2048, help="Max sequence length.")
 
-    args = parser.parse_args()
+    # Use parse_known_args to prevent errors when running in Jupyter Notebook
+    # which passes unrecognized arguments like `-f`
+    args, _ = parser.parse_known_args()
 
     if args.domain:
         defaults = _DOMAIN_DEFAULTS.get(args.domain, {})
