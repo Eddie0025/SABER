@@ -1874,6 +1874,11 @@ if __name__ == "__main__":
     sys.stdout = TeeLogger(sys.stdout, buffer)
 
     print("[dataset_loader] Starting automated extraction from HuggingFace (v2)...")
+    if os.path.exists("data/processed/dataset_manifest.json"):
+        print("[dataset_loader] Found existing dataset_manifest.json. Bypassing dataset generation.")
+        print("[dataset_loader] Extraction complete! Ready for training.")
+        sys.exit(0)
+
     os.makedirs("data/processed", exist_ok=True)
     fetch_medical()
     fetch_cyber()
