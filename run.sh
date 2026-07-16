@@ -38,6 +38,13 @@ do
     echo "----------------------------------------------------------"
     echo ">> Training domain: $domain"
     echo "----------------------------------------------------------"
+    
+    # Check if this domain is already trained and skipped
+    if [ -f "models/${domain}_v2/adapter_config.json" ]; then
+        echo "[+] Skipping $domain: trained model adapter weights already exist at models/${domain}_v2/"
+        continue
+    fi
+    
     PYTHONPATH=. python3 -m saber.training.trainer \
         --domain "$domain" \
         --gpu 0 \
