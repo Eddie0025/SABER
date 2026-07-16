@@ -260,7 +260,7 @@ def train(cfg: TrainConfig) -> str:
     formatted = format_for_sft(records, cfg.domain)
     print(f"[trainer] Formatted {len(formatted)} records for SFT")
 
-    # 3b. Tokenize dataset directly (no trl dependency) -----------------
+   # 3b. Tokenize dataset — packed or unpacked depending on cfg.packing --
     def tokenize_fn(examples):
         tokenized = tokenizer(
             examples["text"],
@@ -270,12 +270,43 @@ def train(cfg: TrainConfig) -> str:
         )
         return tokenized
 
+    def tokenize_and_pack(examples):
+        """Tokenize then concatenate into fixed-length packed blocks."""
+        tokenized = tokenizer(examples["text"], truncation=False, padding=False)
+
+        eos_id = tokenizer.eos_token_id
+        all_ids: List[int] = []
+        for ids in tokenized["input_ids"]:
+            all_ids.extend(ids + [eos_id])
+
+        total_len = (len(all_ids) // cfg.max_seq_length) * cfg.max_seq_length
+        all_ids = all_ids[:total_len]
+
+        packed_input_ids = [
+            all_ids[i:i + cfg.max_seq_length]
+            for i in range(0, total_len, cfg.max_seq_length)
+        ]
+
+        return {
+            "input_ids": packed_input_ids,
+            "attention_mask": [[1] * cfg.max_seq_length for _ in packed_input_ids],
+        }
+
     dataset = Dataset.from_list(formatted)
 
     # Split 95/5 — maximise training data, minimal eval set
     split = dataset.train_test_split(test_size=0.05, seed=cfg.seed)
-    train_ds = split["train"].map(tokenize_fn, batched=True, remove_columns=["text"])
-    eval_ds = split["test"].map(tokenize_fn, batched=True, remove_columns=["text"])
+
+    if cfg.packing:
+        train_ds = split["train"].map(
+            tokenize_and_pack, batched=True, batch_size=1000, remove_columns=["text"]
+        )
+        eval_ds = split["test"].map(
+            tokenize_and_pack, batched=True, batch_size=1000, remove_columns=["text"]
+        )
+    else:
+        train_ds = split["train"].map(tokenize_fn, batched=True, remove_columns=["text"])
+        eval_ds = split["test"].map(tokenize_fn, batched=True, remove_columns=["text"])
 
     print(f"[trainer] Tokenized {len(train_ds)} train / {len(eval_ds)} eval samples")
 
