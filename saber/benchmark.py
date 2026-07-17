@@ -227,8 +227,8 @@ class BenchmarkEngine:
     # Main Evaluation Loop
     # ------------------------------------------------------------------
 
-    def evaluate(self, benchmark_file: str, output_csv: str, score_accuracy: bool = False):
-        """Run every benchmark question through all 5 modes.
+    def evaluate(self, benchmark_file: str, output_csv: str, score_accuracy: bool = False, domain: Optional[str] = None):
+        """Run benchmark questions through all 5 modes.
 
         Parameters
         ----------
@@ -238,12 +238,18 @@ class BenchmarkEngine:
             Path to write the results CSV.
         score_accuracy : bool
             If True, use LLM-as-a-Judge to score accuracy (slow).
+        domain : Optional[str]
+            If specified, only evaluate questions for this domain.
         """
         os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
         results = []
 
         with open(benchmark_file, "r") as f:
             questions = [json.loads(line) for line in f if line.strip()]
+
+        if domain:
+            questions = [q for q in questions if q.get("domain") == domain]
+            print(f"[benchmark] Filtered to domain: {domain} ({len(questions)} questions found)")
 
         total = len(questions)
         for idx, data in enumerate(questions, 1):
@@ -295,13 +301,44 @@ class BenchmarkEngine:
 
 
 if __name__ == "__main__":
+    import argparse
     from saber.config import get_config
+
+    parser = argparse.ArgumentParser(description="SABER Benchmark Runner")
+    parser.add_argument(
+        "--domain",
+        type=str,
+        default=None,
+        help="Run benchmark only for this domain (e.g. medical, cyber, science, coding, architecture, finance)"
+    )
+    parser.add_argument(
+        "--benchmark-file",
+        type=str,
+        default="data/benchmark/saber_benchmark_v1.jsonl",
+        help="Path to benchmark questions JSONL file"
+    )
+    parser.add_argument(
+        "--output-csv",
+        type=str,
+        default="data/benchmark/results.csv",
+        help="Path to save results CSV"
+    )
+    parser.add_argument(
+        "--no-score",
+        action="store_true",
+        help="Disable LLM-as-a-Judge scoring to run benchmark faster"
+    )
+
+    args = parser.parse_args()
+
     config = get_config()
     registry = SpecialistRegistry()
     registry.discover()
     engine = BenchmarkEngine(config, registry)
+    
     engine.evaluate(
-        "data/benchmark/saber_benchmark_v1.jsonl",
-        "data/benchmark/results.csv",
-        score_accuracy=True,
+        args.benchmark_file,
+        args.output_csv,
+        score_accuracy=not args.no_score,
+        domain=args.domain
     )
