@@ -302,7 +302,7 @@ class BenchmarkEngine:
 
 if __name__ == "__main__":
     import argparse
-    from saber.config import get_config
+    from saber.config import SaberConfig
 
     parser = argparse.ArgumentParser(description="SABER Benchmark Runner")
     parser.add_argument(
@@ -331,7 +331,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    config = get_config()
+    config = SaberConfig.from_env()
     registry = SpecialistRegistry()
     registry.discover()
     engine = BenchmarkEngine(config, registry)
