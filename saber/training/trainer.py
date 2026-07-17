@@ -342,13 +342,40 @@ def train(cfg: TrainConfig) -> str:
     # 5. Standard Trainer (no trl needed) --------------------------------
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
+    from transformers import TrainerCallback
+    import torch
+
+    class GenerationCallback(TrainerCallback):
+        def __init__(self, tokenizer, domain):
+            self.tokenizer = tokenizer
+            self.domain = domain
+            self.prompt = f"<|im_start|>system\nYou are a highly skilled {domain} AI specialist.<|im_end|>\n<|im_start|>user\nWhat are the fundamental principles of {domain}?<|im_end|>\n<|im_start|>assistant\n"
+            
+        def on_epoch_end(self, args, state, control, model=None, **kwargs):
+            if model is None: return
+            print(f"\n\n============================================================")
+            print(f" [Epoch {state.epoch}] Sample Generation for '{self.domain}'")
+            print(f"============================================================")
+            model.eval()
+            inputs = self.tokenizer(self.prompt, return_tensors="pt").to(model.device)
+            with torch.no_grad():
+                outputs = model.generate(**inputs, max_new_tokens=100, do_sample=True, top_p=0.9, temperature=0.7)
+            generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            if "assistant\n" in generated_text:
+                generated_text = generated_text.split("assistant\n")[-1]
+            print(f"{generated_text}\n============================================================\n")
+            model.train()
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         data_collator=data_collator,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=1)],
+        callbacks=[
+            EarlyStoppingCallback(early_stopping_patience=1),
+            GenerationCallback(tokenizer, cfg.domain)
+        ],
     )
 
     print(f"[trainer] Starting training — {len(train_ds)} train / {len(eval_ds)} eval samples")
