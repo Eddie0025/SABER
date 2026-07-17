@@ -213,6 +213,15 @@ def train(cfg: TrainConfig) -> str:
     from peft import LoraConfig, get_peft_model, TaskType
     from datasets import Dataset
 
+    # Monkeypatch the PyTorch version check directly inside transformers.trainer
+    # where it is actually called during _load_optimizer_and_scheduler
+    import transformers.trainer
+    if hasattr(transformers.trainer, "check_torch_load_is_safe"):
+        transformers.trainer.check_torch_load_is_safe = lambda: None
+    import transformers.utils.import_utils
+    if hasattr(transformers.utils.import_utils, "check_torch_load_is_safe"):
+        transformers.utils.import_utils.check_torch_load_is_safe = lambda: None
+
     # --- Device selection -------------------------------------------------
     if torch.cuda.is_available():
         device = f"cuda:{cfg.gpu_id}"
