@@ -484,7 +484,7 @@ def main() -> None:
     parser.add_argument("--base-model", type=str, default=None, help="HuggingFace model ID.")
     parser.add_argument("--output", type=str, default=None, help="Output directory.")
     parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--gpu", type=int, default=0, help="GPU index to use.")
