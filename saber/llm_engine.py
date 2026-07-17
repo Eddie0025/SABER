@@ -62,7 +62,7 @@ class LLMEngine:
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id_or_path,
             torch_dtype=dtype,
-            device_map="auto" if self.device == "cuda" else None,
+            device_map={"": self.device} if self.device.startswith("cuda") else None,
             trust_remote_code=True,
         )
 
