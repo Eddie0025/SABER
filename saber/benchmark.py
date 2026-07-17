@@ -333,7 +333,7 @@ if __name__ == "__main__":
 
     config = SaberConfig.from_env()
     registry = SpecialistRegistry()
-    registry.discover()
+    registry.auto_discover()
     engine = BenchmarkEngine(config, registry)
     
     engine.evaluate(
