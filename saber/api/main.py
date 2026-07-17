@@ -32,9 +32,23 @@ app.add_middleware(
 
 # Global SABER components
 config = SaberConfig.from_env()
+
+# Dynamically plug in fine-tuned meta-reasoner if it exists
+if os.path.exists("models/meta_reasoner_v2"):
+    config.base_model = "models/meta_reasoner_v2"
+
 audit = AuditLogger(log_path=config.audit_log_path)
 registry = SpecialistRegistry(persist_path=config.db_path)
 registry.auto_discover()
+
+# Dynamically plug in fine-tuned specialists if they exist
+for domain in ["medical", "science", "cyber", "finance", "coding", "architecture"]:
+    spec = registry.get(domain)
+    if spec:
+        v2_path = f"models/{domain}_v2"
+        if os.path.exists(v2_path):
+            spec.load_model(v2_path)
+
 orchestrator = Orchestrator(config=config, registry=registry, audit=audit)
 chat_history = ChatHistory(db_path="data/chat_history.db")
 
