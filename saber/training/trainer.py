@@ -257,11 +257,11 @@ def train(cfg: TrainConfig) -> str:
 
     attn_impl = "sdpa"
     try:
-        import flash_attn
+        import flash_attn  # type: ignore
         attn_impl = "flash_attention_2"
         print("[trainer] FlashAttention-2 is available and will be used.")
-    except ImportError:
-        print("[trainer] FlashAttention-2 not found. Falling back to SDPA.")
+    except Exception as e:
+        print(f"[trainer] FlashAttention-2 check failed: {e}. Falling back to SDPA.")
 
     model = AutoModelForCausalLM.from_pretrained(
         cfg.base_model,
