@@ -94,16 +94,10 @@ def main():
     # 1. Download and format the dataset
     data_path = prep_dataset()
     
-    # 2. Merge the current medical_v2 adapter so we can train a new adapter on top of it
+    # 2. Train directly from the clean base model to avoid carrying over any Chat Doctor style
     base_model = "Qwen/Qwen2.5-7B-Instruct"
-    current_adapter = "models/medical_v2"
-    merged_model = "models/medical_v2_merged"
-    
-    if os.path.exists(current_adapter):
-        merge_adapter(base_model, current_adapter, merged_model)
-    else:
-        print(f"Warning: {current_adapter} not found. Training directly from {base_model}")
-        merged_model = base_model
+    merged_model = base_model
+    print("Training directly from clean base model to avoid Chat Doctor contamination.")
         
     # 3. Train the model (medical_v3) using the existing trainer architecture
     print("=========================================================")
