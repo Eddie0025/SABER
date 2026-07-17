@@ -33,7 +33,7 @@ mkdir -p logs
 echo ""
 echo "[+] Step 3: Launching sequential model training (Batch Size: 8)..."
 # Sequential run optimized for 7B models on 80GB VRAM H100 GPU
-for domain in medical meta_reasoner science finance coding architecture cyber orchestrator
+for domain in finance coding architecture cyber orchestrator
 do
     echo "----------------------------------------------------------"
     echo ">> Training domain: $domain"
