@@ -74,7 +74,40 @@ async def run_query(req: QueryRequest):
     # Save user message to history
     chat_history.add_message(role="user", content=req.query)
 
-    result = orchestrator.process_query(req.query, tier=tier)
+    # BYPASS ORCHESTRATOR FOR TESTING: Route directly to Medical Specialist
+    try:
+        medical_spec = registry.get("medical")
+        model_path = medical_spec.meta.model_path if medical_spec and medical_spec.meta.model_path else config.base_model
+        
+        from saber.llm_engine import LLMEngine
+        with LLMEngine(model_path) as engine:
+            # We fetch all history up to the current query
+            history = chat_history.get_messages()
+            # The medical model expects a system prompt at the very beginning of the history
+            if history and history[0]["role"] != "system":
+                history.insert(0, {"role": "system", "content": "You are SABER's dedicated Medical Specialist. Provide accurate, clinical answers."})
+                
+            final_answer = engine.generate_with_history(history)
+            
+        result = {
+            "query_id": "direct-medical-test",
+            "status": "success",
+            "answer": final_answer,
+            "confidence": 1.0,
+            "domains_activated": ["medical"],
+            "verification_cycles": 0,
+            "total_flags_raised": 0,
+            "total_flags_resolved": 0,
+            "unresolved_flags": [],
+            "latency_seconds": 0.0,
+        }
+    except Exception as e:
+        result = {
+            "query_id": "error",
+            "status": "failed",
+            "answer": f"Error: {e}",
+            "confidence": 0.0
+        }
 
     # Save system response to history with metadata
     chat_history.add_message(
@@ -83,13 +116,7 @@ async def run_query(req: QueryRequest):
         metadata={
             "query_id": result.get("query_id"),
             "status": result.get("status"),
-            "confidence": result.get("confidence"),
             "domains_activated": result.get("domains_activated"),
-            "verification_cycles": result.get("verification_cycles"),
-            "total_flags_raised": result.get("total_flags_raised", 0),
-            "total_flags_resolved": result.get("total_flags_resolved", 0),
-            "unresolved_flags": result.get("unresolved_flags", []),
-            "latency_seconds": result.get("latency_seconds", 0),
         },
     )
 

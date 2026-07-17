@@ -50,9 +50,18 @@ class LLMEngine:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         # Setup tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_id_or_path, trust_remote_code=True
-        )
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_id_or_path, trust_remote_code=True
+            )
+        except Exception:
+            # Fallback for PEFT adapters with corrupted tokenizer_config
+            import json
+            import os
+            config_path = os.path.join(self.model_id_or_path, "adapter_config.json")
+            with open(config_path, "r") as f:
+                base_model = json.load(f)["base_model_name_or_path"]
+            self.tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 

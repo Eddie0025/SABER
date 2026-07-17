@@ -26,6 +26,9 @@ echo ""
 echo "[+] Step 1: Downloading & preparing CoT datasets..."
 PYTHONPATH=. python3 -m saber.training.dataset_loader
 
+echo "[+] Step 1b: Downloading & preparing clean Medical CoT reasoning dataset..."
+PYTHONPATH=. python3 scripts/prep_medical_data.py
+
 echo ""
 echo "[+] Step 2: Creating log directory..."
 mkdir -p logs
@@ -33,7 +36,7 @@ mkdir -p logs
 echo ""
 echo "[+] Step 3: Launching sequential model training (Batch Size: 8)..."
 # Sequential run optimized for 7B models on 80GB VRAM H100 GPU
-for domain in finance coding architecture cyber orchestrator
+for domain in medical architecture orchestrator coding cyber
 do
     echo "----------------------------------------------------------"
     echo ">> Training domain: $domain"

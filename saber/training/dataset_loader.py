@@ -1880,7 +1880,6 @@ if __name__ == "__main__":
         sys.exit(0)
 
     os.makedirs("data/processed", exist_ok=True)
-    fetch_medical()
     fetch_cyber()
     fetch_science()
     fetch_coding()
