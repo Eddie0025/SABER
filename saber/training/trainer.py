@@ -60,7 +60,7 @@ class TrainConfig:
     base_model: str = "Qwen/Qwen2.5-7B-Instruct"
     output_dir: str = "models/medical_v2"
     epochs: int = 3
-    batch_size: int = 8                     # Per-device; safe for 80 GB H100
+    batch_size: int = 16                    # Per-device; safe for 80 GB H100
     learning_rate: float = 2e-4
     max_seq_length: int = 2048              # Increased for CoT reasoning chains
     lora_r: int = 16
@@ -69,7 +69,7 @@ class TrainConfig:
     lora_target_modules: List[str] = field(
         default_factory=lambda: ["q_proj", "v_proj", "k_proj", "o_proj"]
     )
-    gradient_accumulation_steps: int = 4    # Effective batch = 8 × 4 = 32
+    gradient_accumulation_steps: int = 2    # Effective batch = 16 × 2 = 32
     warmup_ratio: float = 0.03
     fp16: bool = False
     bf16: bool = True                       # H100 has native bf16 support
