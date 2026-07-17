@@ -48,7 +48,6 @@ do
     PYTHONPATH=. python3 -m saber.training.trainer \
         --domain "$domain" \
         --gpu 0 \
-        --batch-size 8 \
         2>&1 | tee "logs/train_${domain}.log"
 done
 
