@@ -17,7 +17,7 @@ def prep_dataset():
     
     # Load the reasoning dataset from HuggingFace
     try:
-        dataset = load_dataset("FreedomIntelligence/medical-o1-reasoning-SFT", split="train")
+        dataset = load_dataset("FreedomIntelligence/medical-o1-reasoning-SFT", "en", split="train")
     except Exception as e:
         print(f"Failed to load dataset: {e}")
         print("Make sure you have the datasets library installed: pip install datasets")
