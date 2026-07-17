@@ -286,6 +286,7 @@ class BenchmarkEngine:
                         res["conf"],
                     ])
                     print(f"  {mode.value}: latency={res['latency']:.1f}s flags={res['flags']} conf={res['conf']:.2f}")
+                    print(f"  --> Answer: {res['answer']}\n")
                 except Exception as e:
                     print(f"  {mode.value}: FAILED — {e}")
                     results.append([qid, mode.value, 0.0, 0, 0, 0.0, 0.0])
