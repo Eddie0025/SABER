@@ -255,11 +255,20 @@ def train(cfg: TrainConfig) -> str:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    attn_impl = "sdpa"
+    try:
+        import flash_attn
+        attn_impl = "flash_attention_2"
+        print("[trainer] FlashAttention-2 is available and will be used.")
+    except ImportError:
+        print("[trainer] FlashAttention-2 not found. Falling back to SDPA.")
+
     model = AutoModelForCausalLM.from_pretrained(
         cfg.base_model,
         torch_dtype=torch.bfloat16 if cfg.bf16 else (torch.float16 if cfg.fp16 else torch.float32),
         device_map=device,
         trust_remote_code=True,
+        attn_implementation=attn_impl,
     )
 
     # 2. Apply LoRA -----------------------------------------------------
@@ -416,13 +425,13 @@ _DOMAIN_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "data_path": "data/processed/orchestrator.jsonl",
         "base_model": "Qwen/Qwen2.5-7B-Instruct",
         "output_dir": "models/orchestrator_v2",
-        "epochs": 8,
+        "epochs": 3,
     },
     "meta_reasoner": {
         "data_path": "data/processed/meta_reasoner.jsonl",
         "base_model": "Qwen/Qwen2.5-7B-Instruct",
         "output_dir": "models/meta_reasoner_v2",
-        "epochs": 6,
+        "epochs": 3,
     },
 }
 
