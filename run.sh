@@ -21,6 +21,15 @@ echo "[+] Dependencies installed."
 echo ""
 
 # ------------------------------------------------------------------
+# Step 0b: Purge existing datasets and models to retrain from scratch
+# ------------------------------------------------------------------
+echo "[+] Step 0b: Purging old data and models for: medical, architecture, orchestrator, coding, cyber..."
+rm -rf data/processed/medical.jsonl data/processed/dataset_manifest.json
+rm -rf models/medical_v2 models/architecture_v2 models/orchestrator_v2 models/coding_v2 models/cyber_v2
+echo "[+] Purge complete."
+echo ""
+
+# ------------------------------------------------------------------
 # Step 1: Prepare datasets (skipped if already generated)
 # ------------------------------------------------------------------
 echo "[+] Step 1: Downloading & preparing CoT datasets..."
