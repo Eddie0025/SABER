@@ -343,25 +343,7 @@ def train(cfg: TrainConfig) -> str:
     )
 
     print(f"[trainer] Starting training — {len(train_ds)} train / {len(eval_ds)} eval samples")
-    
-    # Check for existing checkpoint to resume from
-    resume_from_checkpoint = None
-    if os.path.exists(cfg.output_dir):
-        checkpoints = [
-            os.path.join(cfg.output_dir, d)
-            for d in os.listdir(cfg.output_dir)
-            if d.startswith("checkpoint-")
-        ]
-        if checkpoints:
-            try:
-                # Sort checkpoints by step number to find the latest one
-                checkpoints.sort(key=lambda x: int(x.split("-")[-1]))
-                resume_from_checkpoint = checkpoints[-1]
-                print(f"[trainer] Found checkpoint. Resuming training from: {resume_from_checkpoint}")
-            except Exception as e:
-                print(f"[trainer] Error parsing checkpoints, starting fresh: {e}")
-                
-    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    trainer.train()
 
     # 6. Save adapter ---------------------------------------------------
     model.save_pretrained(cfg.output_dir)
