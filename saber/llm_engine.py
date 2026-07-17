@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import gc
 import sys
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from saber.context import SessionMemory
 
 
 class LLMEngine:
@@ -62,7 +65,7 @@ class LLMEngine:
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id_or_path,
             torch_dtype=dtype,
-            device_map={"": self.device} if self.device.startswith("cuda") else None,
+            device_map="auto" if self.device == "cuda" else None,
             trust_remote_code=True,
         )
 
