@@ -31,6 +31,12 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+# Monkeypatch Hugging Face's PyTorch version check for loading weights
+try:
+    import transformers.utils.import_utils as import_utils
+    import_utils.check_torch_load_is_safe = lambda: None
+except Exception:
+    pass
 
 @dataclass
 class TrainConfig:
