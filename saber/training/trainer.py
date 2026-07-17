@@ -38,6 +38,15 @@ try:
 except Exception:
     pass
 
+# Allowlist numpy reconstruct for RNG state loading in newer PyTorch versions
+try:
+    import torch
+    import numpy.core.multiarray
+    import numpy
+    if hasattr(torch.serialization, "add_safe_globals"):
+        torch.serialization.add_safe_globals([numpy.core.multiarray._reconstruct, numpy.ndarray])
+except Exception:
+    pass
 @dataclass
 class TrainConfig:
     """Configuration for a single training run.
