@@ -101,11 +101,14 @@ class LLMEngine:
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model is not loaded. Use 'with LLMEngine(...) as engine:'")
 
-        # Format prompt (simple instruction format, adjustable for specific models)
+        messages = []
         if system_prompt:
-            full_prompt = f"<|system|>\n{system_prompt}\n<|user|>\n{prompt}\n<|assistant|>\n"
-        else:
-            full_prompt = f"<|user|>\n{prompt}\n<|assistant|>\n"
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        full_prompt = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
 
         inputs = self.tokenizer(full_prompt, return_tensors="pt", truncation=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
@@ -150,20 +153,16 @@ class LLMEngine:
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model is not loaded. Use 'with LLMEngine(...) as engine:'")
 
-        # Build the multi-turn prompt from history
-        parts: list = []
-        for msg in history:
-            role = msg["role"]
-            content = msg["content"]
-            parts.append(f"<|{role}|>\n{content}")
+        # Copy history so we don't mutate the original
+        messages = list(history)
 
         # Append the new user message if provided
         if new_user_message:
-            parts.append(f"<|user|>\n{new_user_message}")
+            messages.append({"role": "user", "content": new_user_message})
 
-        # Terminate with assistant tag to prompt generation
-        parts.append("<|assistant|>")
-        full_prompt = "\n".join(parts) + "\n"
+        full_prompt = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
 
         inputs = self.tokenizer(full_prompt, return_tensors="pt", truncation=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
