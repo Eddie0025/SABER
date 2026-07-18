@@ -49,9 +49,9 @@ def main():
     
     # Initialize components to check programmatic routing
     config = SaberConfig()
-    registry = SpecialistRegistry(config=config)
+    registry = SpecialistRegistry()
     registry.discover_specialists()
-    audit = AuditLogger(config=config)
+    audit = AuditLogger()
     orch = Orchestrator(config=config, registry=registry, audit=audit)
     
     try:
