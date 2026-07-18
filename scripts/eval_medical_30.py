@@ -82,7 +82,7 @@ def main():
             
             # 2. Sentinel Verification
             from saber.sentinel import Sentinel
-            from saber.messages import Signal, SignalType
+            from saber.signal import Signal, SignalType
             
             sentinel = Sentinel()
             out_sig = Signal(
