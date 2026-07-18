@@ -463,7 +463,18 @@ def train(cfg: TrainConfig) -> str:
                     for ex in features:
                         for k in keys_to_remove:
                             ex.pop(k, None)
-            return original_collator_call(self, features)
+            try:
+                return original_collator_call(self, features)
+            except Exception as e:
+                print("\n=== COLLATOR ERROR DEBUG ===")
+                print("Error:", e)
+                if features:
+                    print("Keys in first feature:", list(features[0].keys()))
+                    for k in list(features[0].keys()):
+                        vals = [ex.get(k) for ex in features]
+                        print(f"Key '{k}': type={type(vals[0])}, values={[str(v)[:100] for v in vals]}")
+                print("============================\n")
+                raise e
         DPODataCollatorWithPadding.__call__ = patched_collator_call
 
         # DPOTrainer doesn't need the DataCollatorForLanguageModeling
