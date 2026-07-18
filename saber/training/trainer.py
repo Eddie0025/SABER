@@ -429,16 +429,23 @@ def train(cfg: TrainConfig) -> str:
     if cfg.dpo_mode:
         from trl import DPOTrainer
         # DPOTrainer doesn't need the DataCollatorForLanguageModeling
-        trainer = DPOTrainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_ds,
-            eval_dataset=eval_ds,
-            processing_class=tokenizer,
-            beta=0.1,  # Standard DPO beta
-            max_prompt_length=cfg.max_seq_length // 2,
-            max_length=cfg.max_seq_length,
-        )
+        import inspect
+        dpo_kwargs = {
+            "model": model,
+            "args": training_args,
+            "train_dataset": train_ds,
+            "eval_dataset": eval_ds,
+            "beta": 0.1,
+            "max_prompt_length": cfg.max_seq_length // 2,
+            "max_length": cfg.max_seq_length,
+        }
+        sig = inspect.signature(DPOTrainer.__init__)
+        if "processing_class" in sig.parameters:
+            dpo_kwargs["processing_class"] = tokenizer
+        else:
+            dpo_kwargs["tokenizer"] = tokenizer
+
+        trainer = DPOTrainer(**dpo_kwargs)
     else:
         trainer = Trainer(
             model=model,
