@@ -1,64 +1,208 @@
 import sys
 from saber.llm_engine import LLMEngine
 
-QUESTIONS = [
-    # =========================================================
-    # Category 1: Fundamental Recall (6)
-    # =========================================================
-    "What are the three pillars of software architecture?",
-    "What is the primary purpose of an architecture decision record (ADR)?",
-    "Define loose coupling and explain why it is desirable.",
-    "What is the difference between scalability and elasticity?",
-    "What is eventual consistency in distributed systems?",
-    "What is the CAP theorem?",
+TEST_CASES = [
 
-    # =========================================================
-    # Category 2: Core Architecture Patterns (6)
-    # =========================================================
-    "Differentiate monolithic architecture from microservices.",
-    "When would you choose an event-driven architecture over a request-response architecture?",
-    "Explain the publisher-subscriber (Pub/Sub) pattern.",
-    "What problem does CQRS solve?",
-    "Explain the purpose of an API Gateway.",
-    "What is the Saga pattern and why is it used?",
+# ==========================================================
+# DISTRIBUTED SYSTEMS (1-6)
+# ==========================================================
 
-    # =========================================================
-    # Category 3: Mechanisms (5)
-    # =========================================================
-    "Explain how horizontal scaling improves system capacity.",
-    "Why do distributed systems require consensus algorithms such as Raft or Paxos?",
-    "Explain how caching reduces latency.",
-    "Why can synchronous microservice communication reduce system resilience?",
-    "Explain why idempotency is important in distributed APIs.",
+{
+    "id": 1,
+    "category": "Distributed Systems",
+    "question": "Design a globally distributed messaging platform serving one billion daily users. Explain how you would address latency, replication, consistency, and regional failures."
+},
 
-    # =========================================================
-    # Category 4: Design Decisions (5)
-    # =========================================================
-    "A system expects millions of read requests but very few writes. What architecture decisions would you recommend?",
-    "A payment service must never process the same transaction twice. How would you design for this requirement?",
-    "Your application experiences traffic spikes during product launches. How would you architect for this scenario?",
-    "A company wants to migrate from a monolith to microservices. What challenges should they expect?",
-    "How would you architect a globally distributed application requiring low latency across continents?",
+{
+    "id": 2,
+    "category": "Distributed Systems",
+    "question": "Explain why distributed systems cannot simply behave like a single large computer. Discuss network partitions, latency, and independent failures."
+},
 
-    # =========================================================
-    # Category 5: Failure & Reliability (3)
-    # =========================================================
-    "A downstream service becomes unavailable. How should a resilient architecture respond?",
-    "Explain the purpose of a circuit breaker pattern.",
-    "How does bulkheading improve fault isolation?",
+{
+    "id": 3,
+    "category": "Distributed Systems",
+    "question": "A service must remain available even if an entire data center fails. Design the architecture and justify each major component."
+},
 
-    # =========================================================
-    # Category 6: Tradeoffs & Reasoning (3)
-    # =========================================================
-    "Compare SQL and NoSQL databases for an e-commerce platform.",
-    "Compare eventual consistency and strong consistency. When is each appropriate?",
-    "When should a system favor availability over consistency?",
+{
+    "id": 4,
+    "category": "Distributed Systems",
+    "question": "Design a distributed logging platform capable of ingesting one million events per second."
+},
 
-    # =========================================================
-    # Category 7: Misconceptions & Red-Herring Resistance (2)
-    # =========================================================
-    "True or False: Microservices are always better than monolithic architectures. Explain.",
-    "A system is slow. A developer suggests replacing the monolith with microservices. Is that necessarily the correct solution? Explain your reasoning."
+{
+    "id": 5,
+    "category": "Distributed Systems",
+    "question": "Design a globally distributed object storage service similar to Amazon S3."
+},
+
+{
+    "id": 6,
+    "category": "Distributed Systems",
+    "question": "Design an architecture for coordinating thousands of autonomous AI agents operating across multiple geographic regions."
+},
+
+# ==========================================================
+# CONSENSUS & CONSISTENCY (7-12)
+# ==========================================================
+
+{
+    "id": 7,
+    "category": "Consensus",
+    "question": "Explain why distributed consensus is difficult even when every machine is functioning correctly."
+},
+
+{
+    "id": 8,
+    "category": "Consensus",
+    "question": "Compare Raft, Paxos, and leaderless replication. Explain when each approach is appropriate."
+},
+
+{
+    "id": 9,
+    "category": "Consistency",
+    "question": "Compare strong consistency, eventual consistency, causal consistency, and session consistency. Provide practical scenarios for each."
+},
+
+{
+    "id": 10,
+    "category": "CAP Theorem",
+    "question": "A hospital system cannot tolerate stale patient data but must remain operational during network partitions. Discuss the architectural tradeoffs without assuming an ideal solution."
+},
+
+{
+    "id": 11,
+    "category": "Replication",
+    "question": "Explain why multi-region replication improves availability but can introduce consistency challenges."
+},
+
+{
+    "id": 12,
+    "category": "Consistency",
+    "question": "Design a financial transaction system where consistency requirements differ between balance updates, analytics, and reporting."
+},
+
+# ==========================================================
+# SCALABILITY (13-18)
+# ==========================================================
+
+{
+    "id": 13,
+    "category": "Scalability",
+    "question": "An application serving 100,000 users is expected to grow to 100 million users. Describe your scaling strategy over time rather than presenting a final architecture."
+},
+
+{
+    "id": 14,
+    "category": "Load Balancing",
+    "question": "Compare round-robin, least-connections, weighted routing, and consistent hashing. Explain when each is preferable."
+},
+
+{
+    "id": 15,
+    "category": "Caching",
+    "question": "Explain why caching improves performance but can create correctness problems."
+},
+
+{
+    "id": 16,
+    "category": "Storage",
+    "question": "Design a storage architecture for an AI platform generating five petabytes of data annually."
+},
+
+{
+    "id": 17,
+    "category": "Performance",
+    "question": "A distributed application experiences excellent CPU utilization but poor user response times. Describe your investigation process."
+},
+
+{
+    "id": 18,
+    "category": "Scalability",
+    "question": "Design a notification service capable of delivering one billion notifications per day."
+},
+
+# ==========================================================
+# ARCHITECTURAL TRADEOFFS (19-24)
+# ==========================================================
+
+{
+    "id": 19,
+    "category": "Tradeoffs",
+    "question": "Explain why microservices increase organizational complexity even when they improve technical scalability."
+},
+
+{
+    "id": 20,
+    "category": "Tradeoffs",
+    "question": "Compare event-driven architectures with synchronous request-response systems. Discuss latency, coupling, observability, and failure handling."
+},
+
+{
+    "id": 21,
+    "category": "Tradeoffs",
+    "question": "Explain when a modular monolith is a better architectural choice than microservices."
+},
+
+{
+    "id": 22,
+    "category": "Tradeoffs",
+    "question": "Should every service have its own database? Explain the architectural consequences of both approaches."
+},
+
+{
+    "id": 23,
+    "category": "Tradeoffs",
+    "question": "A company wants to move all workloads to Kubernetes. Explain situations where this migration may reduce overall engineering efficiency."
+},
+
+{
+    "id": 24,
+    "category": "Tradeoffs",
+    "question": "Compare SQL, NoSQL, graph databases, and time-series databases. Explain which workload each is optimized for."
+},
+
+# ==========================================================
+# ENTERPRISE DESIGN (25-30)
+# ==========================================================
+
+{
+    "id": 25,
+    "category": "Enterprise Design",
+    "question": "Design the architecture for a nationwide electronic health record platform supporting hundreds of millions of patients."
+},
+
+{
+    "id": 26,
+    "category": "Enterprise Design",
+    "question": "Design an AI-native operating system capable of orchestrating thousands of specialized AI agents."
+},
+
+{
+    "id": 27,
+    "category": "Enterprise Design",
+    "question": "Design the backend architecture for an autonomous vehicle fleet operating across multiple countries."
+},
+
+{
+    "id": 28,
+    "category": "Enterprise Design",
+    "question": "Design the architecture of a global stock exchange capable of processing millions of trades per second while maintaining regulatory compliance."
+},
+
+{
+    "id": 29,
+    "category": "Enterprise Design",
+    "question": "Design the architecture of a planetary-scale satellite telemetry processing system handling continuous real-time streams."
+},
+
+{
+    "id": 30,
+    "category": "Architecture Review",
+    "question": "A startup proposes: API Gateway → Microservices → Shared Database → Redis Cache → Kubernetes. Critique this architecture, identify hidden bottlenecks, single points of failure, scalability concerns, and operational risks, then propose improvements."
+}
+
 ]
 
 def main():
@@ -78,9 +222,11 @@ def main():
 
     print("\nModel loaded successfully! Beginning evaluation...\n")
     
-    for i, question in enumerate(QUESTIONS, 1):
+    for i, case in enumerate(TEST_CASES, 1):
+        question = case["question"]
+        category = case["category"]
         print(f"---------------------------------------------------------")
-        print(f"CASE [{i}/30]")
+        print(f"CASE [{i}/30] - Category: {category}")
         print(f"Q: {question}")
         print("---------------------------------------------------------")
         
