@@ -1739,12 +1739,12 @@ if __name__ == "__main__":
 
     os.makedirs("data/processed", exist_ok=True)
     fetch_cyber()
-    fetch_science()
+    # fetch_science()  # Already trained
     fetch_coding()
     fetch_architecture()
-    fetch_finance()
+    # fetch_finance()  # Already trained
     fetch_orchestrator()
-    fetch_meta_reasoner()
+    # fetch_meta_reasoner()  # Already trained
     
     # Step 4: Overlap Audit
     audit_specialist_overlap()
