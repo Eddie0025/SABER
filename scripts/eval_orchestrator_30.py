@@ -1,4 +1,5 @@
 import sys
+import json
 from saber.llm_engine import LLMEngine
 
 QUESTIONS = [
@@ -76,17 +77,39 @@ def main():
         print("Scores:", {d: round(s, 2) for d, s in domain_scores.items() if s > 0.05})
         print("- - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
         
-        # Reset context for each question
+        # Use the exact prompt the model was fine-tuned on
         available_domains = ", ".join(registry.list_domains())
+        system_prompt = (
+            "You are the SABER Orchestrator. Your sole responsibility is to evaluate "
+            "the user's prompt and route it to the correct specialist domains based on the required technical expertise. "
+            "For complex system-building, application design, or pipeline engineering requests, you must route to "
+            "both 'architecture' (for design) and 'coding' (for implementation) in addition to the specific domain "
+            f"(e.g., 'finance', 'medical', 'science'). Available specialists: {available_domains}. "
+            "DO NOT answer the user's question. You must output strict JSON matching "
+            "the following schema: "
+            "{\"route\": [\"domain1\", \"domain2\"], \"confidence\": 0.99, \"multi_domain\": true, \"query_summary\": \"...\"}"
+        )
+        
         history = [
-            {"role": "system", "content": f"You are the SABER Orchestrator. Route requests to specialist models, decompose complex tasks, plan dependencies, and synthesize plans. Available specialists: {available_domains}."}
+            {"role": "system", "content": system_prompt}
         ]
         
         try:
-            ans = engine.generate_with_history(history, new_user_message=question)
-            print(f"SABER Plan:\n{ans}\n\n")
+            raw_ans = engine.generate_with_history(history, new_user_message=question)
+            print(f"Raw Output: {raw_ans}")
+            
+            # Robust JSON cleaning and extraction
+            clean_ans = raw_ans.replace("```json", "").replace("```", "").strip()
+            # Find first '{' and last '}' to strip prefixes/suffixes
+            start_idx = clean_ans.find("{")
+            end_idx = clean_ans.rfind("}")
+            if start_idx != -1 and end_idx != -1:
+                clean_ans = clean_ans[start_idx:end_idx+1]
+                
+            parsed = json.loads(clean_ans)
+            print(f"Parsed JSON Plan:\n{json.dumps(parsed, indent=2)}\n\n")
         except Exception as e:
-            print(f"SABER: [FAILED TO GENERATE] {e}\n\n")
+            print(f"SABER: [FAILED TO PARSE OR GENERATE] {e}\n\n")
             
     engine.__exit__(None, None, None)
     print("=========================================================")
