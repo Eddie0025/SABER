@@ -1,11 +1,55 @@
 import os
 import sys
+import json
+import random
+import uuid
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
-from peft import PeftModel, LoraConfig, get_peft_model
+from peft import PeftModel
 from datasets import Dataset
 from trl import SFTTrainer
-import json
+
+def generate_synthetic_data():
+    print("Generating synthetic calibration data in memory...")
+    records = []
+    
+    # Category 1: Confidence 0
+    zero_conf = [
+        ("What is the underlying mechanism of Vander-Mersch syndrome in hepatic dysfunction?",
+         "REASONING:\nConfidence: 0/100 (None).\nThere is no established clinical entity named 'Vander-Mersch syndrome'. I cannot verify this condition.\n\nCONCLUSION:\nI do not know this specific term or condition. Please verify the name."),
+        ("What are the diagnostic criteria for Gellar's syndrome?",
+         "REASONING:\nConfidence: 0/100 (None).\n'Gellar's syndrome' is not a recognized medical term.\n\nCONCLUSION:\nI do not know this specific term or condition. Please verify the name or spelling."),
+        ("Describe the pathophysiology of Henderson's sign on a chest X-ray.",
+         "REASONING:\nConfidence: 0/100 (None).\n'Henderson's sign' is not an established radiological finding.\n\nCONCLUSION:\nI do not know this specific term. Please verify the name.")
+    ]
+    
+    # Category 2: Confidence 1-50
+    low_conf = [
+        ("A patient presents with a vague, dull ache in the lower abdomen that comes and goes, with mild bloating. What is the diagnosis?",
+         "REASONING:\nConfidence: 35/100 (Medium-Low).\nThe symptoms are highly non-specific and overlap with multiple functional and organic GI conditions. A definitive diagnosis is not possible without further workup.\n\nCONCLUSION:\nI am not fully sure based on this limited presentation, but it could be a functional gastrointestinal disorder like IBS. Further diagnostic workup is needed."),
+        ("A 60-year-old patient reports transient fatigue over the past three weeks. Labs show a borderline low hematocrit. What is the cause?",
+         "REASONING:\nConfidence: 40/100 (Medium-Low).\nTransient fatigue and borderline low hematocrit are non-specific. It could be early iron deficiency, anemia of chronic disease, or physiological variation.\n\nCONCLUSION:\nI am not certain of the exact cause, but the relevant clinical concept is early-stage anemia. Checking iron panels and TSH is recommended.")
+    ]
+    
+    # Category 3: Confidence 51-100
+    high_conf = [
+        ("What is the primary mechanism of action of argatroban?",
+         "REASONING:\nConfidence: 98/100 (High).\nArgatroban is an anticoagulant that directly binds to the active catalytic site of thrombin (Factor IIa), inhibiting its activity.\n\nCONCLUSION:\nArgatroban is a direct thrombin (Factor IIa) inhibitor."),
+        ("A 19-year-old presents with high fever, neck stiffness, and a petechial rash on his lower extremities. What is the diagnosis?",
+         "REASONING:\nConfidence: 97/100 (High).\nThe triad of fever, neck stiffness, and a petechial rash in a young adult is classic for Neisseria meningitidis infection (Meningococcemia). Immediate empiric IV antibiotics are required.\n\nCONCLUSION:\nThe suspected diagnosis is Meningococcemia. Immediate empiric IV antibiotics (e.g., Ceftriaxone) must be administered.")
+    ]
+    
+    # Multiply to get enough data points
+    for _ in range(25):
+        for q, a in zero_conf:
+            records.append({"text": q + (" " * random.randint(0,2)), "label": a})
+        for q, a in low_conf:
+            records.append({"text": q + (" " * random.randint(0,2)), "label": a})
+        for q, a in high_conf:
+            records.append({"text": q + (" " * random.randint(0,2)), "label": a})
+            
+    random.shuffle(records)
+    return records
 
 def format_chatml(records):
     formatted = []
@@ -32,22 +76,18 @@ def main():
     
     base_model_name = "Qwen/Qwen2.5-7B-Instruct"
     adapter_path = "models/medical_v2"
-    patch_data_path = "data/processed/medical_calibration_patch.jsonl"
+    
+    # 1. Generate data dynamically
+    records = generate_synthetic_data()
+    formatted_data = format_chatml(records)
+    dataset = Dataset.from_list(formatted_data)
+    print(f"Generated {len(dataset)} calibration records.")
     
     if not os.path.exists(adapter_path):
         print(f"Error: Existing adapter checkpoint '{adapter_path}' not found. Cannot perform continued fine-tuning.")
         sys.exit(1)
-        
-    print(f"Loading patch dataset from {patch_data_path}...")
-    records = []
-    with open(patch_data_path, "r") as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
-                
-    formatted_data = format_chatml(records)
-    dataset = Dataset.from_list(formatted_data)
     
+    # 2. Load Base Model
     print(f"Loading base model: {base_model_name}...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
     tokenizer.pad_token = tokenizer.eos_token
@@ -58,11 +98,12 @@ def main():
         device_map="auto"
     )
     
-    print(f"Loading existing adapter for continued training: {adapter_path}...")
+    # 3. Load EXISTING adapter and continue training it
+    print(f"Loading EXISTING adapter for continued training from {adapter_path}...")
     model = PeftModel.from_pretrained(
         base_model,
         adapter_path,
-        is_trainable=True
+        is_trainable=True # crucial for continued training
     )
     
     training_args = TrainingArguments(
@@ -86,7 +127,7 @@ def main():
         args=training_args
     )
     
-    print("Starting fine-tuning...")
+    print("Starting fine-tuning on the EXISTING adapter weights...")
     trainer.train()
     
     print(f"Saving calibrated adapter back to {adapter_path}...")
