@@ -1,60 +1,172 @@
 import sys
 from saber.llm_engine import LLMEngine
 
-QUESTIONS = [
-    # =========================================================
-    # Category 1 – Agreement Detection (5)
-    # =========================================================
-    "Expert A:\nAES-256 is symmetric encryption.\nExpert B:\nAES-256 is symmetric encryption.\nEvaluate agreements/conflicts.",
-    "Expert A:\nHTTP is stateless.\nExpert B:\nHTTP is stateless.\nEvaluate agreements/conflicts.",
-    "Expert A:\nCAP stands for Consistency, Availability, Partition tolerance.\nExpert B:\nCAP stands for Consistency, Availability, Partition tolerance.\nEvaluate agreements/conflicts.",
-    "Expert A:\nSQL databases support ACID.\nExpert B:\nSQL databases support ACID.\nEvaluate agreements/conflicts.",
-    "Expert A:\nMicroservices communicate over APIs.\nExpert B:\nMicroservices communicate over APIs.\nEvaluate agreements/conflicts.",
-
-    # =========================================================
-    # Category 2 – Direct Contradictions (8)
-    # =========================================================
-    "Expert A:\nEventual consistency guarantees immediate synchronization.\nExpert B:\nEventual consistency allows temporary inconsistency.\nResolve this contradiction.",
-    "Expert A:\nMicroservices are always better.\nExpert B:\nIt depends on requirements.\nResolve this contradiction.",
-    "Expert A:\nCAP allows all three simultaneously.\nExpert B:\nCAP allows only two guarantees at the same time.\nResolve this contradiction.",
-    "Expert A:\nAES is asymmetric.\nExpert B:\nAES is symmetric.\nResolve this contradiction.",
-    "Expert A:\nREST requires HTTP.\nExpert B:\nREST is an architectural style independent of protocols.\nResolve this contradiction.",
-    "Expert A:\nDocker replaces Kubernetes.\nExpert B:\nDocker and Kubernetes solve different problems and work together.\nResolve this contradiction.",
-    "Expert A:\nSQL scales only vertically.\nExpert B:\nSQL supports horizontal scaling strategies like sharding and replication.\nResolve this contradiction.",
-    "Expert A:\nMonoliths cannot scale.\nExpert B:\nMonoliths can scale vertically and horizontally (replicated monoliths).\nResolve this contradiction.",
-
-    # =========================================================
-    # Category 3 – Partial Conflicts (6)
-    # =========================================================
-    "Expert A recommends CQRS.\nExpert B recommends caching.\nArbitrate this partial conflict.",
-    "Expert A recommends Redis.\nExpert B recommends Memcached.\nArbitrate this partial conflict.",
-    "Expert A prefers PostgreSQL.\nExpert B prefers Cassandra.\nArbitrate this partial conflict.",
-    "Expert A suggests synchronous communication.\nExpert B suggests asynchronous messaging.\nArbitrate this partial conflict.",
-    "Expert A suggests JWT.\nExpert B suggests OAuth.\nArbitrate this partial conflict.",
-    "Expert A recommends Kubernetes.\nExpert B recommends ECS.\nArbitrate this partial conflict.",
-
-    # =========================================================
-    # Category 4 – Preference Arbitration (5)
-    # =========================================================
-    "Expert A solution:\nFast but less secure.\nExpert B:\nSlower but secure.\nArbitrate these preferences based on security priorities.",
-    "Expert A:\nSimple architecture.\nExpert B:\nHighly scalable architecture.\nArbitrate these preferences based on scalability needs.",
-    "Expert A:\nLow latency.\nExpert B:\nHigh consistency.\nArbitrate these preferences based on consistency requirements.",
-    "Expert A:\nLow cost.\nExpert B:\nHigh availability.\nArbitrate these preferences based on availability SLAs.",
-    "Expert A:\nRapid development.\nExpert B:\nMaintainability.\nArbitrate these preferences based on long-term maintenance goals.",
-
-    # =========================================================
-    # Category 5 – Hallucination Detection (3)
-    # =========================================================
-    "Expert A:\nPANCA-3 is used to diagnose pancreatitis.\nExpert B:\nSerum lipase is preferred.\nDetermine which claim is a hallucination.",
-    "Expert A:\nDocker is an operating system.\nExpert B:\nDocker is a container platform.\nDetermine which claim is a hallucination.",
-    "Expert A:\nCAP has four guarantees.\nExpert B:\nCAP has three guarantees.\nDetermine which claim is a hallucination.",
-
-    # =========================================================
-    # Category 6 – Multi-Expert Arbitration (3)
-    # =========================================================
-    "Architecture:\nUse microservices.\nCyber:\nUse monolith for simplicity and reduced attack surface.\nOperations:\nPrefer Kubernetes.\nProduce a unified recommendation.",
-    "Medical:\nImmediate surgery is required.\nAI:\nGather more diagnostic information first to rule out myocarditis.\nProduce a final decision.",
-    "Architecture:\nUse Kafka.\nAI:\nUse RabbitMQ.\nOperations:\nUse NATS.\nSelect the most appropriate solution based on system throughput requirements."
+TEST_CASES = [
+    # ==========================================================
+    # UNDER-SPECIFIED DECISIONS (1-8)
+    # ==========================================================
+    {
+        "id": 1,
+        "category": "Insufficient Information",
+        "question": "Which cloud provider is best: AWS, Azure, or Google Cloud?"
+    },
+    {
+        "id": 2,
+        "category": "Insufficient Information",
+        "question": "Should a startup choose PostgreSQL or MongoDB?"
+    },
+    {
+        "id": 3,
+        "category": "Insufficient Information",
+        "question": "Should a company build a mobile app or a web application first?"
+    },
+    {
+        "id": 4,
+        "category": "Insufficient Information",
+        "question": "Is Kubernetes always better than Docker Compose?"
+    },
+    {
+        "id": 5,
+        "category": "Insufficient Information",
+        "question": "Should an AI startup use Python or Rust?"
+    },
+    {
+        "id": 6,
+        "category": "Insufficient Information",
+        "question": "Should microservices always replace a monolith?"
+    },
+    {
+        "id": 7,
+        "category": "Insufficient Information",
+        "question": "Should data always be encrypted end-to-end?"
+    },
+    {
+        "id": 8,
+        "category": "Insufficient Information",
+        "question": "Should every production system implement Zero Trust?"
+    },
+    # ==========================================================
+    # TRADEOFF REASONING (9-15)
+    # ==========================================================
+    {
+        "id": 9,
+        "category": "Tradeoffs",
+        "question": "Explain the tradeoff between consistency, availability, and partition tolerance in distributed systems. Do not recommend one universally."
+    },
+    {
+        "id": 10,
+        "category": "Tradeoffs",
+        "question": "A distributed cache improves latency but risks stale reads. Explain the engineering tradeoff."
+    },
+    {
+        "id": 11,
+        "category": "Tradeoffs",
+        "question": "Higher encryption strength often increases computational overhead. Explain when stronger encryption is not automatically the best engineering decision."
+    },
+    {
+        "id": 12,
+        "category": "Tradeoffs",
+        "question": "Explain why maximizing accuracy in an AI model may reduce fairness or interpretability."
+    },
+    {
+        "id": 13,
+        "category": "Tradeoffs",
+        "question": "Explain why maximizing availability can reduce consistency in distributed architectures."
+    },
+    {
+        "id": 14,
+        "category": "Tradeoffs",
+        "question": "Should engineering teams optimize for developer productivity or runtime performance? Explain the conditions affecting the answer."
+    },
+    {
+        "id": 15,
+        "category": "Tradeoffs",
+        "question": "Explain the tradeoff between rapid product delivery and software quality."
+    },
+    # ==========================================================
+    # THREE-EXPERT SYNTHESIS (16-22)
+    # ==========================================================
+    {
+        "id": 16,
+        "category": "Multi-Expert",
+        "question": "Architecture recommends microservices, Finance recommends reducing infrastructure costs, and Coding recommends keeping the existing monolith. Produce a synthesized recommendation."
+    },
+    {
+        "id": 17,
+        "category": "Multi-Expert",
+        "question": "Medical recommends maximum patient safety, Finance recommends minimizing operational cost, and Cybersecurity recommends strict authentication. Produce a balanced decision."
+    },
+    {
+        "id": 18,
+        "category": "Multi-Expert",
+        "question": "Science recommends further experimentation, Finance wants immediate commercialization, and Architecture believes the technology is not production ready. Resolve the disagreement."
+    },
+    {
+        "id": 19,
+        "category": "Multi-Expert",
+        "question": "Coding recommends rapid implementation, Cybersecurity recommends delaying release for security review, and Finance demands launch before quarter-end."
+    },
+    {
+        "id": 20,
+        "category": "Multi-Expert",
+        "question": "Coding recommends PostgreSQL, Architecture recommends Cassandra, and Finance recommends minimizing infrastructure cost."
+    },
+    {
+        "id": 21,
+        "category": "Multi-Expert",
+        "question": "Medical recommends collecting more patient data, Cybersecurity recommends minimizing stored data, and Science requests larger datasets for research."
+    },
+    {
+        "id": 22,
+        "category": "Multi-Expert",
+        "question": "Coding recommends PostgreSQL, Architecture recommends Cassandra, and Finance recommends minimizing infrastructure cost."
+    },
+    # ==========================================================
+    # PRIORITIZATION (23-26)
+    # ==========================================================
+    {
+        "id": 23,
+        "category": "Prioritization",
+        "question": "A hospital system has security vulnerabilities, poor user experience, slow databases, and inaccurate AI predictions. Prioritize remediation."
+    },
+    {
+        "id": 24,
+        "category": "Prioritization",
+        "question": "An AI startup has technical debt, limited funding, increasing customer demand, and compliance deadlines. Determine the priority order."
+    },
+    {
+        "id": 25,
+        "category": "Prioritization",
+        "question": "A cloud platform suffers from latency, increasing costs, and occasional outages. Which problem should be addressed first, and why?"
+    },
+    {
+        "id": 26,
+        "category": "Prioritization",
+        "question": "A national healthcare platform has identified privacy concerns, performance bottlenecks, missing features, and usability complaints. Produce a justified priority sequence."
+    },
+    # ==========================================================
+    # META REASONING (27-30)
+    # ==========================================================
+    {
+        "id": 27,
+        "category": "Meta Reasoning",
+        "question": "Describe a situation where deliberately delaying a technical decision produces a better long-term outcome."
+    },
+    {
+        "id": 28,
+        "category": "Meta Reasoning",
+        "question": "Explain why insufficient information should sometimes result in asking additional questions rather than making recommendations."
+    },
+    {
+        "id": 29,
+        "category": "Meta Reasoning",
+        "question": "How should an AI system decide when two expert recommendations are genuinely incompatible versus merely optimizing different objectives?"
+    },
+    {
+        "id": 30,
+        "category": "Meta Reasoning",
+        "question": "Design a reasoning strategy for resolving conflicts among eight domain specialists without assuming that any one specialist is always correct."
+    }
 ]
 
 def main():
@@ -74,9 +186,10 @@ def main():
 
     print("\nModel loaded successfully! Beginning evaluation...\n")
     
-    for i, question in enumerate(QUESTIONS, 1):
+    for case in TEST_CASES:
+        question = case["question"]
         print(f"---------------------------------------------------------")
-        print(f"CASE [{i}/30]")
+        print(f"CASE [{case['id']}/30] | Category: {case['category']}")
         print(f"Q: {question}")
         print("---------------------------------------------------------")
         
