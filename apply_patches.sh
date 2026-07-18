@@ -43,19 +43,8 @@ python3 scripts/generate_patches.py
 # 2. Apply SFT Patches (Coverage gaps)
 echo ""
 echo "[2/3] Applying Continuous SFT Patches..."
-# run_step "coding" "--patch-mode" "data/processed/coding_patch.jsonl"
-# run_step "orchestrator" "--patch-mode" "data/processed/orchestrator_patch.jsonl"
-# run_step "science" "--patch-mode" "data/processed/science_patch.jsonl"
-run_step "finance" "--patch-mode" "data/processed/finance_patch.jsonl"
-
-# 3. Apply DPO Patches (Hallucinations & Hedging Behavior)
-echo ""
-echo "[3/3] Applying DPO Patches..."
-run_step "medical" "--dpo-mode" "data/processed/medical_dpo_patch.jsonl"
-run_step "meta_reasoner" "--dpo-mode" "data/processed/meta_reasoner_dpo_patch.jsonl"
-
-# Clean up progress file on success
-rm -f "$PROGRESS_FILE"
+python3 -m saber.training.trainer --domain orchestrator --data data/processed/orchestrator_patch.jsonl --patch-mode
+python3 -m saber.training.trainer --domain science --data data/processed/science_patch.jsonl --patch-mode
 
 echo ""
 echo "============================================================"
