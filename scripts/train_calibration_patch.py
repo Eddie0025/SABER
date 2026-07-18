@@ -4,10 +4,9 @@ import json
 import random
 import uuid
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
+from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling
 from peft import PeftModel
 from datasets import Dataset
-from trl import SFTTrainer
 
 def generate_synthetic_data():
     print("Generating synthetic calibration data in memory...")
@@ -80,14 +79,8 @@ def main():
     # 1. Generate data dynamically
     records = generate_synthetic_data()
     formatted_data = format_chatml(records)
-    dataset = Dataset.from_list(formatted_data)
-    print(f"Generated {len(dataset)} calibration records.")
     
-    if not os.path.exists(adapter_path):
-        print(f"Error: Existing adapter checkpoint '{adapter_path}' not found. Cannot perform continued fine-tuning.")
-        sys.exit(1)
-    
-    # 2. Load Base Model
+    # 2. Load Base Model and Tokenizer
     print(f"Loading base model: {base_model_name}...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
     tokenizer.pad_token = tokenizer.eos_token
@@ -106,6 +99,19 @@ def main():
         is_trainable=True # crucial for continued training
     )
     
+    # Tokenize the dataset manually to avoid SFTTrainer/TRL dependency issues
+    def tokenize_fn(examples):
+        return tokenizer(
+            examples["text"],
+            truncation=True,
+            max_length=1024,
+            padding=False
+        )
+        
+    dataset = Dataset.from_list(formatted_data)
+    tokenized_dataset = dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
+    print(f"Tokenized {len(tokenized_dataset)} calibration records.")
+    
     training_args = TrainingArguments(
         output_dir=adapter_path,
         per_device_train_batch_size=4,
@@ -118,13 +124,13 @@ def main():
         report_to="none"
     )
     
-    trainer = SFTTrainer(
+    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    
+    trainer = Trainer(
         model=model,
-        train_dataset=dataset,
-        dataset_text_field="text",
-        max_seq_length=1024,
-        packing=False,
-        args=training_args
+        args=training_args,
+        train_dataset=tokenized_dataset,
+        data_collator=data_collator
     )
     
     print("Starting fine-tuning on the EXISTING adapter weights...")
