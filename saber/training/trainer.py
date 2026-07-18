@@ -451,6 +451,15 @@ def train(cfg: TrainConfig) -> str:
                 return transformers.Trainer.get_batch_samples(self, epoch_iterator, num_batches, *args, **kwargs)
             DPOTrainer.get_batch_samples = patched_get_batch_samples
 
+        # Monkeypatch DPOTrainer.compute_loss to handle newer transformers calling it with num_items_in_batch
+        original_compute_loss = DPOTrainer.compute_loss
+        def patched_compute_loss(self, *args, **kwargs):
+            sig = inspect.signature(original_compute_loss)
+            if "num_items_in_batch" not in sig.parameters:
+                kwargs.pop("num_items_in_batch", None)
+            return original_compute_loss(self, *args, **kwargs)
+        DPOTrainer.compute_loss = patched_compute_loss
+
         # Monkeypatch DPODataCollatorWithPadding to filter out keys that contain None values and clean up list features containing None elements
         original_collator_call = DPODataCollatorWithPadding.__call__
         def patched_collator_call(self, features):
