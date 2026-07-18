@@ -193,16 +193,8 @@ class Sentinel:
             "Your job is strict semantic verification."
         )
 
-        # Choose verification model: use specialist model if available via
-        # targeted routing, otherwise fall back to orchestrator model.
-        verification_model = config.base_model if config else "Qwen/Qwen2.5-7B"
-        if registry is not None:
-            # Try to use the science specialist for logic checks
-            logic_reviewer = route.get("logical_reasoning", "")
-            if logic_reviewer and logic_reviewer != specialist_domain:
-                reviewer_spec = registry.get(logic_reviewer)
-                if reviewer_spec and hasattr(reviewer_spec, "model_name"):
-                    verification_model = reviewer_spec.model_name
+        # Choose verification model: always use the unbiased base model to prevent self-checking
+        verification_model = config.base_model if (config and config.base_model) else "Qwen/Qwen2.5-7B-Instruct"
 
         start_time = time.time()
 
