@@ -443,12 +443,28 @@ def train(cfg: TrainConfig) -> str:
         transformers.Trainer.__init__ = patched_trainer_init
 
         from trl import DPOTrainer
+        from trl.trainer.utils import DPODataCollatorWithPadding
         
         # Monkeypatch DPOTrainer.get_batch_samples to handle newer transformers
         if hasattr(DPOTrainer, "get_batch_samples"):
             def patched_get_batch_samples(self, epoch_iterator, num_batches, *args, **kwargs):
                 return transformers.Trainer.get_batch_samples(self, epoch_iterator, num_batches, *args, **kwargs)
             DPOTrainer.get_batch_samples = patched_get_batch_samples
+
+        # Monkeypatch DPODataCollatorWithPadding to filter out keys that contain None values
+        original_collator_call = DPODataCollatorWithPadding.__call__
+        def patched_collator_call(self, features):
+            if features:
+                keys_to_remove = []
+                for k in list(features[0].keys()):
+                    if any(ex.get(k) is None for ex in features):
+                        keys_to_remove.append(k)
+                if keys_to_remove:
+                    for ex in features:
+                        for k in keys_to_remove:
+                            ex.pop(k, None)
+            return original_collator_call(self, features)
+        DPODataCollatorWithPadding.__call__ = patched_collator_call
 
         # DPOTrainer doesn't need the DataCollatorForLanguageModeling
         import inspect
