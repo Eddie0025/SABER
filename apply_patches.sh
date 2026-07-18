@@ -8,6 +8,10 @@ echo "============================================================"
 PROGRESS_FILE=".patch_completed"
 touch "$PROGRESS_FILE"
 
+# Upgrade trl to ensure compatibility with transformers >= 4.47
+echo "[+] Ensuring trl is up-to-date..."
+pip install -q --upgrade trl
+
 # Function to run training if not already completed
 run_step() {
     local domain=$1
