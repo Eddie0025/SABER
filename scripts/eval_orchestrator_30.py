@@ -2,37 +2,172 @@ import sys
 import json
 from saber.llm_engine import LLMEngine
 
-QUESTIONS = [
-    "I'm opening a digital bank for freelancers across Asia. Help me build the platform.",
-    "My hospital still uses paper records. I want to digitize everything and make it secure.",
-    "Can you help me create an AI tutor that teaches engineering students and automatically grades assignments?",
-    "I'm building a drone that can inspect power lines without human intervention.",
-    "I want to launch an online marketplace like Amazon but only for medical equipment.",
-    "We're getting hacked constantly. Can you help redesign our infrastructure?",
-    "I have thousands of IoT sensors collecting environmental data every second. I need a system that can process it in real time.",
-    "I want an app where doctors can remotely monitor diabetic patients using wearable devices.",
-    "Help me build software that predicts stock prices and automatically manages investments.",
-    "We're replacing spreadsheets with a proper ERP across five factories.",
-    "I need software for a self-driving delivery robot operating inside hospitals.",
-    "My startup is building a password manager for enterprises.",
-    "I want to build something similar to ChatGPT but only for legal documents.",
-    "I need a system that detects fraud in banking transactions before money leaves the account.",
-    "Can you help me design software for controlling satellites?",
-    "I want to create an app where users can upload videos, livestream, chat, and pay creators.",
-    "We're building a nationwide electronic voting system.",
-    "My company wants to migrate from a monolith to microservices over the next two years.",
-    "We have dozens of legacy applications and management wants 'everything moved to the cloud.'",
-    "I want to create an AI research assistant that reads papers, summarizes them, and writes literature reviews.",
-    "Our hospital was hit by ransomware last week. We need a long-term recovery and prevention strategy.",
-    "We're opening a cryptocurrency exchange and expect millions of users on day one.",
-    "My manufacturing plant wants predictive maintenance using machine learning and sensor data.",
-    "I'm building software for autonomous warehouse robots that need to avoid collisions and optimize routes.",
-    "I want a platform where researchers can securely share confidential medical datasets across universities.",
-    "Help me build software for managing an airport, including flights, baggage, security, and passenger services.",
-    "We're building a battery-less NFC smart bandage that continuously monitors diabetic wounds and sends data to a mobile app.",
-    "My university wants to detect cheating during online exams using AI while keeping student privacy protected.",
-    "We're launching a digital insurance company that uses AI to approve claims automatically while preventing fraud.",
-    "I want to build a smart city platform that manages traffic lights, emergency services, utilities, environmental sensors, and citizen services from one dashboard."
+TEST_CASES = [
+    # ==========================================================
+    # ROUTING TRAPS (1-8)
+    # ==========================================================
+    {
+        "id": 1,
+        "category": "Routing Bias",
+        "question": "Design an AI-powered ICU patient monitoring platform with encrypted telemetry, anomaly detection, and predictive alerts."
+    },
+    {
+        "id": 2,
+        "category": "Routing Bias",
+        "question": "Develop a fraud detection system using graph neural networks for a multinational bank."
+    },
+    {
+        "id": 3,
+        "category": "Routing Bias",
+        "question": "Create an autonomous laboratory capable of conducting biological experiments with robotic automation."
+    },
+    {
+        "id": 4,
+        "category": "Routing Bias",
+        "question": "Design a secure electronic health record platform supporting remote diagnosis."
+    },
+    {
+        "id": 5,
+        "category": "Routing Bias",
+        "question": "Build a nationwide vaccine logistics prediction platform."
+    },
+    {
+        "id": 6,
+        "category": "Routing Bias",
+        "question": "Create an AI system for predicting stock market manipulation."
+    },
+    {
+        "id": 7,
+        "category": "Routing Bias",
+        "question": "Develop a satellite image analysis system for crop disease prediction."
+    },
+    {
+        "id": 8,
+        "category": "Routing Bias",
+        "question": "Build an AI-powered legal document review platform with compliance monitoring."
+    },
+    # ==========================================================
+    # MULTI-DOMAIN ROUTING (9-16)
+    # ==========================================================
+    {
+        "id": 9,
+        "category": "Multi Domain",
+        "question": "Build a telemedicine platform supporting AI diagnosis, cloud deployment, billing, secure messaging, and medical imaging."
+    },
+    {
+        "id": 10,
+        "category": "Multi Domain",
+        "question": "Design a self-driving taxi fleet management platform."
+    },
+    {
+        "id": 11,
+        "category": "Multi Domain",
+        "question": "Create a smart manufacturing plant using predictive maintenance and robotics."
+    },
+    {
+        "id": 12,
+        "category": "Multi Domain",
+        "question": "Develop a cryptocurrency exchange for institutional investors."
+    },
+    {
+        "id": 13,
+        "category": "Multi Domain",
+        "question": "Build a nationwide electronic voting platform."
+    },
+    {
+        "id": 14,
+        "category": "Multi Domain",
+        "question": "Develop an AI-powered university management system."
+    },
+    {
+        "id": 15,
+        "category": "Multi Domain",
+        "question": "Design a digital twin platform for an international airport."
+    },
+    {
+        "id": 16,
+        "category": "Multi Domain",
+        "question": "Create an autonomous maritime shipping management platform."
+    },
+    # ==========================================================
+    # AMBIGUITY (17-21)
+    # ==========================================================
+    {
+        "id": 17,
+        "category": "Clarification",
+        "question": "Build an AI assistant for hospitals."
+    },
+    {
+        "id": 18,
+        "category": "Clarification",
+        "question": "Improve cybersecurity for my company."
+    },
+    {
+        "id": 19,
+        "category": "Clarification",
+        "question": "I want to digitize my business."
+    },
+    {
+        "id": 20,
+        "category": "Clarification",
+        "question": "Help me build an intelligent healthcare platform."
+    },
+    {
+        "id": 21,
+        "category": "Clarification",
+        "question": "Design an enterprise AI platform."
+    },
+    # ==========================================================
+    # TASK DECOMPOSITION (22-26)
+    # ==========================================================
+    {
+        "id": 22,
+        "category": "Planning",
+        "question": "A government wants to build a nationwide digital healthcare ecosystem."
+    },
+    {
+        "id": 23,
+        "category": "Planning",
+        "question": "A Fortune 500 company wants to migrate all infrastructure to the cloud."
+    },
+    {
+        "id": 24,
+        "category": "Planning",
+        "question": "Develop an AI-powered financial trading platform from scratch."
+    },
+    {
+        "id": 25,
+        "category": "Planning",
+        "question": "Design an autonomous drone delivery ecosystem."
+    },
+    {
+        "id": 26,
+        "category": "Planning",
+        "question": "Build an international digital identity platform."
+    },
+    # ==========================================================
+    # EXECUTION ORDER (27-30)
+    # ==========================================================
+    {
+        "id": 27,
+        "category": "Execution Order",
+        "question": "Develop a medical imaging AI startup from concept to deployment. Produce the correct execution order for specialist involvement."
+    },
+    {
+        "id": 28,
+        "category": "Execution Order",
+        "question": "Create a military cyber-defense platform. Determine the optimal specialist execution sequence."
+    },
+    {
+        "id": 29,
+        "category": "Execution Order",
+        "question": "Build a Mars habitat management system. Decide which specialists should be involved first and justify the dependency chain."
+    },
+    {
+        "id": 30,
+        "category": "Execution Order",
+        "question": "Develop an AI operating system capable of managing distributed autonomous agents. Determine routing, dependencies, and execution order."
+    }
 ]
 
 def main():
@@ -64,9 +199,10 @@ def main():
 
     print("\nModel loaded successfully! Beginning evaluation...\n")
     
-    for i, question in enumerate(QUESTIONS, 1):
+    for case in TEST_CASES:
+        question = case["question"]
         print(f"---------------------------------------------------------")
-        print(f"CASE [{i}/30]")
+        print(f"CASE [{case['id']}/30] | Category: {case['category']}")
         print(f"Q: {question}")
         print("---------------------------------------------------------")
         
