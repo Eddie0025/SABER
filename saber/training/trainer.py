@@ -460,6 +460,64 @@ def train(cfg: TrainConfig) -> str:
             return original_compute_loss(self, *args, **kwargs)
         DPOTrainer.compute_loss = patched_compute_loss
 
+        # Monkeypatch DPOTrainer.tokenize_row to safely handle None bos_token_id
+        def patched_tokenize_row(features, processing_class, max_prompt_length=None, max_completion_length=None, add_special_tokens=True):
+            tokenizer = processing_class
+            prompt_tokens = tokenizer(features["prompt"], add_special_tokens=False)
+            chosen_tokens = tokenizer(features["chosen"], add_special_tokens=False)
+            rejected_tokens = tokenizer(features["rejected"], add_special_tokens=False)
+            
+            prompt_input_ids = prompt_tokens["input_ids"]
+            chosen_input_ids = chosen_tokens["input_ids"]
+            rejected_input_ids = rejected_tokens["input_ids"]
+            
+            has_attention_mask = "attention_mask" in prompt_tokens
+            if has_attention_mask:
+                prompt_attention_mask = prompt_tokens["attention_mask"]
+                chosen_attention_mask = chosen_tokens["attention_mask"]
+                rejected_attention_mask = rejected_tokens["attention_mask"]
+                
+            if add_special_tokens:
+                if tokenizer.bos_token_id is not None:
+                    prompt_input_ids = [tokenizer.bos_token_id] + prompt_input_ids
+                    if has_attention_mask:
+                        prompt_attention_mask = [1] + prompt_attention_mask
+                if tokenizer.eos_token_id is not None:
+                    prompt_input_ids = prompt_input_ids + [tokenizer.eos_token_id]
+                    if has_attention_mask:
+                        prompt_attention_mask = prompt_attention_mask + [1]
+                        
+            if tokenizer.eos_token_id is not None:
+                chosen_input_ids = chosen_input_ids + [tokenizer.eos_token_id]
+                rejected_input_ids = rejected_input_ids + [tokenizer.eos_token_id]
+                if has_attention_mask:
+                    chosen_attention_mask = chosen_attention_mask + [1]
+                    rejected_attention_mask = rejected_attention_mask + [1]
+                    
+            if max_prompt_length is not None:
+                prompt_input_ids = prompt_input_ids[-max_prompt_length:]
+                if has_attention_mask:
+                    prompt_attention_mask = prompt_attention_mask[-max_prompt_length:]
+            if max_completion_length is not None:
+                chosen_input_ids = chosen_input_ids[:max_completion_length]
+                rejected_input_ids = rejected_input_ids[:max_completion_length]
+                if has_attention_mask:
+                    chosen_attention_mask = chosen_attention_mask[:max_completion_length]
+                    rejected_attention_mask = rejected_attention_mask[:max_completion_length]
+                    
+            res = {
+                "prompt_input_ids": prompt_input_ids,
+                "chosen_input_ids": chosen_input_ids,
+                "rejected_input_ids": rejected_input_ids,
+            }
+            if has_attention_mask:
+                res["prompt_attention_mask"] = prompt_attention_mask
+                res["chosen_attention_mask"] = chosen_attention_mask
+                res["rejected_attention_mask"] = rejected_attention_mask
+            return res
+            
+        DPOTrainer.tokenize_row = staticmethod(patched_tokenize_row)
+
         # Monkeypatch DPODataCollatorWithPadding to filter out keys that contain None values and clean up list features containing None elements
         original_collator_call = DPODataCollatorWithPadding.__call__
         def patched_collator_call(self, features):
