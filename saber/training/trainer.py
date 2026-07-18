@@ -427,6 +427,21 @@ def train(cfg: TrainConfig) -> str:
             model.train()
 
     if cfg.dpo_mode:
+        import transformers
+        import inspect
+        
+        # Monkeypatch Trainer.__init__ to resolve version mismatch between newer transformers and older TRL
+        original_trainer_init = transformers.Trainer.__init__
+        
+        def patched_trainer_init(self, *args, **kwargs):
+            if "tokenizer" in kwargs:
+                sig = inspect.signature(original_trainer_init)
+                if "processing_class" in sig.parameters and "tokenizer" not in sig.parameters:
+                    kwargs["processing_class"] = kwargs.pop("tokenizer")
+            original_trainer_init(self, *args, **kwargs)
+            
+        transformers.Trainer.__init__ = patched_trainer_init
+
         from trl import DPOTrainer
         # DPOTrainer doesn't need the DataCollatorForLanguageModeling
         import inspect
