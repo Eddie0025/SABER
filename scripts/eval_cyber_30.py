@@ -3,195 +3,207 @@ import sys
 from saber.llm_engine import LLMEngine
 
 TEST_CASES = [
-    # ==========================================================
-    # NETWORK SECURITY
-    # ==========================================================
-    {
-        "id": 1,
-        "category": "Network Security",
-        "question": "A host can ping another server but cannot access HTTPS websites. Walk through your troubleshooting process."
-    },
-    {
-        "id": 2,
-        "category": "Network Security",
-        "question": "Explain the difference between a stateful firewall and a stateless firewall."
-    },
-    {
-        "id": 3,
-        "category": "Network Security",
-        "question": "How would you detect DNS tunneling in enterprise network traffic?"
-    },
-    # ==========================================================
-    # WEB SECURITY
-    # ==========================================================
-    {
-        "id": 4,
-        "category": "Web Security",
-        "question": "Differentiate SQL Injection, Command Injection, and LDAP Injection."
-    },
-    {
-        "id": 5,
-        "category": "Web Security",
-        "question": "Explain the difference between reflected, stored, and DOM-based XSS."
-    },
-    {
-        "id": 6,
-        "category": "Web Security",
-        "question": "A website is vulnerable to CSRF. Explain how you would mitigate it."
-    },
-    # ==========================================================
-    # CRYPTOGRAPHY
-    # ==========================================================
-    {
-        "id": 7,
-        "category": "Cryptography",
-        "question": "Why should passwords be hashed with bcrypt or Argon2 instead of SHA-256?"
-    },
-    {
-        "id": 8,
-        "category": "Cryptography",
-        "question": "Explain symmetric vs asymmetric encryption with practical use cases."
-    },
-    {
-        "id": 9,
-        "category": "Cryptography",
-        "question": "Why is reusing an IV in AES-CBC considered insecure?"
-    },
-    # ==========================================================
-    # MALWARE
-    # ==========================================================
-    {
-        "id": 10,
-        "category": "Malware",
-        "question": "Differentiate a virus, worm, trojan, ransomware, and rootkit."
-    },
-    {
-        "id": 11,
-        "category": "Malware",
-        "question": "A workstation suddenly begins encrypting files and making thousands of SMB connections. What type of attack do you suspect, and what should be your first response?"
-    },
-    {
-        "id": 12,
-        "category": "Malware",
-        "question": "Explain the stages of ransomware execution from initial infection to encryption."
-    },
-    # ==========================================================
-    # INCIDENT RESPONSE
-    # ==========================================================
-    {
-        "id": 13,
-        "category": "Incident Response",
-        "question": "A domain administrator account is suspected to be compromised. Walk through your incident response process."
-    },
-    {
-        "id": 14,
-        "category": "Incident Response",
-        "question": "Explain the six phases of incident response."
-    },
-    {
-        "id": 15,
-        "category": "Incident Response",
-        "question": "When should an infected endpoint be isolated from the network?"
-    },
-    # ==========================================================
-    # AUTHENTICATION
-    # ==========================================================
-    {
-        "id": 16,
-        "category": "Authentication",
-        "question": "Explain Kerberos authentication step-by-step."
-    },
-    {
-        "id": 17,
-        "category": "Authentication",
-        "question": "Differentiate Pass-the-Hash and Pass-the-Ticket attacks."
-    },
-    {
-        "id": 18,
-        "category": "Authentication",
-        "question": "Explain why Multi-Factor Authentication greatly reduces account compromise."
-    },
-    # ==========================================================
-    # CLOUD SECURITY
-    # ==========================================================
-    {
-        "id": 19,
-        "category": "Cloud",
-        "question": "An S3 bucket is accidentally exposed publicly. What risks exist, and what steps should be taken?"
-    },
-    {
-        "id": 20,
-        "category": "Cloud",
-        "question": "Explain the Shared Responsibility Model in cloud security."
-    },
-    # ==========================================================
-    # FORENSICS
-    # ==========================================================
-    {
-        "id": 21,
-        "category": "Digital Forensics",
-        "question": "Explain the importance of maintaining chain of custody during an investigation."
-    },
-    {
-        "id": 22,
-        "category": "Digital Forensics",
-        "question": "A Linux authentication log shows repeated failed SSH logins followed by a successful login from the same IP. What does this suggest?"
-    },
-    # ==========================================================
-    # SECURE CODING
-    # ==========================================================
-    {
-        "id": 23,
-        "category": "Secure Coding",
-        "question": """Find the vulnerability.
 
-query = "SELECT * FROM users WHERE username='" + user + "'"
-"""
-    },
-    {
-        "id": 24,
-        "category": "Secure Coding",
-        "question": "Why is using eval() on untrusted user input dangerous?"
-    },
-    # ==========================================================
-    # THREAT MODELING
-    # ==========================================================
-    {
-        "id": 25,
-        "category": "Threat Modeling",
-        "question": "Explain the STRIDE threat modeling framework."
-    },
-    {
-        "id": 26,
-        "category": "Threat Modeling",
-        "question": "How would you perform a threat model for an online banking application?"
-    },
-    # ==========================================================
-    # RED TEAM / BLUE TEAM
-    # ==========================================================
-    {
-        "id": 27,
-        "category": "Operations",
-        "question": "Differentiate penetration testing, vulnerability assessment, and red teaming."
-    },
-    {
-        "id": 28,
-        "category": "Operations",
-        "question": "Explain the MITRE ATT&CK framework and why defenders use it."
-    },
-    # ==========================================================
-    # SECURITY ENGINEERING
-    # ==========================================================
-    {
-        "id": 29,
-        "category": "Security Engineering",
-        "question": "Design a Zero Trust architecture for a medium-sized enterprise."
-    },
-    {
-        "id": 30,
-        "category": "Security Engineering",
-        "question": "A company's VPN credentials have been leaked online. Describe your immediate response and long-term remediation plan."
-    }
+# ==========================================================
+# THREAT MODELING (1-6)
+# ==========================================================
+
+{
+    "id": 1,
+    "category": "Threat Modeling",
+    "question": "Design a threat model for a nationwide digital banking platform. Identify the primary assets, threat actors, attack surfaces, and highest-risk attack scenarios."
+},
+
+{
+    "id": 2,
+    "category": "Threat Modeling",
+    "question": "An AI-powered hospital platform stores patient records, medical images, and live telemetry. Construct a threat model and prioritize the risks."
+},
+
+{
+    "id": 3,
+    "category": "Threat Modeling",
+    "question": "Your company is migrating from an on-premise monolith to Kubernetes. Explain how the threat landscape changes."
+},
+
+{
+    "id": 4,
+    "category": "Threat Modeling",
+    "question": "Identify the security risks introduced by exposing an internal REST API to third-party developers."
+},
+
+{
+    "id": 5,
+    "category": "Threat Modeling",
+    "question": "Threat model an autonomous drone fleet used for package delivery."
+},
+
+{
+    "id": 6,
+    "category": "Threat Modeling",
+    "question": "Threat model a distributed AI agent system where multiple autonomous agents communicate over the public Internet."
+},
+
+# ==========================================================
+# INCIDENT RESPONSE (7-12)
+# ==========================================================
+
+{
+    "id": 7,
+    "category": "Incident Response",
+    "question": "Multiple employees report that all shared files suddenly have a '.locked' extension. Describe your first ten incident response actions in order."
+},
+
+{
+    "id": 8,
+    "category": "Incident Response",
+    "question": "A domain administrator account begins authenticating simultaneously from India, Germany, and Brazil. Explain your investigation process."
+},
+
+{
+    "id": 9,
+    "category": "Incident Response",
+    "question": "A production database is leaking customer records. Explain how you would contain the incident while preserving forensic evidence."
+},
+
+{
+    "id": 10,
+    "category": "Incident Response",
+    "question": "A Kubernetes cluster is suspected to have been compromised. Describe your investigation methodology."
+},
+
+{
+    "id": 11,
+    "category": "Incident Response",
+    "question": "An employee accidentally uploads confidential source code to a public GitHub repository. Explain the incident response process."
+},
+
+{
+    "id": 12,
+    "category": "Incident Response",
+    "question": "A company discovers malware communicating with an unknown command-and-control server. Outline your response from detection to eradication."
+},
+
+# ==========================================================
+# DETECTION ENGINEERING (13-18)
+# ==========================================================
+
+{
+    "id": 13,
+    "category": "Detection Engineering",
+    "question": "Describe how you would detect credential stuffing attacks without relying solely on failed login counts."
+},
+
+{
+    "id": 14,
+    "category": "Detection Engineering",
+    "question": "How would you distinguish legitimate PowerShell administration from malicious PowerShell activity?"
+},
+
+{
+    "id": 15,
+    "category": "Detection Engineering",
+    "question": "Design a detection strategy for lateral movement within an Active Directory environment."
+},
+
+{
+    "id": 16,
+    "category": "Detection Engineering",
+    "question": "How would you detect data exfiltration over HTTPS without decrypting all traffic?"
+},
+
+{
+    "id": 17,
+    "category": "Detection Engineering",
+    "question": "Design detections for insider threats involving privileged users."
+},
+
+{
+    "id": 18,
+    "category": "Detection Engineering",
+    "question": "How would you detect ransomware before file encryption begins?"
+},
+
+# ==========================================================
+# SECURITY ARCHITECTURE (19-24)
+# ==========================================================
+
+{
+    "id": 19,
+    "category": "Architecture",
+    "question": "Explain how Zero Trust differs from a traditional perimeter-based security model."
+},
+
+{
+    "id": 20,
+    "category": "Architecture",
+    "question": "Design a secure authentication architecture for a global SaaS platform serving 100 million users."
+},
+
+{
+    "id": 21,
+    "category": "Architecture",
+    "question": "Explain why network segmentation limits attacker movement even after initial compromise."
+},
+
+{
+    "id": 22,
+    "category": "Architecture",
+    "question": "Describe the security architecture for protecting software supply chains."
+},
+
+{
+    "id": 23,
+    "category": "Architecture",
+    "question": "Design a secure secrets management strategy for thousands of microservices."
+},
+
+{
+    "id": 24,
+    "category": "Architecture",
+    "question": "Explain how hardware-backed key storage changes an organization's security posture."
+},
+
+# ==========================================================
+# CRYPTOGRAPHY & SECURITY REASONING (25-30)
+# ==========================================================
+
+{
+    "id": 25,
+    "category": "Cryptography",
+    "question": "Explain why simply increasing encryption key length does not automatically improve overall system security."
+},
+
+{
+    "id": 26,
+    "category": "Cryptography",
+    "question": "Compare symmetric encryption, asymmetric encryption, hashing, and digital signatures. Explain when each should be used."
+},
+
+{
+    "id": 27,
+    "category": "Security Reasoning",
+    "question": "A company requires multi-factor authentication but users complain about usability. Explain how you would balance security and user experience."
+},
+
+{
+    "id": 28,
+    "category": "Security Reasoning",
+    "question": "Explain why security through obscurity should never be the primary defense mechanism."
+},
+
+{
+    "id": 29,
+    "category": "Security Reasoning",
+    "question": "A vulnerability scanner reports 10,000 findings across an enterprise. Explain how you would prioritize remediation rather than fixing vulnerabilities by CVSS score alone."
+},
+
+{
+    "id": 30,
+    "category": "Integrated Security",
+    "question": "Design a defense-in-depth strategy for protecting a nationwide AI infrastructure from ransomware, insider threats, supply-chain attacks, and nation-state adversaries."
+}
+
 ]
 
 def main():
