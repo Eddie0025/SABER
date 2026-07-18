@@ -1,50 +1,208 @@
 import sys
 from saber.llm_engine import LLMEngine
 
-QUESTIONS = [
-    # Category 1: Recall
-    "What is the first-line treatment for anaphylaxis?",
-    "What electrolyte abnormality is classically associated with refeeding syndrome?",
-    "What is the antidote for acetaminophen overdose?",
-    "What cranial nerve is responsible for the corneal reflex's afferent limb?",
-    "What is the classic triad of Cushing's reflex (raised ICP)?",
-    "What lab marker is most specific for acute pancreatitis?",
+TEST_CASES = [
 
-    # Category 2: Rare-but-classic
-    "A patient with rapidly progressive renal failure and hemoptysis — what syndrome should be suspected?",
-    "What triad characterizes Reiter's syndrome/reactive arthritis?",
-    "What is Charcot's triad for ascending cholangitis?",
-    "What is the classic finding of Boerhaave syndrome on imaging?",
+# ==========================================================
+# DIFFERENTIAL DIAGNOSIS (1-8)
+# ==========================================================
 
-    # Category 3: Differentiation
-    "A patient has acute abdominal pain. Differentiate between appendicitis and mesenteric adenitis based on typical presentation.",
-    "Differentiate between a transudative and exudative pleural effusion, and give one cause of each.",
-    "A patient presents with joint pain. Differentiate osteoarthritis from rheumatoid arthritis based on pattern and timing of symptoms.",
-    "Differentiate between Type 1 and Type 2 diabetes based on typical age of onset, body habitus, and C-peptide levels.",
-    "A patient has chest pain. What clinical features would make you favor pericarditis over MI?",
-    "Differentiate between a hemorrhagic and ischemic stroke based on presentation and initial imaging approach.",
+{
+    "id": 1,
+    "category": "Differential Diagnosis",
+    "question": "A 67-year-old man develops sudden severe chest pain after repeated vomiting. ECG is normal, troponin is negative, and chest X-ray shows mediastinal widening. What is the most likely diagnosis and what features distinguish it from myocardial infarction and aortic dissection?"
+},
 
-    # Category 4: Mechanism
-    "Explain the mechanism by which ACE inhibitors can cause a dry cough.",
-    "Explain why patients with liver cirrhosis develop ascites.",
-    "Explain the mechanism by which beta-blockers can mask the symptoms of hypoglycemia.",
-    "Explain why hyperkalemia causes cardiac conduction abnormalities.",
-    "Explain the mechanism behind why NSAIDs can worsen renal function in a dehydrated patient.",
+{
+    "id": 2,
+    "category": "Differential Diagnosis",
+    "question": "A patient presents with fever, confusion, neck stiffness, and photophobia. Explain how you differentiate bacterial meningitis, viral meningitis, encephalitis, and subarachnoid hemorrhage."
+},
 
-    # Category 5: Multi-step
-    "A patient's ABG shows pH 7.30, pCO2 30, HCO3 15. Identify the primary acid-base disorder and whether compensation is appropriate.",
-    "A patient on warfarin presents with an INR of 8 and no active bleeding. Walk through the appropriate management steps.",
-    "Calculate the anion gap for Na 140, Cl 100, HCO3 15, and interpret whether this suggests a high-anion-gap or normal-anion-gap acidosis.",
+{
+    "id": 3,
+    "category": "Differential Diagnosis",
+    "question": "Compare delirium, dementia, and depression in an elderly patient with progressive memory loss."
+},
 
-    # Category 6: Red-herring resistance
-    "A patient with known anxiety disorder presents with chest pain, diaphoresis, and left arm numbness. Given their anxiety history, is it reasonable to assume this is a panic attack?",
-    "A patient with a known peanut allergy presents with hives and mild lip swelling after eating at a restaurant that doesn't serve peanuts. Should the peanut allergy be dismissed as the cause?",
-    "An elderly patient with dementia presents with new confusion. A family member mentions the patient 'always gets confused in the evening.' Should this new confusion be attributed to their baseline dementia pattern?",
+{
+    "id": 4,
+    "category": "Differential Diagnosis",
+    "question": "Differentiate Crohn disease from ulcerative colitis using pathology, clinical presentation, imaging, and complications."
+},
 
-    # Category 7: Misconceptions
-    "True or false: 'Antibiotics are effective treatment for the common cold.' Explain.",
-    "True or false: 'A fever must always be treated with antipyretics to prevent brain damage.' Explain.",
-    "True or false: 'If a patient's blood pressure is normal, they cannot be in shock.' Explain."
+{
+    "id": 5,
+    "category": "Differential Diagnosis",
+    "question": "Differentiate nephritic syndrome from nephrotic syndrome using pathophysiology rather than memorized features."
+},
+
+{
+    "id": 6,
+    "category": "Differential Diagnosis",
+    "question": "A patient presents with jaundice. Explain how you differentiate pre-hepatic, hepatic, and post-hepatic causes."
+},
+
+{
+    "id": 7,
+    "category": "Differential Diagnosis",
+    "question": "Differentiate septic shock, cardiogenic shock, hypovolemic shock, and obstructive shock."
+},
+
+{
+    "id": 8,
+    "category": "Differential Diagnosis",
+    "question": "Differentiate SIADH from cerebral salt wasting in a neurosurgical patient."
+},
+
+# ==========================================================
+# PATHOPHYSIOLOGY (9-15)
+# ==========================================================
+
+{
+    "id": 9,
+    "category": "Mechanism",
+    "question": "Explain why hypophosphatemia develops during refeeding syndrome."
+},
+
+{
+    "id": 10,
+    "category": "Mechanism",
+    "question": "Explain why insulin administration lowers serum potassium."
+},
+
+{
+    "id": 11,
+    "category": "Mechanism",
+    "question": "Explain the mechanism producing Cushing's triad during raised intracranial pressure."
+},
+
+{
+    "id": 12,
+    "category": "Mechanism",
+    "question": "Why does metabolic acidosis increase serum potassium despite total body potassium often being depleted?"
+},
+
+{
+    "id": 13,
+    "category": "Mechanism",
+    "question": "Explain why pulmonary embolism frequently causes respiratory alkalosis."
+},
+
+{
+    "id": 14,
+    "category": "Mechanism",
+    "question": "Explain why diabetic ketoacidosis causes both dehydration and metabolic acidosis."
+},
+
+{
+    "id": 15,
+    "category": "Mechanism",
+    "question": "Explain the physiological basis of Starling forces and edema formation."
+},
+
+# ==========================================================
+# EMERGENCY MEDICINE (16-21)
+# ==========================================================
+
+{
+    "id": 16,
+    "category": "Emergency",
+    "question": "A trauma patient has hypotension, distended neck veins, and absent breath sounds on the left. What is the immediate management and why?"
+},
+
+{
+    "id": 17,
+    "category": "Emergency",
+    "question": "A patient develops anaphylaxis after receiving IV antibiotics. Outline the first five priorities of management in order."
+},
+
+{
+    "id": 18,
+    "category": "Emergency",
+    "question": "An unconscious diabetic patient arrives without laboratory results. Describe your immediate diagnostic and treatment priorities."
+},
+
+{
+    "id": 19,
+    "category": "Emergency",
+    "question": "A patient with chest pain suddenly develops hypotension and electrical alternans on ECG. Explain the diagnosis and immediate intervention."
+},
+
+{
+    "id": 20,
+    "category": "Emergency",
+    "question": "A patient presents with acute ischemic stroke symptoms 90 minutes after onset. Outline the emergency decision-making pathway."
+},
+
+{
+    "id": 21,
+    "category": "Emergency",
+    "question": "Explain the immediate priorities in suspected Boerhaave syndrome."
+},
+
+# ==========================================================
+# CLINICAL REASONING (22-26)
+# ==========================================================
+
+{
+    "id": 22,
+    "category": "Clinical Reasoning",
+    "question": "Interpret: pH 7.28, PaCO₂ 60 mmHg, HCO₃⁻ 28 mmol/L. Explain the primary disorder and expected compensation."
+},
+
+{
+    "id": 23,
+    "category": "Clinical Reasoning",
+    "question": "Interpret: pH 7.52, PaCO₂ 28 mmHg, HCO₃⁻ 22 mmol/L. Explain the acid-base disturbance and likely causes."
+},
+
+{
+    "id": 24,
+    "category": "Clinical Reasoning",
+    "question": "A patient with chronic kidney disease presents with hyperkalemia. Explain the mechanisms and immediate treatment priorities."
+},
+
+{
+    "id": 25,
+    "category": "Clinical Reasoning",
+    "question": "Explain why oxygen therapy must be used carefully in some patients with chronic hypercapnic COPD."
+},
+
+{
+    "id": 26,
+    "category": "Clinical Reasoning",
+    "question": "A patient develops hypotension immediately after spinal anesthesia. Explain the physiological mechanism."
+},
+
+# ==========================================================
+# SAFETY & PHARMACOLOGY (27-30)
+# ==========================================================
+
+{
+    "id": 27,
+    "category": "Safety",
+    "question": "Explain why potassium should generally never be administered as an IV push."
+},
+
+{
+    "id": 28,
+    "category": "Pharmacology",
+    "question": "Compare unfractionated heparin, low-molecular-weight heparin, and direct oral anticoagulants. Focus on mechanisms, monitoring, reversal, and clinical use."
+},
+
+{
+    "id": 29,
+    "category": "Safety",
+    "question": "Explain why broad-spectrum antibiotics should not be started indiscriminately even in seriously ill patients."
+},
+
+{
+    "id": 30,
+    "category": "Clinical Integration",
+    "question": "A patient with diabetes, chronic kidney disease, heart failure, and atrial fibrillation presents with sepsis. Describe your approach to balancing competing treatment priorities."
+}
+
 ]
 
 def main():
@@ -64,9 +222,11 @@ def main():
 
     print("\nModel loaded successfully! Beginning evaluation...\n")
     
-    for i, question in enumerate(QUESTIONS, 1):
+    for i, case in enumerate(TEST_CASES, 1):
+        question = case["question"]
+        category = case["category"]
         print(f"---------------------------------------------------------")
-        print(f"CASE [{i}/30]")
+        print(f"CASE [{i}/30] - Category: {category}")
         print(f"Q: {question}")
         print("---------------------------------------------------------")
         
