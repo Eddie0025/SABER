@@ -79,6 +79,8 @@ class TrainConfig:
     seed: int = 42
     packing: bool = True
     gpu_id: int = 0                         # Which GPU to target
+    patch_mode: bool = False
+    dpo_mode: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +199,33 @@ def format_for_sft(
     return formatted
 
 
+def format_for_dpo(records: List[Dict[str, Any]], domain: str) -> List[Dict[str, str]]:
+    """Format records for DPOTrainer."""
+    system_prompt = _DOMAIN_SYSTEM_PROMPTS.get(
+        domain,
+        "You are a helpful AI assistant. Think step by step.",
+    )
+    formatted = []
+    for rec in records:
+        prompt_text = rec.get("prompt", "").strip()
+        chosen = rec.get("chosen", "").strip()
+        rejected = rec.get("rejected", "").strip()
+        if not prompt_text or not chosen or not rejected:
+            continue
+
+        prompt_formatted = (
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+            f"<|im_start|>user\n{prompt_text}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
+        formatted.append({
+            "prompt": prompt_formatted,
+            "chosen": f"{chosen}<|im_end|>",
+            "rejected": f"{rejected}<|im_end|>"
+        })
+    return formatted
+
+
 # ---------------------------------------------------------------------------
 # Main training function
 # ---------------------------------------------------------------------------
@@ -293,8 +322,13 @@ def train(cfg: TrainConfig) -> str:
         return ""
 
     print(f"[trainer] Loaded {len(records)} raw records from {cfg.data_path}")
-    formatted = format_for_sft(records, cfg.domain)
-    print(f"[trainer] Formatted {len(formatted)} records for SFT")
+    
+    if cfg.dpo_mode:
+        formatted = format_for_dpo(records, cfg.domain)
+        print(f"[trainer] Formatted {len(formatted)} records for DPO")
+    else:
+        formatted = format_for_sft(records, cfg.domain)
+        print(f"[trainer] Formatted {len(formatted)} records for SFT")
 
     # 3b. Tokenize dataset directly (no trl dependency) -----------------
     def tokenize_fn(examples):
@@ -309,19 +343,42 @@ def train(cfg: TrainConfig) -> str:
     dataset = Dataset.from_list(formatted)
 
     # Split 95/5 — maximise training data, minimal eval set
-    split = dataset.train_test_split(test_size=0.05, seed=cfg.seed)
-    train_ds = split["train"].map(tokenize_fn, batched=True, remove_columns=["text"])
-    eval_ds = split["test"].map(tokenize_fn, batched=True, remove_columns=["text"])
+    if not cfg.dpo_mode:
+        split = dataset.train_test_split(test_size=0.05, seed=cfg.seed)
+        train_ds = split["train"].map(tokenize_fn, batched=True, remove_columns=["text"])
+        eval_ds = split["test"].map(tokenize_fn, batched=True, remove_columns=["text"])
+    else:
+        # DPO mode does not use tokenized mapped dataset beforehand because DPOTrainer does it internally
+        split = dataset.train_test_split(test_size=0.05, seed=cfg.seed)
+        train_ds = split["train"]
+        eval_ds = split["test"]
 
-    print(f"[trainer] Tokenized {len(train_ds)} train / {len(eval_ds)} eval samples")
+    print(f"[trainer] Ready {len(train_ds)} train / {len(eval_ds)} eval samples")
 
     # 4. Training arguments ---------------------------------------------
+    
+    # Adjust for patch_mode
+    num_epochs = cfg.epochs
+    per_device_batch = cfg.batch_size
+    grad_accum = cfg.gradient_accumulation_steps
+    
+    if cfg.patch_mode:
+        num_epochs = 5
+        per_device_batch = 2
+        grad_accum = 1
+        print(f"[trainer] PATCH MODE active: epochs={num_epochs}, batch={per_device_batch}, grad_accum={grad_accum}")
+    if cfg.dpo_mode:
+        num_epochs = 3
+        per_device_batch = 2
+        grad_accum = 1
+        print(f"[trainer] DPO MODE active: epochs={num_epochs}, batch={per_device_batch}, grad_accum={grad_accum}")
+
     training_args = TrainingArguments(
         output_dir=cfg.output_dir,
-        num_train_epochs=cfg.epochs,
-        per_device_train_batch_size=cfg.batch_size,
-        per_device_eval_batch_size=cfg.batch_size,
-        gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+        num_train_epochs=num_epochs,
+        per_device_train_batch_size=per_device_batch,
+        per_device_eval_batch_size=per_device_batch,
+        gradient_accumulation_steps=grad_accum,
         learning_rate=cfg.learning_rate,
         warmup_ratio=cfg.warmup_ratio,
         fp16=cfg.fp16,
@@ -369,17 +426,31 @@ def train(cfg: TrainConfig) -> str:
             print(f"{generated_text}\n============================================================\n")
             model.train()
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_ds,
-        eval_dataset=eval_ds,
-        data_collator=data_collator,
-        callbacks=[
-            EarlyStoppingCallback(early_stopping_patience=1),
-            GenerationCallback(tokenizer, cfg.domain)
-        ],
-    )
+    if cfg.dpo_mode:
+        from trl import DPOTrainer
+        # DPOTrainer doesn't need the DataCollatorForLanguageModeling
+        trainer = DPOTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            tokenizer=tokenizer,
+            beta=0.1,  # Standard DPO beta
+            max_prompt_length=cfg.max_seq_length // 2,
+            max_length=cfg.max_seq_length,
+        )
+    else:
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            data_collator=data_collator,
+            callbacks=[
+                EarlyStoppingCallback(early_stopping_patience=1),
+                GenerationCallback(tokenizer, cfg.domain)
+            ],
+        )
 
     print(f"[trainer] Starting training — {len(train_ds)} train / {len(eval_ds)} eval samples")
     trainer.train()
@@ -520,6 +591,8 @@ def main() -> None:
     parser.add_argument("--gpu", type=int, default=0, help="GPU index to use.")
     parser.add_argument("--no-packing", action="store_true", help="Disable data packing.")
     parser.add_argument("--max-seq-len", type=int, default=2048, help="Max sequence length.")
+    parser.add_argument("--patch-mode", action="store_true", help="Run in continuous SFT patch mode.")
+    parser.add_argument("--dpo-mode", action="store_true", help="Run in DPO mode (requires prompt/chosen/rejected).")
 
     # Use parse_known_args to prevent errors when running in Jupyter Notebook
     # which passes unrecognized arguments like `-f`
@@ -539,6 +612,8 @@ def main() -> None:
             gpu_id=args.gpu,
             packing=not args.no_packing,
             max_seq_length=args.max_seq_len,
+            patch_mode=args.patch_mode,
+            dpo_mode=args.dpo_mode,
         )
         train(cfg)
     else:
