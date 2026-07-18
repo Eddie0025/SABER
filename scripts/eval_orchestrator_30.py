@@ -42,6 +42,18 @@ def main():
     print(f" Loading Model: {model_path}")
     print("=========================================================")
     
+    from saber.config import SaberConfig
+    from saber.registry import SpecialistRegistry
+    from saber.audit import AuditLogger
+    from saber.orchestrator import Orchestrator
+    
+    # Initialize components to check programmatic routing
+    config = SaberConfig()
+    registry = SpecialistRegistry(config=config)
+    registry.discover_specialists()
+    audit = AuditLogger(config=config)
+    orch = Orchestrator(config=config, registry=registry, audit=audit)
+    
     try:
         engine = LLMEngine(model_path)
         engine.__enter__()
@@ -57,6 +69,13 @@ def main():
         print(f"Q: {question}")
         print("---------------------------------------------------------")
         
+        # Calculate programmatic routing
+        domain_scores = orch.classify_domains(question)
+        routed_specialists = orch.select_specialists(domain_scores)
+        print(f"PROGRAMMATIC ROUTING: {routed_specialists}")
+        print("Scores:", {d: round(s, 2) for d, s in domain_scores.items() if s > 0.05})
+        print("- - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
+        
         # Reset context for each question
         history = [
             {"role": "system", "content": "You are the SABER Orchestrator. Route requests to specialist models, decompose complex tasks, plan dependencies, and synthesize plans."}
@@ -64,7 +83,7 @@ def main():
         
         try:
             ans = engine.generate_with_history(history, new_user_message=question)
-            print(f"SABER: {ans}\n\n")
+            print(f"SABER Plan:\n{ans}\n\n")
         except Exception as e:
             print(f"SABER: [FAILED TO GENERATE] {e}\n\n")
             
