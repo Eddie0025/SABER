@@ -537,6 +537,9 @@ def train(cfg: TrainConfig) -> str:
                                 pad_val = self.pad_token_id if suffix == "_input_ids" else (0 if suffix == "_attention_mask" else self.label_pad_token_id)
                                 padding_size = max_len - rejected_tensor.shape[1]
                                 res[rejected_key] = torch.nn.functional.pad(rejected_tensor, (0, padding_size), value=pad_val)
+                # Debug print to verify shapes
+                shapes = {k: (list(v.shape) if hasattr(v, "shape") else type(v).__name__) for k, v in res.items()}
+                print(f"[DEBUG COLLATOR SHAPES] returned shapes: {shapes}")
                 return res
             except Exception as e:
                 print("\n=== COLLATOR ERROR DEBUG ===")
