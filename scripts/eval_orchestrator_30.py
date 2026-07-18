@@ -50,7 +50,7 @@ def main():
     # Initialize components to check programmatic routing
     config = SaberConfig()
     registry = SpecialistRegistry()
-    registry.discover_specialists()
+    registry.auto_discover()
     audit = AuditLogger()
     orch = Orchestrator(config=config, registry=registry, audit=audit)
     
@@ -77,8 +77,9 @@ def main():
         print("- - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
         
         # Reset context for each question
+        available_domains = ", ".join(registry.list_domains())
         history = [
-            {"role": "system", "content": "You are the SABER Orchestrator. Route requests to specialist models, decompose complex tasks, plan dependencies, and synthesize plans."}
+            {"role": "system", "content": f"You are the SABER Orchestrator. Route requests to specialist models, decompose complex tasks, plan dependencies, and synthesize plans. Available specialists: {available_domains}."}
         ]
         
         try:
