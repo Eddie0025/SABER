@@ -4,222 +4,175 @@ from saber.llm_engine import LLMEngine
 
 TEST_CASES = [
     # ==========================================================
-    # DEBUGGING
+    # EXPLANATION & REASONING (1-8)
     # ==========================================================
     {
         "id": 1,
-        "category": "Debugging",
-        "question": """Find and fix the bug.
-
-def remove_even(nums):
-    for n in nums:
-        if n % 2 == 0:
-            nums.remove(n)
-    return nums
-"""
+        "category": "Explanation",
+        "question": "Without writing any code, explain why recursion is generally avoided for production implementations of graph traversal in very large graphs. Discuss stack usage, memory, debugging, and maintainability."
     },
     {
         "id": 2,
-        "category": "Debugging",
-        "question": """Why does this recursive Fibonacci implementation become extremely slow for n=40? How would you improve it?
-
-def fib(n):
-    if n <= 1:
-        return n
-    return fib(n-1) + fib(n-2)
-"""
+        "category": "Explanation",
+        "question": "Explain why Python's asyncio can outperform multithreading for I/O-bound workloads. Do not provide code—focus on how the scheduler works."
     },
     {
         "id": 3,
-        "category": "Debugging",
-        "question": """This code sometimes throws KeyError.
-
-counts = {}
-for word in words:
-    counts[word] += 1
-
-Explain why and fix it."""
+        "category": "Explanation",
+        "question": "A senior engineer says, 'Premature optimization is the root of all evil.' Explain what this means and when optimization should actually begin."
     },
-    # ==========================================================
-    # ALGORITHMS
-    # ==========================================================
     {
         "id": 4,
-        "category": "Algorithms",
-        "question": "Implement Dijkstra's shortest path algorithm."
+        "category": "Explanation",
+        "question": "Explain why immutability often reduces bugs in concurrent software systems."
     },
     {
         "id": 5,
-        "category": "Algorithms",
-        "question": "Given a list of intervals, merge all overlapping intervals."
+        "category": "Explanation",
+        "question": "Explain why composition is generally preferred over inheritance in modern software engineering. Include situations where inheritance is still appropriate."
     },
     {
         "id": 6,
-        "category": "Algorithms",
-        "question": "Explain the difference between DFS and BFS. When would you choose one over the other?"
+        "category": "Explanation",
+        "question": "Why can adding more threads actually reduce application performance? Discuss context switching, lock contention, cache coherence, and CPU scheduling."
     },
     {
         "id": 7,
-        "category": "Algorithms",
-        "question": "Design an LRU Cache supporting O(1) get() and put()."
+        "category": "Explanation",
+        "question": "Explain why microservices are not automatically better than monolithic architectures."
     },
-    # ==========================================================
-    # COMPLEXITY
-    # ==========================================================
     {
         "id": 8,
-        "category": "Complexity",
-        "question": """Analyze the time and space complexity.
-
-for i in range(n):
-    for j in range(i,n):
-        print(i,j)
-"""
+        "category": "Explanation",
+        "question": "Explain why distributed systems are fundamentally harder to build than single-machine software."
     },
+    # ==========================================================
+    # TRADEOFFS (9-14)
+    # ==========================================================
     {
         "id": 9,
-        "category": "Complexity",
-        "question": "When is O(n log n) preferable to O(n²)? Give practical examples."
+        "category": "Tradeoffs",
+        "question": "When would a relational database outperform a NoSQL database? Explain the tradeoffs rather than choosing one universally."
     },
-    # ==========================================================
-    # PYTHON
-    # ==========================================================
     {
         "id": 10,
-        "category": "Python",
-        "question": "Explain generators. When should they be used instead of lists?"
+        "category": "Tradeoffs",
+        "question": "Compare gRPC and REST for an internal microservice architecture. Which situations favor each?"
     },
     {
         "id": 11,
-        "category": "Python",
-        "question": "Explain decorators with an example."
+        "category": "Tradeoffs",
+        "question": "Explain when optimistic locking should be preferred over pessimistic locking."
     },
     {
         "id": 12,
-        "category": "Python",
-        "question": "What is the difference between deep copy and shallow copy?"
+        "category": "Tradeoffs",
+        "question": "When would breadth-first search be preferred over depth-first search? Include shortest-path considerations."
     },
     {
         "id": 13,
-        "category": "Python",
-        "question": "Explain __slots__. What problem does it solve?"
+        "category": "Tradeoffs",
+        "question": "Explain the advantages and disadvantages of event-driven architectures compared with synchronous request-response systems."
     },
     {
         "id": 14,
-        "category": "Python",
-        "question": "What are context managers? Implement one yourself."
+        "category": "Tradeoffs",
+        "question": "A company wants to replace every monolith with microservices. Explain why this may be a poor engineering decision."
     },
     # ==========================================================
-    # OOP
+    # DATABASES (15-18)
     # ==========================================================
     {
         "id": 15,
-        "category": "OOP",
-        "question": "Explain SOLID principles with Python examples."
+        "category": "Database",
+        "question": "Explain why adding indexes can speed up SELECT queries but slow INSERT, UPDATE, and DELETE operations."
     },
     {
         "id": 16,
-        "category": "OOP",
-        "question": "Difference between composition and inheritance?"
+        "category": "Database",
+        "question": "A SQL query became ten times slower after the dataset grew from one million rows to fifty million rows. Walk through your optimization process before rewriting the query."
     },
-    # ==========================================================
-    # DATABASES
-    # ==========================================================
     {
         "id": 17,
-        "category": "Databases",
-        "question": "Explain indexing in SQL. Why can too many indexes hurt performance?"
+        "category": "Database",
+        "question": "Explain the N+1 query problem and how ORMs commonly create it."
     },
     {
         "id": 18,
-        "category": "Databases",
-        "question": "Optimize a slow SQL query returning millions of rows."
+        "category": "Database",
+        "question": "Why is database normalization useful, and when is deliberate denormalization the better engineering choice?"
     },
     # ==========================================================
-    # CONCURRENCY
+    # CONCURRENCY (19-22)
     # ==========================================================
     {
         "id": 19,
         "category": "Concurrency",
-        "question": "Explain Python's GIL. When does it matter?"
+        "question": "Explain the difference between deadlock, livelock, and starvation. Give practical software examples."
     },
     {
         "id": 20,
         "category": "Concurrency",
-        "question": "When should you use multiprocessing instead of multithreading?"
+        "question": "A multithreaded service occasionally returns corrupted data even though no exceptions occur. Describe your debugging strategy."
     },
     {
         "id": 21,
         "category": "Concurrency",
-        "question": "What is a race condition? Show how to prevent one in Python."
+        "question": "Why do race conditions often disappear during debugging but reappear in production?"
     },
-    # ==========================================================
-    # SYSTEM DESIGN
-    # ==========================================================
     {
         "id": 22,
-        "category": "System Design",
-        "question": "Design a URL shortener backend."
+        "category": "Concurrency",
+        "question": "Explain memory visibility problems in multithreaded applications and why atomic operations alone are not always sufficient."
     },
+    # ==========================================================
+    # SECURITY (23-25)
+    # ==========================================================
     {
         "id": 23,
-        "category": "System Design",
-        "question": "Design a rate limiter supporting one million users."
+        "category": "Security",
+        "question": "Explain why using eval() on user-controlled input can lead to remote code execution. Do not simply say 'it's dangerous'—describe the execution path."
     },
-    # ==========================================================
-    # SECURITY
-    # ==========================================================
     {
         "id": 24,
         "category": "Security",
-        "question": "Explain SQL Injection and how parameterized queries prevent it."
+        "question": "Explain why parameterized SQL queries prevent SQL injection while manual string concatenation does not."
     },
     {
         "id": 25,
         "category": "Security",
-        "question": "Why is using eval() on user input dangerous?"
+        "question": "A developer stores passwords using SHA-256. Explain why this is insecure despite SHA-256 being cryptographically strong."
     },
     # ==========================================================
-    # CODE REVIEW
+    # DEBUGGING (26-28)
     # ==========================================================
     {
         "id": 26,
-        "category": "Code Review",
-        "question": """Review this code.
-
-def average(nums):
-    total=0
-    for i in range(len(nums)):
-        total+=nums[i]
-    return total/len(nums)
-
-Suggest improvements."""
+        "category": "Debugging",
+        "question": "A production API suddenly became five times slower after deployment. CPU usage is unchanged, memory usage is stable, but database latency increased. Describe your debugging methodology."
     },
     {
         "id": 27,
-        "category": "Code Review",
-        "question": "How would you refactor a 1000-line Python file?"
+        "category": "Debugging",
+        "question": "A distributed application intermittently loses messages between services. Explain the systematic debugging process you would follow."
     },
-    # ==========================================================
-    # API / BACKEND
-    # ==========================================================
     {
         "id": 28,
-        "category": "Backend",
-        "question": "Design a REST API for an e-commerce checkout service."
+        "category": "Debugging",
+        "question": "An application works perfectly on one machine but consistently fails in production. List the engineering hypotheses you would investigate before modifying code."
     },
+    # ==========================================================
+    # CODE REVIEW & DESIGN (29-30)
+    # ==========================================================
     {
         "id": 29,
-        "category": "Backend",
-        "question": "Explain idempotency in REST APIs."
+        "category": "Code Review",
+        "question": "You are reviewing a pull request containing 3,500 lines of code implementing five unrelated features. Describe your review process and the engineering concerns you would raise."
     },
-    # ==========================================================
-    # ENGINEERING
-    # ==========================================================
     {
         "id": 30,
-        "category": "Engineering",
-        "question": "A production service suddenly becomes 10x slower after deployment. Walk through your debugging process."
+        "category": "Software Design",
+        "question": "Design a scalable backend for a URL shortening service capable of serving one billion redirects per day. Focus on architecture, scalability, databases, caching, and fault tolerance rather than implementation code."
     }
 ]
 
