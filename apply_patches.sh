@@ -8,9 +8,9 @@ echo "============================================================"
 PROGRESS_FILE=".patch_completed"
 touch "$PROGRESS_FILE"
 
-# Upgrade trl to ensure compatibility with transformers >= 4.47
-echo "[+] Ensuring trl is up-to-date..."
-pip install -q --upgrade trl
+# Reinstall stable trl version to resolve FSDPModule import error
+echo "[+] Restoring stable trl version..."
+pip install -q trl==0.8.6
 
 # Function to run training if not already completed
 run_step() {
@@ -50,10 +50,10 @@ echo "[2/3] Applying Continuous SFT Patches..."
 # python3 -m saber.training.trainer --domain orchestrator --data data/processed/orchestrator_patch.jsonl --patch-mode
 # python3 -m saber.training.trainer --domain science --data data/processed/science_patch.jsonl --patch-mode
 
-# 3. Apply DPO Patches (Hallucinations & Hedging Behavior)
+# 3. Apply SFT Patches (Including Meta-Reasoner)
 echo ""
-echo "[3/3] Applying DPO Patches..."
-python3 -m saber.training.trainer --domain meta_reasoner --data data/processed/meta_reasoner_dpo_patch.jsonl --dpo-mode
+echo "[3/3] Applying Meta-Reasoner SFT Patch..."
+python3 -m saber.training.trainer --domain meta_reasoner --data data/processed/meta_reasoner_patch.jsonl --patch-mode
 
 echo ""
 echo "============================================================"
