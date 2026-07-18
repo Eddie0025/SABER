@@ -97,10 +97,69 @@ class Sentinel:
         Signal: Either VERIFICATION_SIGNAL (GREEN_CHIT) or FLAG_SIGNAL.
         """
         from saber.llm_engine import LLMEngine
+        import urllib.request
+        import urllib.parse
+        import re
+
+        # Helper to check connection
+        def is_internet_available():
+            try:
+                urllib.request.urlopen("https://www.google.com", timeout=2)
+                return True
+            except Exception:
+                return False
+
+        # Helper to query DuckDuckGo
+        def web_search(query_str):
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query_str)}"
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=4) as response:
+                    html = response.read().decode("utf-8")
+                    snippets = re.findall(r'<a class="result__snippet".*?>(.*?)</a>', html, re.DOTALL)
+                    clean_snippets = []
+                    for s in snippets[:3]:
+                        clean = re.sub(r'<.*?>', '', s).strip()
+                        clean_snippets.append(clean)
+                    return "\n".join(clean_snippets)
+            except Exception as e:
+                return f"Search lookup failed: {e}"
 
         # Extract claims from the original OUTPUT_SIGNAL payload
         claims_data = original_signal.payload.get("claims", [])
         claims_str = json.dumps(claims_data, indent=2)
+
+        # Determine if online and compile grounding info
+        online = is_internet_available()
+        grounding_str = ""
+        
+        if online and specialist_domain == "medical":
+            # Extract search query from claims or text
+            search_query = ""
+            if claims_data and isinstance(claims_data, list):
+                search_query = claims_data[0].get("statement", "")[:120]
+            if not search_query:
+                search_query = compiled_text[:120]
+            
+            # Run search
+            if search_query:
+                print(f"[Sentinel] Online: searching for '{search_query}'...")
+                results = web_search(search_query)
+                grounding_str = (
+                    f"--- GROUNDING SOURCE SEARCH RESULTS ---\n"
+                    f"{results}\n"
+                    f"---------------------------------------\n\n"
+                    f"INSTRUCTION: Use the search results above as the ground truth. "
+                    f"If the specialist's claim contradicts the search results, flag it as a FACTUAL_ERROR and propose a correction.\n\n"
+                )
+        else:
+            print("[Sentinel] Offline or non-medical domain: skipping fact-grounding search.")
+            grounding_str = (
+                "--- OFFLINE MODE INSTRUCTION ---\n"
+                "Internet is currently offline or domain is non-medical. Do not attempt to verify obscure factual entities or specific named signs/triads against external facts. "
+                "Focus strictly on logical reasoning consistency, internal flow, contradictions, and potential structural fabrications (e.g. self-contradictory claims).\n\n"
+            )
 
         # --- Targeted Verification Routing ---
         route = Sentinel.get_verification_route(specialist_domain)
@@ -108,6 +167,7 @@ class Sentinel:
         aspects_str = ", ".join(aspects_to_check)
 
         prompt = (
+            f"{grounding_str}"
             f"Original Claims from {specialist_domain} specialist:\n{claims_str}\n\n"
             f"Meta-Reasoning Layer's Compiled Text:\n{compiled_text}\n\n"
             f"Verification Focus Areas: {aspects_str}\n\n"

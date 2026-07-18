@@ -72,7 +72,16 @@ def main():
         
         # Reset context for each question so previous answers don't bias the model
         history = [
-            {"role": "system", "content": "You are a highly skilled Medical AI specialist. Provide a thorough, accurate, and evidence-based clinical answer."}
+            {
+                "role": "system",
+                "content": (
+                    "You are a highly skilled Medical AI specialist. Provide a thorough, accurate, and evidence-based clinical answer. "
+                    "When asked to name a specific test, marker, sign, or triad component, only state it if you are highly confident it is a real, "
+                    "established clinical term. If you are not certain of the exact name, say 'I am not fully certain of the specific term, "
+                    "but the relevant clinical concept is...' rather than generating a plausible-sounding but unverified specific name. "
+                    "Do not invent, guess, or fabricate precise terminology."
+                )
+            }
         ]
         
         try:
