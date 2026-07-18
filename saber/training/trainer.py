@@ -451,7 +451,7 @@ def train(cfg: TrainConfig) -> str:
                 return transformers.Trainer.get_batch_samples(self, epoch_iterator, num_batches, *args, **kwargs)
             DPOTrainer.get_batch_samples = patched_get_batch_samples
 
-        # Monkeypatch DPODataCollatorWithPadding to filter out keys that contain None values
+        # Monkeypatch DPODataCollatorWithPadding to filter out keys that contain None values and clean up list features containing None elements
         original_collator_call = DPODataCollatorWithPadding.__call__
         def patched_collator_call(self, features):
             if features:
@@ -463,6 +463,12 @@ def train(cfg: TrainConfig) -> str:
                     for ex in features:
                         for k in keys_to_remove:
                             ex.pop(k, None)
+                
+                # Filter out None values inside lists (e.g., input_ids starting with None)
+                for ex in features:
+                    for k, v in list(ex.items()):
+                        if isinstance(v, list):
+                            ex[k] = [x for x in v if x is not None]
             try:
                 return original_collator_call(self, features)
             except Exception as e:
