@@ -443,6 +443,13 @@ def train(cfg: TrainConfig) -> str:
         transformers.Trainer.__init__ = patched_trainer_init
 
         from trl import DPOTrainer
+        
+        # Monkeypatch DPOTrainer.get_batch_samples to handle newer transformers
+        if hasattr(DPOTrainer, "get_batch_samples"):
+            def patched_get_batch_samples(self, epoch_iterator, num_batches, *args, **kwargs):
+                return transformers.Trainer.get_batch_samples(self, epoch_iterator, num_batches, *args, **kwargs)
+            DPOTrainer.get_batch_samples = patched_get_batch_samples
+
         # DPOTrainer doesn't need the DataCollatorForLanguageModeling
         import inspect
         dpo_kwargs = {
