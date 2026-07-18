@@ -1,50 +1,208 @@
 import sys
 from saber.llm_engine import LLMEngine
 
-QUESTIONS = [
-    # Category 1: Straightforward recall
-    "What is the formula for calculating Net Present Value (NPV)?",
-    "Define 'beta' in the context of the Capital Asset Pricing Model (CAPM).",
-    "What is the difference between a bond's coupon rate and its yield to maturity?",
-    "What does EBITDA stand for, and what does it measure?",
-    "What is the difference between a call option and a put option?",
-    "What is the debt-to-equity ratio, and what does it indicate about a company?",
-    "Define 'quantitative easing' and its primary intended effect on the economy.",
-    "What is the difference between nominal GDP and real GDP?",
+TEST_CASES = [
 
-    # Category 2: Rare-but-classic scenarios
-    "A company's inventory is rising faster than its sales growth over several quarters. What does this typically signal about the business?",
-    "What is a 'yield curve inversion,' and what has it historically been associated with?",
-    "What is the 'Gordon Growth Model' used for, and what is its key limitation?",
-    "Explain what happens to bond prices when interest rates rise, and why.",
+# ==========================================================
+# FINANCIAL STATEMENTS (1-6)
+# ==========================================================
 
-    # Category 3: Differentiation/reasoning
-    "Company A has high revenue growth but negative free cash flow. Company B has slower revenue growth but strong positive free cash flow. Which is the better investment, and what additional information would you want before deciding?",
-    "A firm is deciding between debt financing and equity financing for a new project. Under what conditions would debt financing be preferable, and under what conditions would equity be preferable?",
-    "Two companies have identical P/E ratios. Does this mean they are equally valued? What else would you need to check?",
-    "A country's currency is depreciating rapidly. Explain two distinct scenarios — one where this benefits the economy, and one where it harms it.",
-    "Explain the difference between systematic risk and unsystematic risk, and why diversification only addresses one of them.",
-    "A company reports strong net income growth, but its operating cash flow is declining. What could explain this discrepancy, and why should an investor be cautious?",
+{
+    "id": 1,
+    "category": "Financial Statements",
+    "question": "A company reports Revenue of $250M, EBITDA of $60M, Depreciation of $12M, Interest Expense of $8M, Tax Rate of 25%, and no extraordinary items. Calculate Operating Income, Pre-Tax Income, Tax Expense, and Net Income. Show your reasoning."
+},
 
-    # Category 4: Mechanistic explanation
-    "Explain the mechanism by which central bank interest rate hikes reduce inflation.",
-    "Why does a stock's price typically drop by approximately the dividend amount on the ex-dividend date?",
-    "Explain why an inverted yield curve can actually cause the recession it predicts, not just forecast it.",
-    "Explain the mechanism of how short selling can lead to a 'short squeeze.'",
+{
+    "id": 2,
+    "category": "Financial Statements",
+    "question": "Explain why EBITDA should never be interpreted as cash flow."
+},
 
-    # Category 5: Multi-step reasoning
-    "A company has $10M in EBITDA, $2M in depreciation, is taxed at 25%, and has $1M in interest expense. Calculate approximate net income and explain each adjustment step.",
-    "An investor buys a bond at a discount to face value with 5 years to maturity. Walk through how yield to maturity would compare to the coupon rate, and why.",
-    "A portfolio is 60% stocks (expected return 10%) and 40% bonds (expected return 4%). Calculate the expected portfolio return, then explain how adding more bonds changes both expected return and risk.",
+{
+    "id": 3,
+    "category": "Financial Statements",
+    "question": "A company reports strong profits but continuously negative operating cash flow. Explain at least five possible reasons."
+},
 
-    # Category 6: Red herring resistance
-    "A company just announced a stock buyback program and its CEO recently sold a large number of personal shares. Does the CEO's stock sale indicate the buyback is a bad sign for the company? Explain your reasoning.",
-    "A company's revenue beat analyst expectations, but its stock price dropped 8% the next day. An analyst on TV says this is 'clearly irrational market behavior.' Is that the most likely explanation? What else could explain it?",
-    "A country has very low unemployment. Does this necessarily mean its economy is healthy? What could this low number be masking?",
+{
+    "id": 4,
+    "category": "Financial Statements",
+    "question": "Explain how a $100 million increase in depreciation affects the income statement, cash flow statement, and balance sheet."
+},
 
-    # Category 7: Misconceptions
-    "Someone claims that 'diversification guarantees you won't lose money in a downturn.' Is this true? Explain what diversification actually does and doesn't protect against.",
-    "Someone claims that 'a stock split makes a company more valuable because you now own more shares.' Is this true? Explain what actually happens in a stock split."
+{
+    "id": 5,
+    "category": "Financial Statements",
+    "question": "Explain why revenue growth alone may actually reduce shareholder value."
+},
+
+{
+    "id": 6,
+    "category": "Financial Statements",
+    "question": "Compare gross margin, operating margin, EBITDA margin, and net margin. Explain what each reveals about a business."
+},
+
+# ==========================================================
+# VALUATION (7-12)
+# ==========================================================
+
+{
+    "id": 7,
+    "category": "Valuation",
+    "question": "Compare Discounted Cash Flow (DCF), Comparable Company Analysis, and Precedent Transactions. When is each most appropriate?"
+},
+
+{
+    "id": 8,
+    "category": "Valuation",
+    "question": "Explain why two companies with identical revenue can have dramatically different enterprise values."
+},
+
+{
+    "id": 9,
+    "category": "Valuation",
+    "question": "Interest rates increase substantially. Explain how this affects company valuations and why."
+},
+
+{
+    "id": 10,
+    "category": "Valuation",
+    "question": "Explain why a rapidly growing startup may still deserve a lower valuation than a slower-growing competitor."
+},
+
+{
+    "id": 11,
+    "category": "Valuation",
+    "question": "Compare Price-to-Earnings, EV/EBITDA, Price-to-Sales, and Price-to-Book. Explain the situations where each metric is misleading."
+},
+
+{
+    "id": 12,
+    "category": "Valuation",
+    "question": "A SaaS company has exceptional revenue growth but consistently negative free cash flow. Explain how you would evaluate it."
+},
+
+# ==========================================================
+# CORPORATE FINANCE (13-18)
+# ==========================================================
+
+{
+    "id": 13,
+    "category": "Corporate Finance",
+    "question": "Explain the tradeoffs between financing expansion through debt versus issuing new equity."
+},
+
+{
+    "id": 14,
+    "category": "Corporate Finance",
+    "question": "A company has $5 billion in excess cash. Compare dividends, share buybacks, acquisitions, debt repayment, and internal investment."
+},
+
+{
+    "id": 15,
+    "category": "Corporate Finance",
+    "question": "Explain why increasing leverage may both increase shareholder returns and increase bankruptcy risk."
+},
+
+{
+    "id": 16,
+    "category": "Corporate Finance",
+    "question": "Explain the relationship between Return on Equity, leverage, and profitability."
+},
+
+{
+    "id": 17,
+    "category": "Corporate Finance",
+    "question": "Why is maximizing quarterly earnings not always aligned with maximizing long-term shareholder value?"
+},
+
+{
+    "id": 18,
+    "category": "Corporate Finance",
+    "question": "Explain why reducing costs indiscriminately can destroy long-term company value."
+},
+
+# ==========================================================
+# UNIT ECONOMICS (19-24)
+# ==========================================================
+
+{
+    "id": 19,
+    "category": "Unit Economics",
+    "question": "A SaaS company has CAC of $800, annual gross profit per customer of $400, annual churn of 40%, and gross margin of 80%. Evaluate whether the business model is sustainable."
+},
+
+{
+    "id": 20,
+    "category": "Unit Economics",
+    "question": "Explain why high revenue growth combined with poor unit economics often leads to startup failure."
+},
+
+{
+    "id": 21,
+    "category": "Unit Economics",
+    "question": "Compare customer lifetime value (LTV) and customer acquisition cost (CAC). Explain why both metrics should be interpreted together."
+},
+
+{
+    "id": 22,
+    "category": "Unit Economics",
+    "question": "A company doubles marketing spend but revenue barely increases. Explain the possible financial explanations."
+},
+
+{
+    "id": 23,
+    "category": "Unit Economics",
+    "question": "A marketplace business has rapidly growing GMV but declining profitability. Explain why these two trends can coexist."
+},
+
+{
+    "id": 24,
+    "category": "Unit Economics",
+    "question": "Explain how churn influences valuation, profitability, and growth simultaneously."
+},
+
+# ==========================================================
+# STRATEGIC FINANCE (25-30)
+# ==========================================================
+
+{
+    "id": 25,
+    "category": "Strategic Finance",
+    "question": "A technology company must choose between maximizing revenue growth, profitability, and free cash flow. Explain how this decision depends on business stage and market conditions."
+},
+
+{
+    "id": 26,
+    "category": "Strategic Finance",
+    "question": "A recession begins unexpectedly. Explain how capital allocation priorities should change."
+},
+
+{
+    "id": 27,
+    "category": "Strategic Finance",
+    "question": "A company reports record earnings while losing market share. Explain why investors may react negatively."
+},
+
+{
+    "id": 28,
+    "category": "Strategic Finance",
+    "question": "Explain why financial decisions should always be evaluated alongside operational, technological, and strategic considerations."
+},
+
+{
+    "id": 29,
+    "category": "Strategic Finance",
+    "question": "A CEO proposes maximizing EBITDA at all costs. Critically evaluate this strategy."
+},
+
+{
+    "id": 30,
+    "category": "Integrated Finance",
+    "question": "An AI startup is deciding whether to expand internationally, acquire a competitor, invest in new R&D, or preserve cash. Develop a structured financial decision-making framework rather than recommending a single option."
+}
+
 ]
 
 def main():
@@ -64,9 +222,11 @@ def main():
 
     print("\nModel loaded successfully! Beginning evaluation...\n")
     
-    for i, question in enumerate(QUESTIONS, 1):
+    for i, case in enumerate(TEST_CASES, 1):
+        question = case["question"]
+        category = case["category"]
         print(f"---------------------------------------------------------")
-        print(f"CASE [{i}/30]")
+        print(f"CASE [{i}/30] - Category: {category}")
         print(f"Q: {question}")
         print("---------------------------------------------------------")
         
