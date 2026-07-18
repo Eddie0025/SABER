@@ -43,9 +43,9 @@ python3 scripts/generate_patches.py
 # 2. Apply SFT Patches (Coverage gaps)
 echo ""
 echo "[2/3] Applying Continuous SFT Patches..."
-run_step "coding" "--patch-mode" "data/processed/coding_patch.jsonl"
-run_step "orchestrator" "--patch-mode" "data/processed/orchestrator_patch.jsonl"
-run_step "science" "--patch-mode" "data/processed/science_patch.jsonl"
+# run_step "coding" "--patch-mode" "data/processed/coding_patch.jsonl"
+# run_step "orchestrator" "--patch-mode" "data/processed/orchestrator_patch.jsonl"
+# run_step "science" "--patch-mode" "data/processed/science_patch.jsonl"
 run_step "finance" "--patch-mode" "data/processed/finance_patch.jsonl"
 
 # 3. Apply DPO Patches (Hallucinations & Hedging Behavior)
