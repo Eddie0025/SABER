@@ -1543,6 +1543,41 @@ def fetch_orchestrator():
     records.extend(synth_routing)
     print(f"[dataset_loader]   Diverse Single-Domain Routing: {len(synth_routing)} records generated")
 
+    # 7. System Architecture & Implementation multi-domain records
+    print("[dataset_loader] [5/5] Generating system design/architecture expertise records...")
+    system_routing = []
+    sys_templates = [
+        ("Build a {domain_noun} prediction platform with high scalability.", ["{domain}", "coding", "architecture"]),
+        ("Design an automated {domain_noun} analysis pipeline using real-time sensors.", ["{domain}", "coding", "architecture"]),
+        ("Develop a secure cloud-native application for {domain_noun} monitoring.", ["{domain}", "coding", "architecture"]),
+        ("Create an AI-driven system to optimize {domain_noun} processes.", ["{domain}", "coding", "architecture"]),
+        ("Implement a distributed database system for storing {domain_noun} logs.", ["{domain}", "coding", "architecture"]),
+        ("We need to design a software platform for {domain_noun} simulation.", ["{domain}", "coding", "architecture"]),
+        ("Help me build the backend and infrastructure for a {domain_noun} service.", ["{domain}", "coding", "architecture"]),
+        ("Redesign our {domain_noun} pipeline to handle 100k requests per second safely.", ["{domain}", "coding", "architecture"])
+    ]
+    domain_mappings = {
+        "finance": ["stock market", "high frequency trading", "quantitative investment", "portfolio risk", "cryptocurrency trading"],
+        "medical": ["patient EHR data", "clinical trial telemetry", "remote patient monitoring", "hospital management", "medical billing"],
+        "cyber": ["threat detection", "malware analysis", "network security monitoring", "access control and auth", "vulnerability scanning"],
+        "science": ["climate simulation", "genomic sequencing", "chemical reaction pathways", "predictive maintenance", "particle physics modeling"]
+    }
+    
+    for domain, nouns in domain_mappings.items():
+        for noun in nouns:
+            for template, route_template in sys_templates:
+                text = template.format(domain_noun=noun)
+                route = [r.format(domain=domain) for r in route_template]
+                label_json = json.dumps({"route": route, "confidence": 0.95, "multi_domain": True, "query_summary": text[:60]})
+                system_routing.append({
+                    "id": f"orch_sys_route_{uuid.uuid4().hex[:8]}",
+                    "text": text,
+                    "label": label_json,
+                    "domain": "orchestrator"
+                })
+    records.extend(system_routing)
+    print(f"[dataset_loader]   System Architecture & Implementation: {len(system_routing)} records generated")
+
     records = _quality_filter(records, min_label_len=15)
     random.shuffle(records)
     records = records[:5500]
