@@ -513,7 +513,31 @@ def train(cfg: TrainConfig) -> str:
                         if isinstance(v, list):
                             ex[k] = [x for x in v if x is not None]
             try:
-                return original_collator_call(self, features)
+                res = original_collator_call(self, features)
+                # Pad chosen and rejected to the same length if they differ
+                import torch
+                for suffix in ["_input_ids", "_attention_mask", "_labels"]:
+                    chosen_key = f"chosen{suffix}"
+                    rejected_key = f"rejected{suffix}"
+                    if chosen_key in res and rejected_key in res:
+                        chosen_tensor = res[chosen_key]
+                        rejected_tensor = res[rejected_key]
+                        
+                        if chosen_tensor.shape[1] != rejected_tensor.shape[1]:
+                            max_len = max(chosen_tensor.shape[1], rejected_tensor.shape[1])
+                            
+                            # Pad chosen if shorter
+                            if chosen_tensor.shape[1] < max_len:
+                                pad_val = self.pad_token_id if suffix == "_input_ids" else (0 if suffix == "_attention_mask" else self.label_pad_token_id)
+                                padding_size = max_len - chosen_tensor.shape[1]
+                                res[chosen_key] = torch.nn.functional.pad(chosen_tensor, (0, padding_size), value=pad_val)
+                                
+                            # Pad rejected if shorter
+                            if rejected_tensor.shape[1] < max_len:
+                                pad_val = self.pad_token_id if suffix == "_input_ids" else (0 if suffix == "_attention_mask" else self.label_pad_token_id)
+                                padding_size = max_len - rejected_tensor.shape[1]
+                                res[rejected_key] = torch.nn.functional.pad(rejected_tensor, (0, padding_size), value=pad_val)
+                return res
             except Exception as e:
                 print("\n=== COLLATOR ERROR DEBUG ===")
                 print("Error:", e)
