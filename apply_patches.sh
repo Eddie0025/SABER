@@ -43,8 +43,13 @@ python3 scripts/generate_patches.py
 # 2. Apply SFT Patches (Coverage gaps)
 echo ""
 echo "[2/3] Applying Continuous SFT Patches..."
-python3 -m saber.training.trainer --domain orchestrator --data data/processed/orchestrator_patch.jsonl --patch-mode
-python3 -m saber.training.trainer --domain science --data data/processed/science_patch.jsonl --patch-mode
+# python3 -m saber.training.trainer --domain orchestrator --data data/processed/orchestrator_patch.jsonl --patch-mode
+# python3 -m saber.training.trainer --domain science --data data/processed/science_patch.jsonl --patch-mode
+
+# 3. Apply DPO Patches (Hallucinations & Hedging Behavior)
+echo ""
+echo "[3/3] Applying DPO Patches..."
+python3 -m saber.training.trainer --domain meta_reasoner --data data/processed/meta_reasoner_dpo_patch.jsonl --dpo-mode
 
 echo ""
 echo "============================================================"
