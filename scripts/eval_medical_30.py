@@ -85,43 +85,9 @@ def main():
         ]
         
         try:
-            # 1. Generate specialist answer
+            # Generate specialist answer
             ans = engine.generate_with_history(history, new_user_message=question)
-            print(f"SABER (Initial): {ans}\n")
-            
-            # 2. Sentinel Verification
-            from saber.sentinel import Sentinel
-            from saber.signal import Signal, SignalType
-            
-            sentinel = Sentinel()
-            out_sig = Signal(
-                signal_type=SignalType.OUTPUT_SIGNAL,
-                query_id=f"eval_{i}",
-                source_id="SPEC-MEDICAL",
-                target_id="MANAGER",
-                payload={"claims": [{"statement": ans, "confidence": 0.9}]}
-            ).freeze_and_hash()
-            
-            print("--- Running Sentinel Verification ---")
-            ver_res = sentinel.verify_interpretation(
-                specialist_domain="medical",
-                original_signal=out_sig,
-                compiled_text=ans,
-            )
-            
-            if ver_res.signal_type == SignalType.FLAG_SIGNAL:
-                fix = ver_res.payload.get("proposed_fix", "")
-                reasoning = ver_res.payload.get("reasoning", "")
-                print(f"[SENTINEL FLAG] {reasoning}")
-                
-                # 3. Regenerate with fix
-                history.append({"role": "assistant", "content": ans})
-                fix_prompt = f"Sentinel Review: {reasoning}\nPlease provide a corrected answer."
-                print("SABER (Correcting)...")
-                final_ans = engine.generate_with_history(history, new_user_message=fix_prompt)
-                print(f"SABER (Final): {final_ans}\n\n")
-            else:
-                print("[SENTINEL] Passed perfectly with no flags!\n\n")
+            print(f"SABER: {ans}\n\n")
             
         except Exception as e:
             print(f"SABER: [FAILED TO GENERATE] {e}\n\n")
