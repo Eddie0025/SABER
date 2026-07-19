@@ -135,7 +135,6 @@ def load_hf_dataset(path, name=None, split=None, **kwargs):
         kwargs["name"] = name
     if split:
         kwargs["split"] = split
-    kwargs["trust_remote_code"] = True
     return load_dataset(path, **kwargs)
 
 # =====================================================================
