@@ -434,11 +434,11 @@ def run_benchmark(api_key=None):
     try:
         arc = load_hf_dataset("allenai/ai2_arc", "ARC-Challenge", split="test[:100]")
         for row in arc:
-            q_dict = row.get("question", {})
-            q_text = q_dict.get("text", "")
-            choices_list = q_dict.get("choices", [])
-            choices = [c.get("text", "") for c in choices_list]
-            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+            q_text = row.get("question", "")
+            choices_dict = row.get("choices", {})
+            choices = choices_dict.get("text", [])
+            labels = choices_dict.get("label", [])
+            choices_str = "\n".join([f"{labels[i]}: {c}" for i, c in enumerate(choices)])
             ans_key = row.get("answerKey", "A")
             if str(ans_key) in ["1", "2", "3", "4"]:
                 correct_char = chr(65 + int(ans_key) - 1)
