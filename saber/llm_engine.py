@@ -86,8 +86,11 @@ class LLMEngine:
             trust_remote_code=True,
         )
 
-        if self.device == "mps":
-            self.model = self.model.to(self.device)
+        if self.device in ("cuda", "mps"):
+            try:
+                self.model = self.model.to(self.device)
+            except Exception:
+                pass
 
         return self
 
