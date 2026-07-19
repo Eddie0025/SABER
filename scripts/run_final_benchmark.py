@@ -139,7 +139,8 @@ def run_benchmark(api_key=None):
                 "type": "exact",
                 "question": f"Question: {row['question']}\nOptions:\n{choices_str}",
                 "expected": correct_ans,
-                "domain": "medical"
+                "domain": "medical",
+                "dataset": "mmlu"
             })
     except Exception as e:
         print(f"[!] MMLU benchmark load failed: {e}")
@@ -152,7 +153,8 @@ def run_benchmark(api_key=None):
                 "type": "exact",
                 "question": row["question"],
                 "expected": row["correct_answer"],
-                "domain": "science"
+                "domain": "science",
+                "dataset": "sciq"
             })
     except Exception as e:
         print(f"[!] SciQ benchmark load failed: {e}")
@@ -168,7 +170,8 @@ def run_benchmark(api_key=None):
                 "type": "exact",
                 "question": text,
                 "expected": cop_char,
-                "domain": "medical"
+                "domain": "medical",
+                "dataset": "medmcqa"
             })
     except Exception as e:
         print(f"[!] MedMCQA benchmark load failed: {e}")
@@ -184,12 +187,14 @@ def run_benchmark(api_key=None):
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 cases = getattr(module, "TEST_CASES")
+                domain_name = script.replace("eval_", "").replace("_30.py", "")
                 for c in cases[:5]: # Take first 5 cases from each domain for benchmark speed
                     bench_cases.append({
                         "type": "open_ended",
                         "question": c["question"],
                         "expected": None,
-                        "domain": script.replace("eval_", "").replace("_30.py", "")
+                        "domain": domain_name,
+                        "dataset": f"eval_{domain_name}"
                     })
             except Exception as e:
                 print(f"[!] Error loading {script}: {e}")
@@ -214,6 +219,7 @@ def run_benchmark(api_key=None):
             "type": case["type"],
             "expected": case["expected"],
             "domain": case["domain"],
+            "dataset": case["dataset"],
             "runs": {}
         }
         
@@ -221,17 +227,14 @@ def run_benchmark(api_key=None):
             print(f"  -> Mode: {mode_name}")
             start = time.time()
             try:
-                # Call complete SABER architecture flow
                 res = orch.process_query(q, tier=tier)
                 ans = res.get("answer", "").strip()
             except Exception as e:
                 ans = f"[ERROR]: {e}"
             latency = time.time() - start
             
-            # Grade Output
             score_data = {}
             if case["type"] == "exact":
-                # Check for exact matches
                 is_correct = False
                 expected_norm = case["expected"].lower().strip()
                 ans_norm = ans.lower().strip()
@@ -242,7 +245,6 @@ def run_benchmark(api_key=None):
                     "explanation": f"Expected: {case['expected']} | Found: {ans}"
                 }
             else:
-                # Open-ended questions: call Qwen as a Judge
                 score_data = call_qwen_judge(q, q, ans, api_key=api_key)
                 
             case_res["runs"][mode_name] = {
@@ -253,12 +255,72 @@ def run_benchmark(api_key=None):
             
         results.append(case_res)
 
-    # 4. Generate summary report
-    report_path = "saber_final_benchmark_report.json"
-    with open(report_path, "w", encoding="utf-8") as f:
+    # 4. Aggregate and compute performance stats per dataset & mode
+    summary = {}
+    for case_res in results:
+        dataset = case_res["dataset"]
+        if dataset not in summary:
+            summary[dataset] = {}
+            
+        for mode_name, run_info in case_res["runs"].items():
+            if mode_name not in summary[dataset]:
+                summary[dataset][mode_name] = {
+                    "count": 0, "total_latency": 0.0,
+                    "accuracy_sum": 0.0, "accuracy_count": 0,
+                    "correctness_sum": 0.0, "correctness_count": 0,
+                    "relevance_sum": 0.0, "relevance_count": 0,
+                    "reasoning_sum": 0.0, "reasoning_count": 0,
+                    "calibration_sum": 0.0, "calibration_count": 0,
+                    "red_herring_sum": 0.0, "red_herring_count": 0
+                }
+            
+            stats = summary[dataset][mode_name]
+            stats["count"] += 1
+            stats["total_latency"] += run_info["latency"]
+            
+            eval_res = run_info["evaluation"]
+            if case_res["type"] == "exact":
+                stats["accuracy_sum"] += eval_res.get("accuracy", 0.0)
+                stats["accuracy_count"] += 1
+            else:
+                for metric in ["correctness", "relevance", "reasoning", "calibration", "red_herring"]:
+                    val = eval_res.get(metric)
+                    if val is not None:
+                        stats[f"{metric}_sum"] += float(val)
+                        stats[f"{metric}_count"] += 1
+
+    # Format the aggregated metrics cleanly
+    formatted_summary = {}
+    for ds, modes_data in summary.items():
+        formatted_summary[ds] = {}
+        for mode_name, stats in modes_data.items():
+            avg_metrics = {
+                "count": stats["count"],
+                "avg_latency_sec": round(stats["total_latency"] / stats["count"], 2)
+            }
+            if stats["accuracy_count"] > 0:
+                avg_metrics["avg_accuracy"] = round(stats["accuracy_sum"] / stats["accuracy_count"], 3)
+            
+            for m in ["correctness", "relevance", "reasoning", "calibration", "red_herring"]:
+                cnt = stats[f"{m}_count"]
+                if cnt > 0:
+                    avg_metrics[f"avg_{m}"] = round(stats[f"{m}_sum"] / cnt, 2)
+            formatted_summary[ds][mode_name] = avg_metrics
+
+    # Save outputs
+    with open("saber_final_benchmark_report.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
+        
+    with open("saber_benchmark_summary.json", "w", encoding="utf-8") as f:
+        json.dump(formatted_summary, f, indent=2)
+
+    print("\n=== BENCHMARK SUMMARY (BY DATASET & MODE) ===")
+    print(json.dumps(formatted_summary, indent=2))
+    
     print(f"\n=========================================================")
-    print(f" Benchmark Completed! JSON report saved to: {report_path}")
+    print(f" Benchmark Completed! Reports saved:")
+    print(f" - Detailed: saber_final_benchmark_report.json")
+    print(f" - Aggregated: saber_benchmark_summary.json")
     print(f"=========================================================")
 
 if __name__ == "__main__":
