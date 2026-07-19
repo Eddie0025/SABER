@@ -421,8 +421,8 @@ def run_benchmark(api_key=None):
 
         # Print live scoreboard dynamically when a dataset has been completely processed
         is_dataset_complete = (idx == len(bench_cases)) or (bench_cases[idx]["dataset"] != case["dataset"])
-        if is_dataset_complete:
-            print(f"\n[LIVE UPDATE] Dataset '{case['dataset']}' completed. Dynamic scoreboard:")
+        if is_dataset_complete or (idx % 10 == 0):
+            print(f"\n[LIVE UPDATE] Progress: {idx}/{len(bench_cases)} cases completed. Dynamic scoreboard:")
             live_summary = {}
             for r in results:
                 ds = r["dataset"]
