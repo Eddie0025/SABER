@@ -46,9 +46,9 @@ _VERIFICATION_ROUTING: Dict[str, Dict[str, str]] = {
 }
 _INTERNET_CHECKED = None
 _SEARCH_CACHE = {}
-_LAST_SEARCH_QUERY = {}
+_LAST_CYCLE_QUERIES = {}
 _LAST_SEARCH_RESULT = {}
-_CONSECUTIVE_SEARCH_COUNT = {}
+_QUERY_CONSECUTIVE_COUNT = {}
 
 class Sentinel:
     """The central verification authority.
@@ -150,40 +150,52 @@ class Sentinel:
         grounding_str = ""
         
         if online:
-            # Extract search query from claims or text
-            search_query = ""
+            # Extract search queries from all claims, or fall back to compiled_text
+            queries_to_run = []
             if claims_data and isinstance(claims_data, list):
-                search_query = claims_data[0].get("statement", "")[:120]
-            if not search_query:
-                search_query = compiled_text[:120]
+                for claim in claims_data:
+                    stmt = claim.get("statement", "").strip()
+                    if stmt:
+                        queries_to_run.append(stmt[:120])
+            if not queries_to_run:
+                queries_to_run = [compiled_text[:120]]
+
+            # Run search for each query with consecutive duplicate bypass
+            all_results = []
+            global _LAST_CYCLE_QUERIES, _LAST_SEARCH_RESULT, _QUERY_CONSECUTIVE_COUNT
             
-            # Run search
-            if search_query:
-                global _LAST_SEARCH_QUERY, _LAST_SEARCH_RESULT, _CONSECUTIVE_SEARCH_COUNT
-                last_q = _LAST_SEARCH_QUERY.get(specialist_domain)
-                last_r = _LAST_SEARCH_RESULT.get(specialist_domain)
+            last_cycle = _LAST_CYCLE_QUERIES.get(specialist_domain, [])
+            
+            for query_str in queries_to_run:
+                key = (specialist_domain, query_str)
+                last_r = _LAST_SEARCH_RESULT.get(key)
 
-                if last_q == search_query:
-                    _CONSECUTIVE_SEARCH_COUNT[specialist_domain] = _CONSECUTIVE_SEARCH_COUNT.get(specialist_domain, 0) + 1
+                if query_str in last_cycle:
+                    _QUERY_CONSECUTIVE_COUNT[key] = _QUERY_CONSECUTIVE_COUNT.get(key, 0) + 1
                 else:
-                    _CONSECUTIVE_SEARCH_COUNT[specialist_domain] = 1
-                    _LAST_SEARCH_QUERY[specialist_domain] = search_query
+                    _QUERY_CONSECUTIVE_COUNT[key] = 1
 
-                if _CONSECUTIVE_SEARCH_COUNT.get(specialist_domain, 0) >= 2:
-                    print(f"[Sentinel] Consecutive search limit reached for '{search_query}'. Bypassing online search.")
+                if _QUERY_CONSECUTIVE_COUNT[key] >= 2:
+                    print(f"[Sentinel] Consecutive search limit reached for '{query_str}'. Bypassing online search.")
                     results = last_r or ""
                 else:
-                    print(f"[Sentinel] Online: searching for '{search_query}'...")
-                    results = web_search(search_query)
-                    _LAST_SEARCH_RESULT[specialist_domain] = results
+                    print(f"[Sentinel] Online: searching for '{query_str}'...")
+                    results = web_search(query_str)
+                    _LAST_SEARCH_RESULT[key] = results
+                
+                if results.strip():
+                    all_results.append(f"Query: {query_str}\nResult: {results}")
 
-                grounding_str = (
-                    f"--- GROUNDING SOURCE SEARCH RESULTS ---\n"
-                    f"{results}\n"
-                    f"---------------------------------------\n\n"
-                    f"INSTRUCTION: Use the search results above as the ground truth. "
-                    f"If the specialist's claim contradicts the search results, flag it as a FACTUAL_ERROR and propose a correction.\n\n"
-                )
+            _LAST_CYCLE_QUERIES[specialist_domain] = queries_to_run
+            combined_results = "\n\n".join(all_results)
+
+            grounding_str = (
+                f"--- GROUNDING SOURCE SEARCH RESULTS ---\n"
+                f"{combined_results}\n"
+                f"---------------------------------------\n\n"
+                f"INSTRUCTION: Use the search results above as the ground truth. "
+                f"If the specialist's claim contradicts the search results, flag it as a FACTUAL_ERROR and propose a correction.\n\n"
+            )
         else:
             print("[Sentinel] Offline: skipping fact-grounding search.")
             grounding_str = (
