@@ -305,8 +305,76 @@ def run_benchmark(api_key=None):
             "dataset": "conv_finqa"
         })
 
+    # 2.8.5 Cyber: CyberMetric (95 cases)
+    try:
+        import subprocess
+        if not os.path.exists("CyberMetric"):
+            print("[*] Cloning CyberMetric GitHub repository...")
+            subprocess.run(["git", "clone", "https://github.com/cybermetric/CyberMetric.git"], check=True)
+            
+        json_path = ""
+        for r, d, files in os.walk("CyberMetric"):
+            for f in files:
+                if "80" in f and f.endswith(".json"):
+                    json_path = os.path.join(r, f)
+                    break
+            if json_path:
+                break
+                
+        if not json_path:
+            for r, d, files in os.walk("CyberMetric"):
+                for f in files:
+                    if f.endswith(".json"):
+                        json_path = os.path.join(r, f)
+                        break
+                if json_path:
+                    break
+                    
+        if json_path and os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    for k, v in data.items():
+                        if isinstance(v, list):
+                            data = v
+                            break
+                count = 0
+                for row in data:
+                    q_text = row.get("question") or row.get("Question")
+                    choices = []
+                    if "choices" in row:
+                        choices = row["choices"]
+                    else:
+                        for opt in ["a", "b", "c", "d", "A", "B", "C", "D"]:
+                            if opt in row:
+                                choices.append(row[opt])
+                    correct_ans = row.get("answer") or row.get("Answer") or row.get("correct") or row.get("correct_answer")
+                    if not q_text or not correct_ans:
+                        continue
+                    choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                    if str(correct_ans).upper() in ["A", "B", "C", "D"]:
+                        correct_char = str(correct_ans).upper()
+                    else:
+                        try:
+                            idx = choices.index(correct_ans)
+                            correct_char = chr(65 + idx)
+                        except ValueError:
+                            correct_char = "A"
+                    bench_cases.append({
+                        "type": "exact",
+                        "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                        "expected": correct_char,
+                        "domain": "cyber",
+                        "dataset": "cybermetric"
+                    })
+                    count += 1
+                    if count >= 95:
+                        break
+    except Exception as e:
+        print(f"[!] CyberMetric load failed: {e}")
+
     # 2.9 Cyber, Architecture, Meta-Reasoner (80-100 cases using curated evaluation files scaled)
-    eval_domains = [("medical", "eval_medical"), ("cyber", "eval_cyber"), ("science", "eval_science"), ("coding", "eval_coding"), ("architecture", "eval_architecture"), ("finance", "eval_finance"), ("meta_reasoner", "eval_meta_reasoner")]
+    eval_domains = [("medical", "eval_medical"), ("science", "eval_science"), ("coding", "eval_coding"), ("architecture", "eval_architecture"), ("finance", "eval_finance"), ("meta_reasoner", "eval_meta_reasoner")]
     for dom, dataset_name in eval_domains:
         script_path = os.path.join("scripts", f"eval_{dom}_30.py")
         if os.path.exists(script_path):
