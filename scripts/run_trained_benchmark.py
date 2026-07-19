@@ -320,7 +320,7 @@ def run_benchmark(api_key=None):
             "dataset": "conv_finqa"
         })
 
-    # 2.8.5 Cyber: CyberMetric (95 cases)
+    # 2.8.5 Cyber: CyberMetric (100 cases)
     try:
         print("[*] Loading CyberMetric from GitHub Raw URL...")
         import urllib.request
@@ -328,10 +328,10 @@ def run_benchmark(api_key=None):
         
         data = []
         urls = [
-            "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-80-v1.json",
             "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-500-v1.json",
-            "https://raw.githubusercontent.com/cybermetric/CyberMetric/master/CyberMetric-80-v1.json",
-            "https://raw.githubusercontent.com/cybermetric/CyberMetric/master/CyberMetric-500-v1.json"
+            "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-80-v1.json",
+            "https://raw.githubusercontent.com/cybermetric/CyberMetric/master/CyberMetric-500-v1.json",
+            "https://raw.githubusercontent.com/cybermetric/CyberMetric/master/CyberMetric-80-v1.json"
         ]
         
         for url in urls:
@@ -389,7 +389,7 @@ def run_benchmark(api_key=None):
                     "dataset": "cybermetric"
                 })
                 count += 1
-                if count >= 95:
+                if count >= 100:
                     break
             print(f"[+] Loaded {count} cases from CyberMetric Raw GitHub JSON.")
         else:
