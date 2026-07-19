@@ -165,11 +165,6 @@ class Sentinel:
             for q in queries_to_run:
                 if q not in unique_queries:
                     unique_queries.append(q)
-            
-            # STRICT CIRCUIT BREAKER: Hard limit of 3 searches per verification cycle
-            if len(unique_queries) > 3:
-                print(f"[Sentinel] CIRCUIT BREAKER: Model hallucinated {len(unique_queries)} claims. Truncating to 3 to prevent infinite looping.")
-                unique_queries = unique_queries[:3]
                 
             queries_to_run = unique_queries
 
