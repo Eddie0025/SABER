@@ -15,7 +15,7 @@ pip install -q -r requirements.txt
 
 if [ -n "$HF_TOKEN" ]; then
     echo "[+] Authenticating with Hugging Face Hub via python API..."
-    python3 -c "from huggingface_hub import login; import os; login(token=os.getenv('HF_TOKEN'), add_to_git_credential=True)"
+    python3 -c "from huggingface_hub import login; import os; login(token=os.getenv('HF_TOKEN'), add_to_git_credential=True)" || echo "[!] Authentication failed, proceeding..."
 fi
 
 echo ""
