@@ -1832,11 +1832,11 @@ if __name__ == "__main__":
     os.makedirs("data/processed", exist_ok=True)
     fetch_cyber()
     # fetch_science()  # Already trained
-    fetch_coding()
+    # fetch_coding()   # Not training coding from scratch in this run
     fetch_architecture()
     # fetch_finance()  # Already trained
-    fetch_orchestrator()
-    # fetch_meta_reasoner()  # Already trained
+    # fetch_orchestrator() # Not training orchestrator from scratch in this run
+    fetch_meta_reasoner()  # Training meta_reasoner from scratch with new 12k dataset
     
     # Step 4: Overlap Audit
     audit_specialist_overlap()
