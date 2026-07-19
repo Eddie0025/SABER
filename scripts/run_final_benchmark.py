@@ -9,6 +9,11 @@ import random
 # Ensure saber module can be imported
 sys.path.append(os.path.abspath('.'))
 
+# Disable Hugging Face verbose logs and progress bars
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+
 from saber.config import SaberConfig, VerificationTier
 from saber.registry import SpecialistRegistry
 from saber.audit import AuditLogger

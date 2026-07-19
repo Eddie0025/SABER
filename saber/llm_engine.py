@@ -43,11 +43,12 @@ class LLMEngine:
             return "cpu"
 
     def __enter__(self) -> "LLMEngine":
-        print(f"[LLMEngine] Loading {self.model_id_or_path} into RAM...")
         # pyrefly: ignore [missing-import]
         import torch
         # pyrefly: ignore [missing-import]
         from transformers import AutoModelForCausalLM, AutoTokenizer
+        import transformers
+        transformers.logging.set_verbosity_error()
 
         # Setup tokenizer
         try:
@@ -68,7 +69,6 @@ class LLMEngine:
         # Define data type based on device to save memory
         dtype = torch.float16
         if self.device == "mps":
-            dtype = torch.float32  # MPS often struggles with half precision unless specifically optimized, but we can try float16 if float32 takes too much RAM. Actually, float16 works on M-series for inference. Let's use float16.
             dtype = torch.float16
 
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -84,7 +84,6 @@ class LLMEngine:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        print(f"[LLMEngine] Unloading {self.model_id_or_path} and clearing RAM...")
         
         # Delete references
         del self.model
