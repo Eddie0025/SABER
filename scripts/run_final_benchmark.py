@@ -157,7 +157,23 @@ def run_benchmark(api_key=None):
     except Exception as e:
         print(f"[!] SciQ benchmark load failed: {e}")
 
-    # 2.3 Open-Ended Questions (from 30-case evaluation suites)
+    # 2.3 MedMCQA Subsets (Exact choice matching)
+    try:
+        medmcqa = load_dataset("openlifescienceai/medmcqa", split="validation[:20]")
+        for row in medmcqa:
+            cop_idx = row["cop"]
+            cop_char = chr(65 + cop_idx) if 0 <= cop_idx < 4 else str(cop_idx)
+            text = f"Question: {row['question']}\nOptions:\nA: {row['opa']}\nB: {row['opb']}\nC: {row['opc']}\nD: {row['opd']}"
+            bench_cases.append({
+                "type": "exact",
+                "question": text,
+                "expected": cop_char,
+                "domain": "medical"
+            })
+    except Exception as e:
+        print(f"[!] MedMCQA benchmark load failed: {e}")
+
+    # 2.4 Open-Ended Questions (from 30-case evaluation suites)
     eval_scripts = ["eval_medical_30.py", "eval_cyber_30.py", "eval_science_30.py", "eval_coding_30.py", "eval_architecture_30.py", "eval_finance_30.py", "eval_meta_reasoner_30.py"]
     for script in eval_scripts:
         script_path = os.path.join("scripts", script)
