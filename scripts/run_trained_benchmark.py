@@ -430,6 +430,50 @@ def run_benchmark(api_key=None):
             "dataset": "custom_multi_domain"
         })
 
+    # 2.12 Meta-Reasoner: ARC-Challenge (100 cases)
+    try:
+        arc = load_hf_dataset("allenai/ai2_arc", "ARC-Challenge", split="test[:100]")
+        for row in arc:
+            q_dict = row.get("question", {})
+            q_text = q_dict.get("text", "")
+            choices_list = q_dict.get("choices", [])
+            choices = [c.get("text", "") for c in choices_list]
+            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+            ans_key = row.get("answerKey", "A")
+            if str(ans_key) in ["1", "2", "3", "4"]:
+                correct_char = chr(65 + int(ans_key) - 1)
+            else:
+                correct_char = str(ans_key).upper()
+            
+            bench_cases.append({
+                "type": "exact",
+                "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                "expected": correct_char,
+                "domain": "meta_reasoner",
+                "dataset": "arc_challenge"
+            })
+    except Exception as e:
+        print(f"[!] ARC-Challenge load failed: {e}")
+
+    # 2.13 Architecture: MMLU College Computer Science (100 cases)
+    try:
+        mmlu_cs = load_hf_dataset("cais/mmlu", "college_computer_science", split="test[:100]")
+        for row in mmlu_cs:
+            choices = row.get("choices", [])
+            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+            ans_idx = row.get("answer", 0)
+            correct_char = chr(65 + int(ans_idx))
+            
+            bench_cases.append({
+                "type": "exact",
+                "question": f"Question: {row.get('question', '')}\nOptions:\n{choices_str}",
+                "expected": correct_char,
+                "domain": "architecture",
+                "dataset": "mmlu_college_cs"
+            })
+    except Exception as e:
+        print(f"[!] MMLU College CS load failed: {e}")
+
     # Only benchmark cyber, architecture, and meta_reasoner domains
     bench_cases = [c for c in bench_cases if c["domain"] in ["cyber", "architecture", "meta_reasoner"]]
     print(f"\n[+] Total benchmark cases compiled: {len(bench_cases)}")
