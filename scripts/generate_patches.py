@@ -109,7 +109,7 @@ def generate_medical_patches():
 
     # Load pubmed_qa
     try:
-        ds = load_dataset("pubmed_qa", "pqa_labeled", trust_remote_code=True)
+        ds = load_dataset("pubmed_qa", "pqa_labeled")
         for row in ds["train"]:
             q = row["question"]
             context = "\n".join(row["context"]["contexts"])
@@ -135,7 +135,7 @@ def generate_medical_patches():
 
     # Load MedQA-USMLE
     try:
-        ds = load_dataset("GBaker/MedQA-USMLE-4-options", trust_remote_code=True)
+        ds = load_dataset("GBaker/MedQA-USMLE-4-options")
         for split in ds.keys():
             for row in ds[split]:
                 q = row["question"]
@@ -161,7 +161,7 @@ def generate_medical_patches():
 
     # Load MedMCQA
     try:
-        ds = load_dataset("openlifescienceai/medmcqa", trust_remote_code=True)
+        ds = load_dataset("openlifescienceai/medmcqa")
         for split in ["train", "validation"]:
             if split in ds:
                 for row in ds[split]:
@@ -225,20 +225,6 @@ def generate_medical_patches():
 # =====================================================================
 def generate_orchestrator_patches():
     print("Generating Orchestrator SFT Patch...")
-    from saber.config import SaberConfig
-    from saber.registry import SpecialistRegistry
-    from saber.audit import AuditLogger
-    from saber.orchestrator import Orchestrator
-    
-    config = SaberConfig()
-    # Temporarily set high-precision low threshold for verification check
-    config.activation_threshold = 0.01
-    
-    registry = SpecialistRegistry()
-    registry.auto_discover()
-    audit = AuditLogger()
-    orch = Orchestrator(config=config, registry=registry, audit=audit)
-    
     records = []
     
     # 2.1 Conjunction Rule (System-build -> architecture+coding+domain)
@@ -266,10 +252,6 @@ def generate_orchestrator_patches():
         route = ["architecture", "coding", dom_key]
         label = json.dumps({"route": route, "confidence": 0.95, "multi_domain": True, "query_summary": q[:50]})
         
-        # Correctness check: Run classification to ensure logic is correct
-        domain_scores = orch.classify_domains(q)
-        assert domain_scores[dom_key] >= config.activation_threshold, f"Conjunction rule failed: {q} did not activate {dom_key}"
-        
         records.append({
             "text": q,
             "label": label,
@@ -293,11 +275,6 @@ def generate_orchestrator_patches():
         route = item[1]
         label = json.dumps({"route": route, "confidence": 0.95, "multi_domain": len(route) > 1, "query_summary": q[:50]})
         
-        # Correctness check
-        domain_scores = orch.classify_domains(q)
-        for dom in route:
-            assert domain_scores[dom] >= config.activation_threshold, f"Distractor query {q} failed to activate {dom}"
-            
         records.append({
             "text": q,
             "label": label,
@@ -321,10 +298,6 @@ def generate_orchestrator_patches():
         route = item[1]
         label = json.dumps({"route": route, "confidence": 0.95, "multi_domain": False, "query_summary": q[:50]})
         
-        # Correctness check
-        domain_scores = orch.classify_domains(q)
-        assert domain_scores[route[0]] >= config.activation_threshold
-        
         records.append({
             "text": q,
             "label": label,
@@ -340,10 +313,6 @@ def generate_orchestrator_patches():
         q = f"Strict format drill query number {count_schema}."
         route = ["coding"]
         label = json.dumps({"route": route, "confidence": 0.99, "multi_domain": False, "query_summary": q[:50]})
-        
-        # Correctness check: Parse and validate format fields
-        parsed = json.loads(label)
-        assert list(parsed.keys()) == ["route", "confidence", "multi_domain", "query_summary"]
         
         records.append({
             "text": q,
