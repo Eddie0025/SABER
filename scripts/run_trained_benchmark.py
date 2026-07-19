@@ -322,46 +322,13 @@ def run_benchmark(api_key=None):
 
     # 2.8.5 Cyber: CyberMetric (95 cases)
     try:
-        import subprocess
-        if not os.path.exists("CyberMetric"):
-            print("[*] Cloning CyberMetric GitHub repository...")
-            subprocess.run(["git", "clone", "https://github.com/cybermetric/CyberMetric.git"], check=True)
-            
-        json_path = ""
-        for r, d, files in os.walk("CyberMetric"):
-            for f in files:
-                if "80" in f and f.endswith(".json"):
-                    json_path = os.path.join(r, f)
-                    break
-            if json_path:
-                break
-                
-        if not json_path:
-            for r, d, files in os.walk("CyberMetric"):
-                for f in files:
-                    if f.endswith(".json"):
-                        json_path = os.path.join(r, f)
-                        break
-                if json_path:
-                    break
-                    
-        data = []
-        if json_path and os.path.exists(json_path):
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    for k, v in data.items():
-                        if isinstance(v, list):
-                            data = v
-                            break
-        else:
-            # Fallback to Hugging Face
-            try:
-                print("[*] Loading CyberMetric from HuggingFace Hub...")
-                ds = load_hf_dataset("AcerSeb/CyberMetric", "CyberMetric-500", split="train[:95]")
-                data = list(ds)
-            except Exception as hf_err:
-                print(f"[!] Hugging Face CyberMetric load failed: {hf_err}")
+        print("[*] Loading CyberMetric from HuggingFace Hub...")
+        try:
+            ds = load_hf_dataset("AcerSeb/CyberMetric", "CyberMetric-500", split="train[:95]")
+            data = list(ds)
+        except Exception as hf_err:
+            print(f"[!] Hugging Face CyberMetric load failed: {hf_err}")
+            data = []
 
         if data:
             count = 0
@@ -396,6 +363,7 @@ def run_benchmark(api_key=None):
                 count += 1
                 if count >= 95:
                     break
+            print(f"[+] Loaded {count} cases from CyberMetric HF.")
     except Exception as e:
         print(f"[!] CyberMetric load failed: {e}")
 
