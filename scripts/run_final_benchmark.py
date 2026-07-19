@@ -267,6 +267,46 @@ def run_benchmark(api_key=None):
             
         results.append(case_res)
 
+        # Check if the next case belongs to a new dataset, or if it is the end of the benchmark
+        is_dataset_complete = (idx == len(bench_cases)) or (bench_cases[idx]["dataset"] != case["dataset"])
+        if is_dataset_complete:
+            print(f"\n[LIVE UPDATE] Dataset '{case['dataset']}' completed. Dynamic scoreboard:")
+            live_summary = {}
+            for r in results:
+                ds = r["dataset"]
+                if ds not in live_summary:
+                    live_summary[ds] = {}
+                for m_name, r_info in r["runs"].items():
+                    if m_name not in live_summary[ds]:
+                        live_summary[ds][m_name] = {"acc_sum": 0.0, "acc_cnt": 0, "corr_sum": 0.0, "corr_cnt": 0}
+                    ev = r_info["evaluation"]
+                    if r["type"] == "exact":
+                        live_summary[ds][m_name]["acc_sum"] += ev.get("accuracy", 0.0)
+                        live_summary[ds][m_name]["acc_cnt"] += 1
+                    else:
+                        corr_val = ev.get("correctness")
+                        if corr_val is not None:
+                            live_summary[ds][m_name]["corr_sum"] += float(corr_val)
+                            live_summary[ds][m_name]["corr_cnt"] += 1
+            
+            print("| Dataset | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |")
+            print("| :--- | :--- | :--- | :--- |")
+            for ds, m_data in live_summary.items():
+                cells = [ds]
+                for m_name in ["Without Sentinel", "2-Check Sentinel", "4-Check Sentinel"]:
+                    st = m_data.get(m_name, {})
+                    if not st:
+                        cells.append("N/A")
+                        continue
+                    pct = 0.0
+                    if st["acc_cnt"] > 0:
+                        pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
+                    elif st["corr_cnt"] > 0:
+                        pct = ((st["corr_sum"] / st["corr_cnt"]) / 2.0) * 100.0
+                    cells.append(f"{pct:.1f}%")
+                print("| " + " | ".join(cells) + " |")
+            print("- - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
+
     # 4. Aggregate and compute performance stats per dataset & mode
     summary = {}
     for case_res in results:
