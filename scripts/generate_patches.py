@@ -109,7 +109,7 @@ def generate_medical_patches():
 
     # Load pubmed_qa
     try:
-        ds = load_dataset("pubmed_qa", "pqa_labeled")
+        ds = load_dataset("pubmed_qa", "pqa_labeled", trust_remote_code=True)
         for row in ds["train"]:
             q = row["question"]
             context = "\n".join(row["context"]["contexts"])
@@ -135,7 +135,7 @@ def generate_medical_patches():
 
     # Load MedQA-USMLE
     try:
-        ds = load_dataset("GBaker/MedQA-USMLE-4-options")
+        ds = load_dataset("GBaker/MedQA-USMLE-4-options", trust_remote_code=True)
         for split in ds.keys():
             for row in ds[split]:
                 q = row["question"]
@@ -161,12 +161,12 @@ def generate_medical_patches():
 
     # Load MedMCQA
     try:
-        ds = load_dataset("openlifescienceai/medmcqa")
+        ds = load_dataset("openlifescienceai/medmcqa", trust_remote_code=True)
         for split in ["train", "validation"]:
             if split in ds:
                 for row in ds[split]:
                     subj = row.get("subject_name", "")
-                    exp = row.get("exp", "")
+                    exp = row.get("exp") or ""
                     if subj in ["Physiology", "Pharmacology", "Biochemistry", "Medicine"] and len(exp) >= 20:
                         q = row["question"]
                         opa, opb, opc, opd = row["opa"], row["opb"], row["opc"], row["opd"]
@@ -231,6 +231,9 @@ def generate_orchestrator_patches():
     from saber.orchestrator import Orchestrator
     
     config = SaberConfig()
+    # Temporarily set high-precision low threshold for verification check
+    config.activation_threshold = 0.01
+    
     registry = SpecialistRegistry()
     registry.auto_discover()
     audit = AuditLogger()
