@@ -141,7 +141,7 @@ def run_benchmark(api_key=None):
     
     # 2.1 MMLU Subsets (Exact choice matching)
     try:
-        mmlu = load_dataset("cais/mmlu", "clinical_knowledge", split="test[:20]")
+        mmlu = load_dataset("cais/mmlu", "clinical_knowledge", split="test[:95]")
         for row in mmlu:
             choices = row["choices"]
             ans_idx = row["answer"]
@@ -160,7 +160,7 @@ def run_benchmark(api_key=None):
         
     # 2.2 SciQ Subsets (Exact choice matching)
     try:
-        sciq = load_dataset("allenai/sciq", split="test[:20]")
+        sciq = load_dataset("allenai/sciq", split="test[:95]")
         for row in sciq:
             bench_cases.append({
                 "type": "exact",
@@ -174,7 +174,7 @@ def run_benchmark(api_key=None):
 
     # 2.3 MedMCQA Subsets (Exact choice matching)
     try:
-        medmcqa = load_dataset("openlifescienceai/medmcqa", split="validation[:20]")
+        medmcqa = load_dataset("openlifescienceai/medmcqa", split="validation[:95]")
         for row in medmcqa:
             cop_idx = row["cop"]
             cop_char = chr(65 + cop_idx) if 0 <= cop_idx < 4 else str(cop_idx)
@@ -201,7 +201,7 @@ def run_benchmark(api_key=None):
                 spec.loader.exec_module(module)
                 cases = getattr(module, "TEST_CASES")
                 domain_name = script.replace("eval_", "").replace("_30.py", "")
-                for c in cases[:5]: # Take first 5 cases from each domain for benchmark speed
+                for c in cases[:95]: # Load up to 95 cases per curated domain (takes all 30 available)
                     bench_cases.append({
                         "type": "open_ended",
                         "question": c["question"],
