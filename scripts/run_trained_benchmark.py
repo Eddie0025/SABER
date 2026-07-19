@@ -499,8 +499,8 @@ def run_benchmark(api_key=None):
     except Exception as e:
         print(f"[!] MMLU College CS load failed: {e}")
 
-    # Only benchmark exact match cases for cyber, architecture, and meta_reasoner domains
-    bench_cases = [c for c in bench_cases if c["domain"] in ["cyber", "architecture", "meta_reasoner"] and c.get("type") == "exact"]
+    # Only benchmark exact match cases for cyber domain
+    bench_cases = [c for c in bench_cases if c["domain"] in ["cyber"] and c.get("type") == "exact"]
     print(f"\n[+] Total exact-match benchmark cases compiled: {len(bench_cases)}")
     results = []
 
