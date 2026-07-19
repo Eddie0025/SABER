@@ -10,6 +10,9 @@ echo "          SABER Evaluation Benchmark Runner (GPU 0)"
 echo "=========================================================="
 echo ""
 
+echo "[+] Step 0: Installing dependencies..."
+pip install -q -r requirements.txt
+
 echo "[+] Step 1: Starting target benchmarks on GPU 0 (Science, Coding, Finance)..."
 export SABER_KEEP_MODELS_LOADED=1
 CUDA_VISIBLE_DEVICES=0 python3 scripts/run_final_benchmark.py

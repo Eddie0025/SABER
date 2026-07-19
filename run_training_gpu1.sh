@@ -11,8 +11,7 @@ echo "=========================================================="
 echo ""
 
 echo "[+] Step 1: Installing dependencies..."
-pip install -q --upgrade \
-    transformers datasets peft trl accelerate sentencepiece protobuf "numpy<2.0.0"
+pip install -q -r requirements.txt
 
 echo ""
 echo "[+] Step 2: Preparing SFT datasets (including 12K Meta-Reasoner data)..."
