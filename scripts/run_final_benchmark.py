@@ -98,30 +98,44 @@ def call_qwen_judge(prompt, question, student_answer, api_key=None):
         "temperature": 0.1
     }
     
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(data).encode("utf-8"),
-        headers=headers,
-        method="POST"
-    )
-    
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-            content = res_data["choices"][0]["message"]["content"].strip()
-            clean_json = content.replace("```json", "").replace("```", "").strip()
-            start = clean_json.find("{")
-            end = clean_json.rfind("}")
-            if start != -1 and end != -1:
-                clean_json = clean_json[start:end+1]
-            return json.loads(clean_json)
-    except Exception as e:
-        print(f"[!] OpenRouter API judge failed: {e}")
-        return {
-            "correctness": None, "relevance": None, "reasoning": None,
-            "calibration": None, "red_herring": None, "confidence_in_judgment": "LOW",
-            "explanation": f"API Error: {e}"
-        }
+    import time
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(data).encode("utf-8"),
+                headers=headers,
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                content = res_data["choices"][0]["message"]["content"].strip()
+                clean_json = content.replace("```json", "").replace("```", "").strip()
+                start = clean_json.find("{")
+                end = clean_json.rfind("}")
+                if start != -1 and end != -1:
+                    clean_json = clean_json[start:end+1]
+                return json.loads(clean_json)
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < max_retries - 1:
+                sleep_time = (2 ** attempt) + 2
+                print(f"[!] OpenRouter Rate Limited (429). Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+                continue
+            print(f"[!] OpenRouter API judge HTTP Error: {e.code} - {e.reason}")
+            return {
+                "correctness": None, "relevance": None, "reasoning": None,
+                "calibration": None, "red_herring": None, "confidence_in_judgment": "LOW",
+                "explanation": f"HTTP Error: {e.code} {e.reason}"
+            }
+        except Exception as e:
+            print(f"[!] OpenRouter API judge failed: {e}")
+            return {
+                "correctness": None, "relevance": None, "reasoning": None,
+                "calibration": None, "red_herring": None, "confidence_in_judgment": "LOW",
+                "explanation": f"API Error: {e}"
+            }
 
 # =====================================================================
 # HF Dataset Loader Helper (Supporting Auth Token)
