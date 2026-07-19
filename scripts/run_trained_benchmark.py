@@ -356,15 +356,21 @@ def run_benchmark(api_key=None):
             count = 0
             for row in data:
                 q_text = row.get("question") or row.get("Question")
+                
+                # Extract choices (handle both list format and dict format under 'answers' or 'choices')
                 choices = []
-                if "choices" in row and row["choices"] is not None:
-                    choices = row["choices"]
-                else:
-                    for opt in ["a", "b", "c", "d", "A", "B", "C", "D"]:
-                        if opt in row:
-                            choices.append(row[opt])
-                correct_ans = row.get("answer") or row.get("Answer") or row.get("correct") or row.get("correct_answer")
-                if not q_text or not correct_ans:
+                choices_dict = row.get("answers") or row.get("choices") or row
+                if isinstance(choices_dict, list):
+                    choices = choices_dict
+                elif isinstance(choices_dict, dict):
+                    # Sort to ensure A, B, C, D order
+                    for opt in ["A", "B", "C", "D", "a", "b", "c", "d", "1", "2", "3", "4"]:
+                        if opt in choices_dict and choices_dict[opt]:
+                            choices.append(choices_dict[opt])
+                
+                correct_ans = row.get("solution") or row.get("answer") or row.get("Answer") or row.get("correct") or row.get("correct_answer")
+                
+                if not q_text or not correct_ans or not choices:
                     continue
                 choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
                 if str(correct_ans).upper() in ["A", "B", "C", "D"]:
