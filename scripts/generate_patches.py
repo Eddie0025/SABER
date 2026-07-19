@@ -219,10 +219,10 @@ def generate_medical_patches():
     print("✅ Medical real-source assertion passed (100% authentic dataset sourcing).")
 
 # =====================================================================
-# 2. FINANCE — Math-verified, dreamerdeo/finqa (800-1,200)
+# 2. FINANCE — Math-verified, FinQA + Programmatic (800-1,200)
 # =====================================================================
 def generate_finance_patches():
-    print("Loading Finance Datasets from Hugging Face...")
+    print("Loading/Generating Finance Datasets...")
     from datasets import load_dataset
     records = []
     
@@ -236,8 +236,6 @@ def generate_finance_patches():
                     pre_text = row.get("pre_text", "")
                     table = row.get("table", "")
                     question = row.get("question", "")
-                    
-                    # Calculations and answers
                     calc_prog = row.get("program", "")
                     ans = row.get("answer", "")
                     
@@ -263,7 +261,6 @@ def generate_finance_patches():
             input_val = row.get("input", "")
             output = row.get("output", "")
             
-            # Filter for math Q&A
             math_match = re.search(r"(\d+)\s*[\+\-\*\/]\s*(\d+)", instruction + " " + input_val)
             if math_match:
                 text = f"Instruction: {instruction}\nInput: {input_val}"
@@ -279,6 +276,62 @@ def generate_finance_patches():
                     break
     except Exception as e:
         print(f"[!] Finance Alpaca load failed: {e}")
+
+    # 2.3 Programmatic Statement Math Waterfall (EBITDA -> EBIT -> EBT -> Net Income)
+    # Generate structured multi-step calculations to guarantee meeting target volume
+    needed = 1000 - len(records)
+    if needed > 0:
+        print(f"Generating {needed} programmatic multi-step Finance calculation drills...")
+        for i in range(needed):
+            rev = random.randint(100, 5000)
+            cogs = random.randint(50, int(rev * 0.6))
+            gp = rev - cogs
+            sga = random.randint(10, int(gp * 0.4))
+            ebitda = gp - sga
+            dep_amort = random.randint(5, int(sga * 0.5) + 5)
+            ebit = ebitda - dep_amort
+            interest = random.randint(2, int(ebit * 0.3) + 2)
+            ebt = ebit - interest
+            tax_rate = 0.21
+            tax = round(ebt * tax_rate, 2)
+            net_income = round(ebt - tax, 2)
+            
+            text = (
+                f"Context: Income Statement Details\n"
+                f"- Revenue: ${rev}M\n"
+                f"- COGS: ${cogs}M\n"
+                f"- SG&A: ${sga}M\n"
+                f"- Depreciation & Amortization: ${dep_amort}M\n"
+                f"- Interest Expense: ${interest}M\n"
+                f"- Tax Rate: 21%\n"
+                f"Question: Compute Gross Profit, EBITDA, EBIT, EBT, and Net Income sequentially."
+            )
+            
+            # Machine checkable calculations
+            assert gp == rev - cogs
+            assert ebitda == gp - sga
+            assert ebit == ebitda - dep_amort
+            assert ebt == ebit - interest
+            
+            label = (
+                f"REASONING:\n"
+                f"1. Gross Profit = Revenue - COGS = {rev} - {cogs} = {gp}M\n"
+                f"2. EBITDA = Gross Profit - SG&A = {gp} - {sga} = {ebitda}M\n"
+                f"3. EBIT = EBITDA - D&A = {ebitda} - {dep_amort} = {ebit}M\n"
+                f"4. EBT = EBIT - Interest = {ebit} - {interest} = {ebt}M\n"
+                f"5. Taxes = EBT * 21% = {ebt} * 0.21 = {tax}M\n"
+                f"6. Net Income = EBT - Taxes = {ebt} - {tax} = {net_income}M\n"
+                f"\n"
+                f"CONCLUSION:\n"
+                f"Net Income is ${net_income}M."
+            )
+            
+            records.append({
+                "text": text,
+                "label": label,
+                "domain": "finance",
+                "source": "programmatic_waterfall_drills"
+            })
 
     # Cap at 1000
     records = records[:1000]
