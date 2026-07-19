@@ -160,6 +160,19 @@ class Sentinel:
             if not queries_to_run:
                 queries_to_run = [compiled_text[:120]]
 
+            # STRICT CIRCUIT BREAKER: Deduplicate claims to kill autoregressive loops
+            unique_queries = []
+            for q in queries_to_run:
+                if q not in unique_queries:
+                    unique_queries.append(q)
+            
+            # STRICT CIRCUIT BREAKER: Hard limit of 3 searches per verification cycle
+            if len(unique_queries) > 3:
+                print(f"[Sentinel] CIRCUIT BREAKER: Model hallucinated {len(unique_queries)} claims. Truncating to 3 to prevent infinite looping.")
+                unique_queries = unique_queries[:3]
+                
+            queries_to_run = unique_queries
+
             # Run search for each query with consecutive duplicate bypass
             all_results = []
             global _LAST_CYCLE_QUERIES, _LAST_SEARCH_RESULT, _QUERY_CONSECUTIVE_COUNT
