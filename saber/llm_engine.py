@@ -122,14 +122,21 @@ class LLMEngine:
         inputs = self.tokenizer(full_prompt, return_tensors="pt", truncation=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
+        # Get all possible end of sequence token IDs
+        eos_ids = [self.tokenizer.eos_token_id]
+        im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if isinstance(im_end_id, int):
+            eos_ids.append(im_end_id)
+            
         outputs = self.model.generate(
             **inputs,
             max_new_tokens=self.max_new_tokens,
             do_sample=True,
             temperature=0.3,
             top_p=0.9,
+            repetition_penalty=1.05,
             pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
+            eos_token_id=eos_ids,
         )
 
         # Decode only the newly generated tokens
@@ -176,14 +183,21 @@ class LLMEngine:
         inputs = self.tokenizer(full_prompt, return_tensors="pt", truncation=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
+        # Get all possible end of sequence token IDs
+        eos_ids = [self.tokenizer.eos_token_id]
+        im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if isinstance(im_end_id, int):
+            eos_ids.append(im_end_id)
+
         outputs = self.model.generate(
             **inputs,
             max_new_tokens=self.max_new_tokens,
             do_sample=True,
             temperature=0.3,
             top_p=0.9,
+            repetition_penalty=1.05,
             pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
+            eos_token_id=eos_ids,
         )
 
         input_length = inputs["input_ids"].shape[1]

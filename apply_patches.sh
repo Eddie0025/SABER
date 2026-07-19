@@ -47,13 +47,14 @@ python3 scripts/generate_patches.py
 # 2. Apply SFT Patches (Coverage gaps)
 echo ""
 echo "[2/3] Applying Continuous SFT Patches..."
-# python3 -m saber.training.trainer --domain orchestrator --data data/processed/orchestrator_patch.jsonl --patch-mode
-# python3 -m saber.training.trainer --domain science --data data/processed/science_patch.jsonl --patch-mode
-
-# 3. Apply SFT Patches (Including Meta-Reasoner)
-echo ""
-echo "[3/3] Applying Meta-Reasoner SFT Patch..."
-python3 -m saber.training.trainer --domain meta_reasoner --data data/processed/meta_reasoner_patch.jsonl --patch-mode
+run_step "medical" "--patch-mode" "data/processed/medical_patch.jsonl"
+run_step "orchestrator" "--patch-mode" "data/processed/orchestrator_patch.jsonl"
+run_step "science" "--patch-mode" "data/processed/science_patch.jsonl"
+run_step "coding" "--patch-mode" "data/processed/coding_patch.jsonl"
+run_step "cyber" "--patch-mode" "data/processed/cybersecurity_patch.jsonl"
+run_step "architecture" "--patch-mode" "data/processed/architecture_patch.jsonl"
+run_step "finance" "--patch-mode" "data/processed/finance_patch.jsonl"
+run_step "meta_reasoner" "--patch-mode" "data/processed/meta_reasoner_patch.jsonl"
 
 echo ""
 echo "============================================================"

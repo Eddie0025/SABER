@@ -323,6 +323,23 @@ def train(cfg: TrainConfig) -> str:
 
     print(f"[trainer] Loaded {len(records)} raw records from {cfg.data_path}")
     
+    # Oversample low-count medical topics (under 50 records) at the loader level
+    if cfg.domain == "medical" and cfg.patch_mode:
+        from collections import defaultdict
+        topic_groups = defaultdict(list)
+        for r in records:
+            tag = r.get("topic_tag", "general")
+            topic_groups[tag].append(r)
+            
+        oversampled_records = []
+        for tag, group in topic_groups.items():
+            if tag != "general" and len(group) < 50:
+                print(f"[trainer] Oversampling topic '{tag}' (count={len(group)}) by 4x")
+                oversampled_records.extend(group * 4)
+            else:
+                oversampled_records.extend(group)
+        records = oversampled_records
+    
     if cfg.dpo_mode:
         formatted = format_for_dpo(records, cfg.domain)
         print(f"[trainer] Formatted {len(formatted)} records for DPO")
