@@ -15,23 +15,31 @@ from saber.audit import AuditLogger
 from saber.orchestrator import Orchestrator
 
 # =====================================================================
-# Qwen LLM-as-a-Judge API Client (OpenAI / DashScope compatible)
+# OpenRouter LLM-as-a-Judge API Client (Gemma-4-31B)
 # =====================================================================
 def call_qwen_judge(prompt, question, student_answer, api_key=None):
     if not api_key:
-        api_key = os.getenv("QWEN_API_KEY")
+        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("QWEN_API_KEY")
     
+    if not api_key:
+        # Fallback helper: check if an untracked local api_key.txt file exists
+        if os.path.exists("api_key.txt"):
+            with open("api_key.txt", "r") as f:
+                api_key = f.read().strip()
+                
     if not api_key:
         return {
             "correctness": None, "relevance": None, "reasoning": None,
             "calibration": None, "red_herring": None, "confidence_in_judgment": "LOW",
-            "explanation": "No QWEN_API_KEY provided; grading skipped."
+            "explanation": "No API key found. Pass key as argument, set OPENROUTER_API_KEY env, or save to api_key.txt."
         }
-
-    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "https://github.com/Eddie0025/SABER",
+        "X-Title": "SABER Benchmark"
     }
     
     system_prompt = (
@@ -75,7 +83,7 @@ def call_qwen_judge(prompt, question, student_answer, api_key=None):
     )
     
     data = {
-        "model": "qwen2.5-72b-instruct", # DashScope compatible Qwen 72B model name
+        "model": "google/gemma-4-31b-it:free",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
@@ -94,7 +102,6 @@ def call_qwen_judge(prompt, question, student_answer, api_key=None):
         with urllib.request.urlopen(req, timeout=30) as response:
             res_data = json.loads(response.read().decode("utf-8"))
             content = res_data["choices"][0]["message"]["content"].strip()
-            # Clean JSON formatting wrappers
             clean_json = content.replace("```json", "").replace("```", "").strip()
             start = clean_json.find("{")
             end = clean_json.rfind("}")
@@ -102,7 +109,7 @@ def call_qwen_judge(prompt, question, student_answer, api_key=None):
                 clean_json = clean_json[start:end+1]
             return json.loads(clean_json)
     except Exception as e:
-        print(f"[!] Qwen API judge failed: {e}")
+        print(f"[!] OpenRouter API judge failed: {e}")
         return {
             "correctness": None, "relevance": None, "reasoning": None,
             "calibration": None, "red_herring": None, "confidence_in_judgment": "LOW",
