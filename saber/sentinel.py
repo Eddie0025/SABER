@@ -46,6 +46,9 @@ _VERIFICATION_ROUTING: Dict[str, Dict[str, str]] = {
 }
 _INTERNET_CHECKED = None
 _SEARCH_CACHE = {}
+_LAST_SEARCH_QUERY = {}
+_LAST_SEARCH_RESULT = {}
+_CONSECUTIVE_SEARCH_COUNT = {}
 
 class Sentinel:
     """The central verification authority.
@@ -156,8 +159,24 @@ class Sentinel:
             
             # Run search
             if search_query:
-                print(f"[Sentinel] Online: searching for '{search_query}'...")
-                results = web_search(search_query)
+                global _LAST_SEARCH_QUERY, _LAST_SEARCH_RESULT, _CONSECUTIVE_SEARCH_COUNT
+                last_q = _LAST_SEARCH_QUERY.get(specialist_domain)
+                last_r = _LAST_SEARCH_RESULT.get(specialist_domain)
+
+                if last_q == search_query:
+                    _CONSECUTIVE_SEARCH_COUNT[specialist_domain] = _CONSECUTIVE_SEARCH_COUNT.get(specialist_domain, 0) + 1
+                else:
+                    _CONSECUTIVE_SEARCH_COUNT[specialist_domain] = 1
+                    _LAST_SEARCH_QUERY[specialist_domain] = search_query
+
+                if _CONSECUTIVE_SEARCH_COUNT.get(specialist_domain, 0) >= 2:
+                    print(f"[Sentinel] Consecutive search limit reached for '{search_query}'. Bypassing online search.")
+                    results = last_r or ""
+                else:
+                    print(f"[Sentinel] Online: searching for '{search_query}'...")
+                    results = web_search(search_query)
+                    _LAST_SEARCH_RESULT[specialist_domain] = results
+
                 grounding_str = (
                     f"--- GROUNDING SOURCE SEARCH RESULTS ---\n"
                     f"{results}\n"
