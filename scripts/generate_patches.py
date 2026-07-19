@@ -253,7 +253,7 @@ def generate_orchestrator_patches():
         "medical": ["medical", "clinical", "hospital"],
         "finance": ["finance", "banking", "capital"],
         "science": ["science", "physics", "chemistry"],
-        "cyber": ["cybersecurity", "firewall", "intrusion"]
+        "cyber": ["cyber", "firewall", "intrusion"]
     }
     
     count_conj = 0
