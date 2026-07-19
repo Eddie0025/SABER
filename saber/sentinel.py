@@ -134,7 +134,7 @@ class Sentinel:
         online = is_internet_available()
         grounding_str = ""
         
-        if online and specialist_domain == "medical":
+        if online:
             # Extract search query from claims or text
             search_query = ""
             if claims_data and isinstance(claims_data, list):
@@ -154,10 +154,10 @@ class Sentinel:
                     f"If the specialist's claim contradicts the search results, flag it as a FACTUAL_ERROR and propose a correction.\n\n"
                 )
         else:
-            print("[Sentinel] Offline or non-medical domain: skipping fact-grounding search.")
+            print("[Sentinel] Offline: skipping fact-grounding search.")
             grounding_str = (
                 "--- OFFLINE MODE INSTRUCTION ---\n"
-                "Internet is currently offline or domain is non-medical. Do not attempt to verify obscure factual entities or specific named signs/triads against external facts. "
+                "Internet is currently offline. Do not attempt to verify obscure factual entities or specific named signs/triads against external facts. "
                 "Focus strictly on logical reasoning consistency, internal flow, contradictions, and potential structural fabrications (e.g. self-contradictory claims).\n\n"
             )
 

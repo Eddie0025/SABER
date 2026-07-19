@@ -154,21 +154,47 @@ def run_benchmark(api_key=None):
     
     # 2.1 Science: GPQA Diamond (198 cases)
     try:
-        gpqa = load_hf_dataset("idavidrein/gpqa", "gpqa_diamond", split="train")
-        for row in gpqa:
-            choices = [row["correct_answer"], row["incorrect_answer1"], row["incorrect_answer2"], row["incorrect_answer3"]]
-            random.seed(42)
-            random.shuffle(choices)
-            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-            correct_char = chr(65 + choices.index(row["correct_answer"]))
+        import csv
+        import subprocess
+        
+        # Clone GPQA repo locally if not already done
+        if not os.path.exists("gpqa"):
+            print("[*] Cloning GPQA GitHub repository for direct access...")
+            subprocess.run(["git", "clone", "https://github.com/idavidrein/gpqa.git"], check=True)
             
-            bench_cases.append({
-                "type": "exact",
-                "question": f"Question: {row['question']}\nOptions:\n{choices_str}",
-                "expected": correct_char,
-                "domain": "science",
-                "dataset": "gpqa_diamond"
-            })
+        csv_path = "gpqa/gpqa_diamond.csv"
+        if os.path.exists(csv_path):
+            with open(csv_path, mode="r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                count = 0
+                for row in reader:
+                    q_text = row.get("Question")
+                    corr = row.get("Correct Answer")
+                    inc1 = row.get("Incorrect Answer 1")
+                    inc2 = row.get("Incorrect Answer 2")
+                    inc3 = row.get("Incorrect Answer 3")
+                    
+                    if not q_text or not corr:
+                        continue
+                        
+                    choices = [corr, inc1, inc2, inc3]
+                    random.seed(count)
+                    random.shuffle(choices)
+                    choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                    correct_char = chr(65 + choices.index(corr))
+                    
+                    bench_cases.append({
+                        "type": "exact",
+                        "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                        "expected": correct_char,
+                        "domain": "science",
+                        "dataset": "gpqa_diamond"
+                    })
+                    count += 1
+                    if count >= 95:
+                        break
+        else:
+            raise FileNotFoundError("gpqa_diamond.csv not found in cloned repository")
     except Exception as e:
         print(f"[!] GPQA load failed: {e}. Falling back to programmatic reasoning cases...")
         # Fallback to programmatic hard general reasoning / science cases to reach 95 count
