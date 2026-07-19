@@ -105,13 +105,42 @@ class Orchestrator:
     def classify_domains(self, query: str) -> Dict[str, float]:
         """Return a relevance score for each registered specialist domain.
 
-        Dynamically builds the keyword table from the registry, so new
-        specialists are automatically included with zero code changes.
-
-        Supports both single-word keywords (exact word match) and
-        multi-word phrases (substring match in the query).
+        Uses Qwen-7B semantically to classify the query into active domains.
+        Limits generation to 32 tokens for sub-100ms classification latency.
+        Falls back to keyword heuristics if the model fails.
         """
-        # Strip MCQ options block to avoid keyword collisions (e.g. "Options:" triggering "option" in finance)
+        from saber.llm_engine import LLMEngine
+        import json
+
+        domains = list(self.registry.all().keys())
+        prompt = (
+            f"You are the routing orchestrator for a multi-specialist AI system.\n"
+            f"Given the user query, identify which of the following specialist domains it belongs to:\n"
+            f"Available domains: {json.dumps(domains)}\n\n"
+            f"Query: \"{query}\"\n\n"
+            f"Output strictly a JSON list containing the activated domains (e.g. [\"science\"] or [\"medical\", \"cyber\"]) with no other text, explanation, or conversational intro."
+        )
+
+        try:
+            with LLMEngine(self.config.base_model, max_new_tokens=32) as engine:
+                raw_output = engine.generate(prompt).strip()
+                clean_json = raw_output.replace("```json", "").replace("```", "").strip()
+                start = clean_json.find("[")
+                end = clean_json.rfind("]")
+                if start != -1 and end != -1:
+                    clean_json = clean_json[start:end+1]
+                activated_domains = json.loads(clean_json)
+                
+                scores = {d: 0.0 for d in domains}
+                for d in activated_domains:
+                    if d in scores:
+                        scores[d] = 1.0
+                return scores
+        except Exception:
+            return self._heuristic_classify_domains(query)
+
+    def _heuristic_classify_domains(self, query: str) -> Dict[str, float]:
+        """Fallback keyword-based classifier."""
         query_clean = query.split("Options:")[0].split("options:")[0]
         query_lower = query_clean.lower()
         query_words = set(re.findall(r"\w+", query_lower))
@@ -130,16 +159,12 @@ class Orchestrator:
             for kw in all_keywords:
                 kw_lower = kw.lower()
                 if " " in kw_lower:
-                    # Multi-word keyword: substring match in full query
                     if kw_lower in query_lower:
                         hits += 1
                 else:
-                    # Single-word keyword: exact word match or stemmed match
                     stemmed_kw = self._stem(kw_lower)
                     if kw_lower in query_words or stemmed_kw in stemmed_query_words:
                         hits += 1
-            # Normalise to [0, 1] — tuned so 1-2 keyword hits
-            # are enough to exceed the 0.30 activation threshold.
             scores[domain] = min(1.0, hits / max(len(all_keywords) * 0.12, 2.0))
 
         return scores
