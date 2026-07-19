@@ -45,8 +45,8 @@ class LLMEngine:
             return "cpu"
 
     def __enter__(self) -> "LLMEngine":
-        # Check cache first
-        cache_key = (self.model_id_or_path, self.max_new_tokens)
+        # Check cache first (ignore token limit for weight caching)
+        cache_key = self.model_id_or_path
         if cache_key in _MODEL_CACHE:
             self.model, self.tokenizer = _MODEL_CACHE[cache_key]
             return self
@@ -98,7 +98,7 @@ class LLMEngine:
         import os
         if os.getenv("SABER_KEEP_MODELS_LOADED") == "1":
             # Cache weights instead of unloading to save swap time
-            cache_key = (self.model_id_or_path, self.max_new_tokens)
+            cache_key = self.model_id_or_path
             _MODEL_CACHE[cache_key] = (self.model, self.tokenizer)
             self.model = None
             self.tokenizer = None
