@@ -24,9 +24,9 @@ PYTHONPATH=. python3 -m saber.training.dataset_loader
 
 echo ""
 echo "[+] Step 3: Starting training loop from scratch..."
-# CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. python3 -m saber.training.trainer --domain cyber --gpu 1
-CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. python3 -m saber.training.trainer --domain architecture --gpu 1
-CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. python3 -m saber.training.trainer --domain meta_reasoner --gpu 1
+# CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. python3 -m saber.training.trainer --domain cyber --gpu 0
+CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. python3 -m saber.training.trainer --domain architecture --gpu 0
+CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. python3 -m saber.training.trainer --domain meta_reasoner --gpu 0
 
 echo ""
 echo "=========================================================="
