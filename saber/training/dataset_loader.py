@@ -1590,127 +1590,179 @@ def fetch_orchestrator():
 
 
 def fetch_meta_reasoner():
-    print("\n[dataset_loader] === META-REASONER DATASET ===")
+    print("\n[dataset_loader] === GENERATING EXPANDED META-REASONER DATASET ===")
     records = []
     
-    try:
-        print("[dataset_loader] [1/1] Downloading openbmb/UltraFeedback...")
-        ds = load_dataset("openbmb/UltraFeedback", split="train[:15000]")
-        pass_count = 0
-        fail_count = 0
-        for item in ds:
-            comps = item.get("completions", [])
-            inst = item.get("instruction", "")
-            if not comps or len(comps) < 2 or not inst:
-                continue
-            
-            try:
-                comps_scored = []
-                for c in comps:
-                    score = 0
-                    if "annotations" in c and c["annotations"] and "overall_score" in c["annotations"]:
-                        score = float(c["annotations"]["overall_score"])
-                    elif "rating" in c:
-                        score = float(c["rating"])
-                    comps_scored.append((score, c.get("response", "")))
-                comps_scored.sort(key=lambda x: x[0], reverse=True)
-                high_resp = comps_scored[0][1]
-                low_resp = comps_scored[-1][1]
-                
-                if high_resp and low_resp and high_resp != low_resp:
-                    # Target ratio: 60% pass, 40% fail
-                    if pass_count < 2820 and (pass_count * 4 <= fail_count * 6 or fail_count >= 1880):
-                        val = {"input": f"{inst}\n\n{high_resp}", "verdict": "pass", "corrected_output": high_resp}
-                        records.append({"id": f"meta_uf_p_{uuid.uuid4().hex[:8]}", "text": val["input"], "label": json.dumps(val), "domain": "meta_reasoner"})
-                        pass_count += 1
-                    elif fail_count < 1880:
-                        val = {"input": f"{inst}\n\n{low_resp}", "verdict": "fail", "corrected_output": high_resp}
-                        records.append({"id": f"meta_uf_f_{uuid.uuid4().hex[:8]}", "text": val["input"], "label": json.dumps(val), "domain": "meta_reasoner"})
-                        fail_count += 1
-            except Exception:
-                pass
-            if pass_count >= 2820 and fail_count >= 1880:
-                break
-        print(f"[dataset_loader]   UltraFeedback: {pass_count + fail_count} records")
-    except Exception as e:
-        print(f"[dataset_loader] Error downloading UltraFeedback: {e}")
-
-    # Synthetic Contradictions
-    added_synth = 0
-    domains = ["medical", "cyber", "science", "coding", "architecture", "finance"]
-    import itertools
-    for d1, d2 in itertools.combinations(domains, 2):
-        for i in range(20):
-            if added_synth >= 300: break
-            inst = f"How do I securely deploy a {d1} application?"
-            bad = f"[Specialist: {d1}] You should roll your own custom cryptographic protocols for ultimate security."
-            good = f"[Specialist: {d2}] Never roll your own crypto. Use standard established libraries."
-            val = {"input": f"{inst}\n\n{bad}\n\n{good}", "verdict": "fail", "corrected_output": f"The {d1} specialist is incorrect. The {d2} specialist is correct: never roll your own crypto. Use standard libraries."}
-            records.append({"id": f"meta_synth_{uuid.uuid4().hex[:8]}", "text": val["input"], "label": json.dumps(val), "domain": "meta_reasoner"})
-            added_synth += 1
-    print(f"[dataset_loader]   Synthetic Contradictions: {added_synth} records")
-
-    # Synthetic Conflicting Specialist Scenarios (+500 records)
-    print("[dataset_loader] Generating 500 synthetic conflicting specialist scenarios...")
-    added_conflict = 0
-    conflict_scenarios = [
-        # Medical / Science conflict
-        ("A patient shows symptoms of elevated enzyme levels. Specialist 1 suggests instant surgical excision. Specialist 2 argues for non-invasive metabolic diagnostic checks first.",
-         "The recommendation from Specialist 2 is correct. Surgical intervention without preliminary non-invasive diagnostic confirmation represents an unnecessary clinical risk."),
-        # Cyber / Architecture conflict
-        ("How should we secure microservices communication? Specialist 1 recommends leaving internal networks unencrypted for latency optimization. Specialist 2 insists on Mutual TLS (mTLS).",
-         "Specialist 2 is correct. Latency considerations do not justify leaving internal microservice communications unencrypted. Mutual TLS (mTLS) is standard zero-trust architecture practice."),
-        # Finance / Coding conflict
-        ("How to implement an automated stock arbitrage algorithm? Specialist 1 suggests running floating-point arithmetic for price precision. Specialist 2 recommends decimal/fixed-point arithmetic to avoid rounding bugs.",
-         "Specialist 2 is correct. Floating-point arithmetic introduces rounding inaccuracies that degrade financial transaction systems. Fixed-point or Decimal types must be used."),
-        # Coding / Architecture conflict
-        ("How to handle distributed transaction failures? Specialist 1 suggests implementing a basic HTTP retry loop. Specialist 2 recommends implementing the Saga pattern with rollback compensating transactions.",
-         "Specialist 2 is correct. HTTP retries alone cannot maintain eventual consistency across distributed datastores during network failures. The Saga pattern provides robust rollback logic.")
-    ]
+    # -----------------------------------------------------------------------
+    # Helper lists for template diversification
+    # -----------------------------------------------------------------------
+    systems = ["Kafka Message Bus", "Redis Cache Cluster", "Kubernetes Pod Autoscaler", "API Gateway Router", "Cassandra Datastore", "Elasticsearch Cluster", "PostgreSQL Replica Set", "Docker Registry"]
+    science_topics = ["quantum superposition states", "enzyme catalytic reaction rates", "muon decay coefficients", "cosmic microwave background densities", "gravitational wave frequencies", "organic molecular symmetries"]
+    finance_topics = ["options pricing models", "portfolio risk metrics", "arbitrage algorithm rounding", "leverage yield assessments", "asset valuation parameters", "stock market liquidity indices"]
     
-    for prompt, resolution in conflict_scenarios * 125: # ~500 records
-        val = {
-            "input": f"Resolve the following specialist disagreement:\n{prompt}",
-            "verdict": "conflict_resolved",
-            "corrected_output": resolution
-        }
+    comp_tones = [
+        ("academic", "The structural integrity of the pipeline relies on the mathematical optimization of the queue data structure."),
+        ("engineering", "Let's configure a circular buffer with pre-allocated memory pools to avoid JVM garbage collection pauses."),
+        ("financial", "The throughput latency must be minimized to reduce the capital cost of cloud infrastructure overhead.")
+    ]
+
+    # =======================================================================
+    # Pillar 1: Synthesis & Coherence (40% - 4,800 records)
+    # =======================================================================
+    print("[dataset_loader] Generating Pillar 1: Synthesis & Coherence (4,800 records)...")
+    for i in range(4800):
+        sys_name = systems[i % len(systems)]
+        sc_topic = science_topics[i % len(science_topics)]
+        fi_topic = finance_topics[i % len(finance_topics)]
+        
+        q = f"Synthesize a system design strategy for deploying a {sys_name} that processes scientific data regarding {sc_topic} while adhering to {fi_topic} budget constraints."
+        
+        inp = (
+            f"Context: {q}\n\n"
+            f"[Specialist: Coding]\nWe should structure the implementation using clean coding principles, optimizing data serialization and indexing to handle the scientific data structures.\n\n"
+            f"[Specialist: Science]\n{comp_tones[0][1]} The calculation of {sc_topic} must maintain absolute numerical precision.\n\n"
+            f"[Specialist: Finance]\n{comp_tones[2][1]} Budget allocations for the cluster nodes must be optimized for cloud cost efficiency."
+        )
+        
+        thought = (
+            f"## CONFLICT DETECTION\n"
+            f"- Coding, Science, and Finance specialists provide complementary perspectives on the {sys_name} deployment.\n"
+            f"- No direct logical contradictions are present, but their optimization formats and tones differ (clean code, academic math, cloud cost efficiency).\n\n"
+            f"## RESOLUTION PATH\n"
+            f"- All three perspectives are valid and complementary.\n"
+            f"- Synthesize the clean coding serialization, the academic precision requirement for {sc_topic}, and the financial cost-efficiency strategies into a single coherent plan."
+        )
+        
+        target = (
+            f"## FINAL ANSWER\n"
+            f"To deploy a highly optimized {sys_name} for scientific analysis of {sc_topic} within budget, we implement a unified strategy:\n"
+            f"1. **Software Engineering**: Streamline data serialization and implement memory-mapped indexing to handle raw incoming streams.\n"
+            f"2. **Scientific Precision**: Guarantee mathematical accuracy for {sc_topic} using fixed-precision numerical libraries.\n"
+            f"3. **Cost Optimization**: Optimize compute node allocation and utilize spot instances where possible to minimize overall cloud infrastructure overhead."
+        )
+        
         records.append({
-            "id": f"meta_conflict_{uuid.uuid4().hex[:8]}",
-            "text": val["input"],
-            "label": json.dumps(val),
+            "id": f"meta_p1_{uuid.uuid4().hex[:8]}",
+            "text": inp,
+            "label": f"{thought}\n\n{target}",
             "domain": "meta_reasoner"
         })
-        added_conflict += 1
-    print(f"[dataset_loader]   Synthetic Conflicts: {added_conflict} records generated")
 
-    # Synthetic CoT Chain Evaluation Scenarios (+500 records)
-    print("[dataset_loader] Generating 500 synthetic CoT chain evaluation records...")
-    added_cot_eval = 0
-    cot_eval_scenarios = [
-        ("Chain A steps: [1: Identify symptom] -> [2: Diagnose without tests] -> [3: Conclude treatment]. Chain B steps: [1: Identify symptom] -> [2: Analyze clinical lab results] -> [3: Formulate differential diagnosis] -> [4: Conclude target treatment]. Which chain is logically valid?",
-         "Chain B is logically valid. Chain A contains a logical gap between steps 1 and 2 by attempting to diagnose without evaluating tests."),
-        ("Chain A steps: [1: Parse server log] -> [2: Note suspicious payload IP] -> [3: Conclude zero malicious activity]. Chain B steps: [1: Parse server log] -> [2: Note suspicious payload IP] -> [3: Cross-reference threat intelligence database] -> [4: Conclude block traffic from IP]. Which chain is logically valid?",
-         "Chain B is logically valid. Chain A draws a conclusion in Step 3 that contradicts the evidence noted in Step 2 without performing any verification or cross-referencing.")
-    ]
-    
-    for prompt, resolution in cot_eval_scenarios * 250: # ~500 records
-        val = {
-            "input": f"Analyze these reasoning chains and select the correct logical approach:\n{prompt}",
-            "verdict": "cot_evaluated",
-            "corrected_output": resolution
-        }
+    # =======================================================================
+    # Pillar 2: Contradiction Resolution (30% - 3,600 records)
+    # =======================================================================
+    print("[dataset_loader] Generating Pillar 2: Contradiction Resolution (3,600 records)...")
+    for i in range(3600):
+        sys_name = systems[i % len(systems)]
+        
+        q = f"How should we configure write consistency in our distributed datastore for the {sys_name}?"
+        
+        inp = (
+            f"Context: {q}\n\n"
+            f"[Specialist: Architecture]\nWe must use Eventual Consistency. This maximizes write throughput and minimizes node-to-node replication latency.\n\n"
+            f"[Specialist: Cyber]\nWe must enforce Strong Consistency. Eventual consistency introduces a race condition vulnerability where unauthorized transactions can be processed before state changes propagate."
+        )
+        
+        thought = (
+            f"## CONFLICT DETECTION\n"
+            f"- Specialist Architecture recommends Eventual Consistency for performance/latency optimization.\n"
+            f"- Specialist Cyber recommends Strong Consistency to prevent security race conditions.\n\n"
+            f"## RESOLUTION PATH\n"
+            f"- Evaluating system constraints: Under the zero-trust threat model, eventual consistency introduces critical transactional race conditions.\n"
+            f"- Arbitration: Security overrides raw latency performance. We must select Strong Consistency.\n"
+            f"- Trade-off: Acknowledge the minor latency penalty but explain it is necessary to secure transactional state."
+        )
+        
+        target = (
+            f"## FINAL ANSWER\n"
+            f"The distributed datastore for the {sys_name} must be configured for Strong Consistency. "
+            f"While Eventual Consistency provides higher write throughput, it introduces a critical security vulnerability where stale records can lead to transactional race conditions. "
+            f"To secure the system, all nodes must synchronize updates synchronously, accepting the minor latency trade-off to ensure transactional integrity."
+        )
+        
         records.append({
-            "id": f"meta_cot_eval_{uuid.uuid4().hex[:8]}",
-            "text": val["input"],
-            "label": json.dumps(val),
+            "id": f"meta_p2_{uuid.uuid4().hex[:8]}",
+            "text": inp,
+            "label": f"{thought}\n\n{target}",
             "domain": "meta_reasoner"
         })
-        added_cot_eval += 1
-    print(f"[dataset_loader]   Synthetic CoT Eval: {added_cot_eval} records generated")
+
+    # =======================================================================
+    # Pillar 3: Hallucination Suppression (15% - 1,800 records)
+    # =======================================================================
+    print("[dataset_loader] Generating Pillar 3: Hallucination Suppression (1,800 records)...")
+    for i in range(1800):
+        sys_name = systems[i % len(systems)]
+        sc_topic = science_topics[i % len(science_topics)]
+        
+        q = f"Evaluate the server node temperatures and data outputs for the {sys_name} cluster during {sc_topic} computations."
+        
+        inp = (
+            f"Context: {q}\n\n"
+            f"[Specialist: Architecture]\nThe server CPU cores are currently running at 65 degrees Celsius under load, which is well within safe operational limits.\n\n"
+            f"[Specialist: Science]\nThe CPU cores are running at 9000 Kelvin 9000 Kelvin 9000 Kelvin 9000 Kelvin 9000 Kelvin 9000 Kelvin."
+        )
+        
+        thought = (
+            f"## CONFLICT DETECTION\n"
+            f"- Specialist Architecture reports normal CPU core temperatures (65C).\n"
+            f"- Specialist Science outputs an impossible physical temperature (9000 Kelvin) and enters an infinite token repetition loop.\n\n"
+            f"## RESOLUTION PATH\n"
+            f"- Specialist Science's output is flagged as a hallucination and repetition anomaly.\n"
+            f"- Action: Completely discard the Science specialist's data stream. Rely exclusively on the clean, logical readings from the Architecture specialist."
+        )
+        
+        target = (
+            f"## FINAL ANSWER\n"
+            f"The server node CPUs in the cluster are operating normally at a safe temperature of 65 degrees Celsius. "
+            f"All operational telemetry indicates the hardware remains within standard parameters under computation load."
+        )
+        
+        records.append({
+            "id": f"meta_p3_{uuid.uuid4().hex[:8]}",
+            "text": inp,
+            "label": f"{thought}\n\n{target}",
+            "domain": "meta_reasoner"
+        })
+
+    # =======================================================================
+    # Pillar 4: Domain Boundary Gates (15% - 1,800 records)
+    # =======================================================================
+    print("[dataset_loader] Generating Pillar 4: Domain Boundary Gates (1,800 records)...")
+    for i in range(1800):
+        sc_topic = science_topics[i % len(science_topics)]
+        
+        q = f"Explain the physical principles governing {sc_topic}."
+        
+        inp = (
+            f"Context: {q}\n\n"
+            f"[Specialist: Science]\nGoverned by the wave function and Schrödinger's equation, particles exhibit probability distributions that define their physical location.\n\n"
+            f"[Specialist: Coding]\nWe can allocate a circular buffer in memory to cache the wave function states, optimizing the heap and thread scheduling to prevent lock contention."
+        )
+        
+        thought = (
+            f"## CONFLICT DETECTION\n"
+            f"- Specialist Science explains the physical wave-function principles of {sc_topic}.\n"
+            f"- Specialist Coding bleeds software jargon (circular buffer, heap allocation, thread locks) into a physical theory question.\n\n"
+            f"## RESOLUTION PATH\n"
+            f"- Specialist Coding's response suffers from domain semantic bleed. Coding jargon is irrelevant to physics principles.\n"
+            f"- Action: Purge all coding jargon and resolve the query using purely scientific principles."
+        )
+        
+        target = (
+            f"## FINAL ANSWER\n"
+            f"{sc_topic.capitalize()} are governed by the wave function and Schrödinger's equation. "
+            f"The physical states exist as probability distributions rather than static coordinates, determining the system properties upon measurement."
+        )
+        
+        records.append({
+            "id": f"meta_p4_{uuid.uuid4().hex[:8]}",
+            "text": inp,
+            "label": f"{thought}\n\n{target}",
+            "domain": "meta_reasoner"
+        })
 
     records = _quality_filter(records)
-    records = _convert_to_cot(records, fraction=0.30)
-    records = records[:6000]
     _jsonl_write(records, "data/processed/meta_reasoner.jsonl")
 
 

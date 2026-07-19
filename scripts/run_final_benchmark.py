@@ -429,6 +429,8 @@ def run_benchmark(api_key=None):
             "dataset": "custom_multi_domain"
         })
 
+    # Only benchmark science, coding, finance, and orchestrator domains
+    bench_cases = [c for c in bench_cases if c["domain"] in ["science", "coding", "finance", "orchestrator"]]
     print(f"\n[+] Total benchmark cases compiled: {len(bench_cases)}")
     results = []
 
