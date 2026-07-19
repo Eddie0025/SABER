@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 class LLMEngine:
     """Context manager for safely loading and unloading LLMs."""
 
-    def __init__(self, model_id_or_path: str, max_new_tokens: int = 512):
+    def __init__(self, model_id_or_path: str, max_new_tokens: int = 2048):
         self.model_id_or_path = model_id_or_path
         self.max_new_tokens = max_new_tokens
         self.model = None

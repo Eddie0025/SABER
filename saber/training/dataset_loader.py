@@ -1353,7 +1353,8 @@ def fetch_orchestrator():
             domain = cat_to_domain.get(cat)
             if domain:
                 summary = item.get("instruction", "")[:60]
-                label_json = json.dumps({"route": [domain], "confidence": 0.95, "multi_domain": False, "query_summary": summary})
+                conf = round(0.99 - (0.04 * len([domain])), 2)
+                label_json = json.dumps({"route": [domain], "confidence": conf, "multi_domain": False, "query_summary": summary})
                 records.append({
                     "id": f"orch_dolly_{uuid.uuid4().hex[:8]}",
                     "text": item.get("instruction", ""),
@@ -1380,7 +1381,8 @@ def fetch_orchestrator():
             if domain:
                 inst = item.get("definition", "")
                 summary = inst[:60] if inst else "Instruction"
-                label_json = json.dumps({"route": [domain], "confidence": 0.95, "multi_domain": False, "query_summary": summary})
+                conf = round(0.99 - (0.04 * len([domain])), 2)
+                label_json = json.dumps({"route": [domain], "confidence": conf, "multi_domain": False, "query_summary": summary})
                 records.append({
                     "id": f"orch_ni_{uuid.uuid4().hex[:8]}",
                     "text": inst,
@@ -1458,7 +1460,8 @@ def fetch_orchestrator():
     for text, route in (hn_med + hn_sec + hn_multi + hn_amb + hn_ood):
         route_list = route if isinstance(route, list) else [route]
         is_multi = len(route_list) > 1
-        label_json = json.dumps({"route": route_list, "confidence": 0.95, "multi_domain": is_multi, "query_summary": text[:60]})
+        conf = round(0.99 - (0.02 * len(route_list)) if is_multi else 0.95, 2)
+        label_json = json.dumps({"route": route_list, "confidence": conf, "multi_domain": is_multi, "query_summary": text[:60]})
         hard_negatives.append({
             "id": f"orch_hn_{uuid.uuid4().hex[:8]}",
             "text": text,
@@ -1533,7 +1536,8 @@ def fetch_orchestrator():
                 cycle=random.choice(cycles), compound=random.choice(compounds), count=random.choice(counts),
                 val=random.choice(vals)
             )
-            label_json = json.dumps({"route": [domain], "confidence": 0.95, "multi_domain": False, "query_summary": text[:60]})
+            conf = round(0.99 - (0.04 * len([domain])), 2)
+            label_json = json.dumps({"route": [domain], "confidence": conf, "multi_domain": False, "query_summary": text[:60]})
             synth_routing.append({
                 "id": f"orch_synth_route_{uuid.uuid4().hex[:8]}",
                 "text": text,
@@ -1568,7 +1572,8 @@ def fetch_orchestrator():
             for template, route_template in sys_templates:
                 text = template.format(domain_noun=noun)
                 route = [r.format(domain=domain) for r in route_template]
-                label_json = json.dumps({"route": route, "confidence": 0.95, "multi_domain": True, "query_summary": text[:60]})
+                conf = round(0.99 - (0.02 * len(route)), 2)
+                label_json = json.dumps({"route": route, "confidence": conf, "multi_domain": True, "query_summary": text[:60]})
                 system_routing.append({
                     "id": f"orch_sys_route_{uuid.uuid4().hex[:8]}",
                     "text": text,

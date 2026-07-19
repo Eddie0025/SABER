@@ -250,7 +250,8 @@ def generate_orchestrator_patches():
         q = tpl.format(domain=kw) + (" " * (count_conj % 3))
         
         route = ["architecture", "coding", dom_key]
-        label = json.dumps({"route": route, "confidence": 0.95, "multi_domain": True, "query_summary": q[:50]})
+        conf = round(0.99 - (0.02 * len(route)), 2)
+        label = json.dumps({"route": route, "confidence": conf, "multi_domain": True, "query_summary": q[:50]})
         
         records.append({
             "text": q,
@@ -273,7 +274,8 @@ def generate_orchestrator_patches():
         item = distractors[count_dist % len(distractors)]
         q = item[0] + (" " * (count_dist % 3))
         route = item[1]
-        label = json.dumps({"route": route, "confidence": 0.95, "multi_domain": len(route) > 1, "query_summary": q[:50]})
+        conf = round(0.97 - (0.03 * len(route)), 2)
+        label = json.dumps({"route": route, "confidence": conf, "multi_domain": len(route) > 1, "query_summary": q[:50]})
         
         records.append({
             "text": q,
@@ -296,7 +298,8 @@ def generate_orchestrator_patches():
         item = single_templates[count_single % len(single_templates)]
         q = item[0] + (" " * (count_single % 3))
         route = item[1]
-        label = json.dumps({"route": route, "confidence": 0.95, "multi_domain": False, "query_summary": q[:50]})
+        conf = round(0.99 - (0.04 * len(route)), 2)
+        label = json.dumps({"route": route, "confidence": conf, "multi_domain": False, "query_summary": q[:50]})
         
         records.append({
             "text": q,
