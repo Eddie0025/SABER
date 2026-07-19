@@ -44,7 +44,8 @@ _VERIFICATION_ROUTING: Dict[str, Dict[str, str]] = {
         "conflict_resolution": "meta_reasoner",
     },
 }
-
+_INTERNET_CHECKED = None
+_SEARCH_CACHE = {}
 
 class Sentinel:
     """The central verification authority.
@@ -103,26 +104,37 @@ class Sentinel:
 
         # Helper to check connection
         def is_internet_available():
+            global _INTERNET_CHECKED
+            if _INTERNET_CHECKED is not None:
+                return _INTERNET_CHECKED
             try:
                 urllib.request.urlopen("https://www.google.com", timeout=2)
-                return True
+                _INTERNET_CHECKED = True
             except Exception:
-                return False
+                _INTERNET_CHECKED = False
+            return _INTERNET_CHECKED
 
-        # Helper to query DuckDuckGo
+        # Helper to query DuckDuckGo with caching
         def web_search(query_str):
+            global _SEARCH_CACHE
+            query_str = query_str.strip()
+            if query_str in _SEARCH_CACHE:
+                return _SEARCH_CACHE[query_str]
+
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
             url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query_str)}"
             try:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=4) as response:
+                with urllib.request.urlopen(req, timeout=3) as response:
                     html = response.read().decode("utf-8")
                     snippets = re.findall(r'<a class="result__snippet".*?>(.*?)</a>', html, re.DOTALL)
                     clean_snippets = []
                     for s in snippets[:3]:
                         clean = re.sub(r'<.*?>', '', s).strip()
                         clean_snippets.append(clean)
-                    return "\n".join(clean_snippets)
+                    res_text = "\n".join(clean_snippets)
+                    _SEARCH_CACHE[query_str] = res_text
+                    return res_text
             except Exception as e:
                 return f"Search lookup failed: {e}"
 
