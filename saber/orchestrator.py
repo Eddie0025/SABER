@@ -111,7 +111,9 @@ class Orchestrator:
         Supports both single-word keywords (exact word match) and
         multi-word phrases (substring match in the query).
         """
-        query_lower = query.lower()
+        # Strip MCQ options block to avoid keyword collisions (e.g. "Options:" triggering "option" in finance)
+        query_clean = query.split("Options:")[0].split("options:")[0]
+        query_lower = query_clean.lower()
         query_words = set(re.findall(r"\w+", query_lower))
         stemmed_query_words = {self._stem(w) for w in query_words}
         scores: Dict[str, float] = {}

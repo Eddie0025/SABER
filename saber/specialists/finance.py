@@ -24,7 +24,7 @@ class FinanceSpecialist(Specialist):
     def keywords(self) -> list[str]:
         return [
             "finance", "financial", "stock", "market", "investment", "trading",
-            "portfolio", "risk", "bond", "equity", "derivative", "option",
+            "portfolio", "risk", "bond", "equity", "financial derivative", "financial option",
             "hedge", "dividend", "interest", "inflation", "gdp", "economics",
             "banking", "loan", "credit", "asset", "liability", "revenue",
             "profit", "loss", "accounting", "budget", "tax", "valuation",
