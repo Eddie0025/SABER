@@ -12,32 +12,14 @@ touch "$PROGRESS_FILE"
 echo "[+] Restoring stable trl version..."
 pip install -q trl==0.8.6
 
-# Function to run training if not already completed
+# Function to run training unconditionally
 run_step() {
     local domain=$1
     local mode=$2
     local data=$3
     
-    # Check if the domain is in the progress file, OR if the model was successfully compiled in the last 120 minutes
-    local recently_trained=false
-    if [ -f "models/${domain}_v2/adapter_model.safetensors" ]; then
-        # Find if modified in the last 120 minutes (macOS/Linux compatible check)
-        if [ "$(find models/${domain}_v2 -name "adapter_model.safetensors" -mmin -120 2>/dev/null)" ]; then
-            recently_trained=true
-        fi
-    fi
-
-    if grep -q "^$domain$" "$PROGRESS_FILE" || [ "$recently_trained" = true ]; then
-        echo ">> Domain '$domain' recently trained or marked completed. Skipping."
-        # Ensure it is recorded in the progress file for consistency
-        if ! grep -q "^$domain$" "$PROGRESS_FILE"; then
-            echo "$domain" >> "$PROGRESS_FILE"
-        fi
-    else
-        echo ">> Training domain '$domain'..."
-        python3 -m saber.training.trainer --domain "$domain" --data "$data" "$mode"
-        echo "$domain" >> "$PROGRESS_FILE"
-    fi
+    echo ">> Training domain '$domain'..."
+    python3 -m saber.training.trainer --domain "$domain" --data "$data" "$mode"
 }
 
 # 1. Generate all the targeted patches
