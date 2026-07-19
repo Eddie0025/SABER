@@ -331,6 +331,7 @@ def run_benchmark(api_key=None):
                 if json_path:
                     break
                     
+        data = []
         if json_path and os.path.exists(json_path):
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -339,43 +340,53 @@ def run_benchmark(api_key=None):
                         if isinstance(v, list):
                             data = v
                             break
-                count = 0
-                for row in data:
-                    q_text = row.get("question") or row.get("Question")
-                    choices = []
-                    if "choices" in row:
-                        choices = row["choices"]
-                    else:
-                        for opt in ["a", "b", "c", "d", "A", "B", "C", "D"]:
-                            if opt in row:
-                                choices.append(row[opt])
-                    correct_ans = row.get("answer") or row.get("Answer") or row.get("correct") or row.get("correct_answer")
-                    if not q_text or not correct_ans:
-                        continue
-                    choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-                    if str(correct_ans).upper() in ["A", "B", "C", "D"]:
-                        correct_char = str(correct_ans).upper()
-                    else:
-                        try:
-                            idx = choices.index(correct_ans)
-                            correct_char = chr(65 + idx)
-                        except ValueError:
-                            correct_char = "A"
-                    bench_cases.append({
-                        "type": "exact",
-                        "question": f"Question: {q_text}\nOptions:\n{choices_str}",
-                        "expected": correct_char,
-                        "domain": "cyber",
-                        "dataset": "cybermetric"
-                    })
-                    count += 1
-                    if count >= 95:
-                        break
+        else:
+            # Fallback to Hugging Face
+            try:
+                print("[*] Loading CyberMetric from HuggingFace Hub...")
+                ds = load_hf_dataset("AcerSeb/CyberMetric", "CyberMetric-500", split="train[:95]")
+                data = list(ds)
+            except Exception as hf_err:
+                print(f"[!] Hugging Face CyberMetric load failed: {hf_err}")
+
+        if data:
+            count = 0
+            for row in data:
+                q_text = row.get("question") or row.get("Question")
+                choices = []
+                if "choices" in row and row["choices"] is not None:
+                    choices = row["choices"]
+                else:
+                    for opt in ["a", "b", "c", "d", "A", "B", "C", "D"]:
+                        if opt in row:
+                            choices.append(row[opt])
+                correct_ans = row.get("answer") or row.get("Answer") or row.get("correct") or row.get("correct_answer")
+                if not q_text or not correct_ans:
+                    continue
+                choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                if str(correct_ans).upper() in ["A", "B", "C", "D"]:
+                    correct_char = str(correct_ans).upper()
+                else:
+                    try:
+                        idx = choices.index(correct_ans)
+                        correct_char = chr(65 + idx)
+                    except ValueError:
+                        correct_char = "A"
+                bench_cases.append({
+                    "type": "exact",
+                    "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                    "expected": correct_char,
+                    "domain": "cyber",
+                    "dataset": "cybermetric"
+                })
+                count += 1
+                if count >= 95:
+                    break
     except Exception as e:
         print(f"[!] CyberMetric load failed: {e}")
 
     # 2.9 Cyber, Architecture, Meta-Reasoner (80-100 cases using curated evaluation files scaled)
-    eval_domains = [("medical", "eval_medical"), ("science", "eval_science"), ("coding", "eval_coding"), ("architecture", "eval_architecture"), ("finance", "eval_finance"), ("meta_reasoner", "eval_meta_reasoner")]
+    eval_domains = [("medical", "eval_medical"), ("science", "eval_science"), ("coding", "eval_coding"), ("architecture", "eval_architecture"), ("finance", "eval_finance"), ("meta_reasoner", "eval_meta_reasoner"), ("cyber", "eval_cyber")]
     for dom, dataset_name in eval_domains:
         script_path = os.path.join("scripts", f"eval_{dom}_30.py")
         if os.path.exists(script_path):
