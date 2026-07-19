@@ -145,6 +145,18 @@ def run_benchmark(api_key=None):
     config = SaberConfig()
     registry = SpecialistRegistry()
     registry.auto_discover()
+    
+    # Configure model paths for registered specialists
+    for domain, specialist in registry.all().items():
+        model_path = f"models/{domain}_v2"
+        if os.path.exists(model_path):
+            specialist.load_model(model_path)
+            print(f"[*] Loaded specialist model for '{domain}': {model_path}")
+        else:
+            # Fallback to the base model to perform actual inference instead of returning placeholders
+            specialist.load_model("Qwen/Qwen2.5-7B")
+            print(f"[*] Specialist '{domain}' checkpoint not found; falling back to base Qwen/Qwen2.5-7B")
+            
     audit = AuditLogger()
     orch = Orchestrator(config=config, registry=registry, audit=audit)
     
