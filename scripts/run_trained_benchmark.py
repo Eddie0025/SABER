@@ -322,13 +322,35 @@ def run_benchmark(api_key=None):
 
     # 2.8.5 Cyber: CyberMetric (95 cases)
     try:
-        print("[*] Loading CyberMetric from HuggingFace Hub...")
-        try:
-            ds = load_hf_dataset("AcerSeb/CyberMetric", "CyberMetric-500", split="train[:95]")
-            data = list(ds)
-        except Exception as hf_err:
-            print(f"[!] Hugging Face CyberMetric load failed: {hf_err}")
-            data = []
+        print("[*] Loading CyberMetric from GitHub Raw URL...")
+        import urllib.request
+        import json
+        
+        data = []
+        urls = [
+            "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-80-v1.json",
+            "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-500-v1.json",
+            "https://raw.githubusercontent.com/cybermetric/CyberMetric/master/CyberMetric-80-v1.json",
+            "https://raw.githubusercontent.com/cybermetric/CyberMetric/master/CyberMetric-500-v1.json"
+        ]
+        
+        for url in urls:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    raw_data = json.loads(response.read().decode("utf-8"))
+                    if isinstance(raw_data, dict):
+                        for k, v in raw_data.items():
+                            if isinstance(v, list):
+                                data = v
+                                break
+                    elif isinstance(raw_data, list):
+                        data = raw_data
+                    if data:
+                        print(f"[+] Successfully loaded CyberMetric from: {url}")
+                        break
+            except Exception:
+                continue
 
         if data:
             count = 0
@@ -363,7 +385,9 @@ def run_benchmark(api_key=None):
                 count += 1
                 if count >= 95:
                     break
-            print(f"[+] Loaded {count} cases from CyberMetric HF.")
+            print(f"[+] Loaded {count} cases from CyberMetric Raw GitHub JSON.")
+        else:
+            print("[!] Failed to load CyberMetric from all Raw GitHub URLs.")
     except Exception as e:
         print(f"[!] CyberMetric load failed: {e}")
 
