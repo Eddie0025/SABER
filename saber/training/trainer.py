@@ -390,7 +390,7 @@ def train(cfg: TrainConfig) -> str:
         grad_accum = 1
         print(f"[trainer] DPO MODE active: epochs={num_epochs}, batch={per_device_batch}, grad_accum={grad_accum}")
 
-    training_args = TrainingArguments(
+    args_dict = dict(
         output_dir=cfg.output_dir,
         num_train_epochs=num_epochs,
         per_device_train_batch_size=per_device_batch,
@@ -415,6 +415,22 @@ def train(cfg: TrainConfig) -> str:
         dataloader_pin_memory="cuda" in device,
         optim="adamw_torch_fused" if device == "cuda" else "adamw_torch",
     )
+
+    if cfg.dpo_mode:
+        from trl import DPOTrainer
+        import inspect
+        sig = inspect.signature(DPOTrainer.__init__)
+        if "beta" not in sig.parameters:
+            from trl import DPOConfig
+            args_dict["beta"] = 0.1
+            args_dict["max_prompt_length"] = cfg.max_seq_length // 2
+            args_dict["max_length"] = cfg.max_seq_length
+            training_args = DPOConfig(**args_dict)
+        else:
+            training_args = TrainingArguments(**args_dict)
+    else:
+        training_args = TrainingArguments(**args_dict)
+
 
     # 5. Standard Trainer (no trl needed) --------------------------------
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
@@ -577,11 +593,13 @@ def train(cfg: TrainConfig) -> str:
             "args": training_args,
             "train_dataset": train_ds,
             "eval_dataset": eval_ds,
-            "beta": 0.1,
-            "max_prompt_length": cfg.max_seq_length // 2,
-            "max_length": cfg.max_seq_length,
         }
         sig = inspect.signature(DPOTrainer.__init__)
+        if "beta" in sig.parameters:
+            dpo_kwargs["beta"] = 0.1
+            dpo_kwargs["max_prompt_length"] = cfg.max_seq_length // 2
+            dpo_kwargs["max_length"] = cfg.max_seq_length
+
         if "processing_class" in sig.parameters:
             dpo_kwargs["processing_class"] = tokenizer
         else:
