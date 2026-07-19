@@ -298,21 +298,47 @@ def run_benchmark(api_key=None):
 
     # Format the aggregated metrics cleanly
     formatted_summary = {}
+    table_lines = [
+        "| Dataset | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |",
+        "| :--- | :--- | :--- | :--- |"
+    ]
+    
     for ds, modes_data in summary.items():
         formatted_summary[ds] = {}
-        for mode_name, stats in modes_data.items():
+        row_cells = [ds]
+        
+        # We check the modes in order: Without Sentinel, 2-Check Sentinel, 4-Check Sentinel
+        for mode_name in ["Without Sentinel", "2-Check Sentinel", "4-Check Sentinel"]:
+            stats = modes_data.get(mode_name, {})
+            if not stats:
+                row_cells.append("N/A")
+                continue
+                
             avg_metrics = {
                 "count": stats["count"],
                 "avg_latency_sec": round(stats["total_latency"] / stats["count"], 2)
             }
+            
+            # Determine percentage score
+            percentage = 0.0
             if stats["accuracy_count"] > 0:
-                avg_metrics["avg_accuracy"] = round(stats["accuracy_sum"] / stats["accuracy_count"], 3)
+                avg_accuracy = stats["accuracy_sum"] / stats["accuracy_count"]
+                avg_metrics["avg_accuracy"] = round(avg_accuracy, 3)
+                percentage = avg_accuracy * 100.0
+            elif stats["correctness_count"] > 0:
+                avg_correctness = stats["correctness_sum"] / stats["correctness_count"]
+                avg_metrics["avg_correctness"] = round(avg_correctness, 2)
+                percentage = (avg_correctness / 2.0) * 100.0
+                
+            row_cells.append(f"{percentage:.1f}%")
             
             for m in ["correctness", "relevance", "reasoning", "calibration", "red_herring"]:
                 cnt = stats[f"{m}_count"]
                 if cnt > 0:
                     avg_metrics[f"avg_{m}"] = round(stats[f"{m}_sum"] / cnt, 2)
             formatted_summary[ds][mode_name] = avg_metrics
+            
+        table_lines.append("| " + " | ".join(row_cells) + " |")
 
     # Save outputs
     with open("saber_final_benchmark_report.json", "w", encoding="utf-8") as f:
@@ -320,14 +346,18 @@ def run_benchmark(api_key=None):
         
     with open("saber_benchmark_summary.json", "w", encoding="utf-8") as f:
         json.dump(formatted_summary, f, indent=2)
+        
+    table_md = "\n".join(table_lines)
+    with open("saber_benchmark_table.md", "w", encoding="utf-8") as f:
+        f.write(table_md + "\n")
 
-    print("\n=== BENCHMARK SUMMARY (BY DATASET & MODE) ===")
-    print(json.dumps(formatted_summary, indent=2))
-    
-    print(f"\n=========================================================")
+    print("\n=== BENCHMARK SCORES TABLE ===")
+    print(table_md)
+    print("\n=========================================================")
     print(f" Benchmark Completed! Reports saved:")
     print(f" - Detailed: saber_final_benchmark_report.json")
     print(f" - Aggregated: saber_benchmark_summary.json")
+    print(f" - Markdown Table: saber_benchmark_table.md")
     print(f"=========================================================")
 
 if __name__ == "__main__":
