@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from saber.context import SessionMemory
 
 
+_MODEL_CACHE = {}
+
 class LLMEngine:
     """Context manager for safely loading and unloading LLMs."""
 
@@ -43,6 +45,12 @@ class LLMEngine:
             return "cpu"
 
     def __enter__(self) -> "LLMEngine":
+        # Check cache first
+        cache_key = (self.model_id_or_path, self.max_new_tokens)
+        if cache_key in _MODEL_CACHE:
+            self.model, self.tokenizer = _MODEL_CACHE[cache_key]
+            return self
+
         # pyrefly: ignore [missing-import]
         import torch
         # pyrefly: ignore [missing-import]
@@ -84,7 +92,15 @@ class LLMEngine:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        
+        import os
+        if os.getenv("SABER_KEEP_MODELS_LOADED") == "1":
+            # Cache weights instead of unloading to save swap time
+            cache_key = (self.model_id_or_path, self.max_new_tokens)
+            _MODEL_CACHE[cache_key] = (self.model, self.tokenizer)
+            self.model = None
+            self.tokenizer = None
+            return
+            
         # Delete references
         del self.model
         del self.tokenizer
