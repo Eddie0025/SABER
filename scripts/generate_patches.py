@@ -251,7 +251,7 @@ def generate_orchestrator_patches():
     ]
     domains = {
         "medical": ["medical", "clinical", "hospital"],
-        "finance": ["finance", "banking", "transaction"],
+        "finance": ["finance", "banking", "capital"],
         "science": ["science", "physics", "chemistry"],
         "cyber": ["cybersecurity", "firewall", "intrusion"]
     }
