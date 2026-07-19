@@ -13,6 +13,11 @@ echo ""
 echo "[+] Step 1: Installing dependencies..."
 pip install -q -r requirements.txt
 
+if [ -n "$HF_TOKEN" ]; then
+    echo "[+] Authenticating with Hugging Face Hub..."
+    huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential
+fi
+
 echo ""
 echo "[+] Step 2: Preparing SFT datasets (including 12K Meta-Reasoner data)..."
 PYTHONPATH=. python3 -m saber.training.dataset_loader
