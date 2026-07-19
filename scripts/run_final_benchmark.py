@@ -228,9 +228,10 @@ def run_benchmark(api_key=None):
     try:
         swe = load_hf_dataset("princeton-nlp/SWE-bench_Verified", split="test[:100]")
         for row in swe:
+            statement = row.get("problem_statement") or row.get("problem_description") or ""
             bench_cases.append({
                 "type": "open_ended",
-                "question": f"Resolve the following GitHub issue:\n{row['problem_description']}",
+                "question": f"Resolve the following GitHub issue:\n{statement}",
                 "expected": None,
                 "domain": "coding",
                 "dataset": "swe_bench_verified"
