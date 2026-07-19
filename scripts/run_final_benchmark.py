@@ -124,11 +124,23 @@ def call_qwen_judge(prompt, question, student_answer, api_key=None):
         }
 
 # =====================================================================
+# HF Dataset Loader Helper (Supporting Auth Token)
+# =====================================================================
+def load_hf_dataset(path, name=None, split=None, **kwargs):
+    from datasets import load_dataset
+    token = os.getenv("HF_TOKEN")
+    if token:
+        kwargs["token"] = token
+    if name:
+        kwargs["name"] = name
+    if split:
+        kwargs["split"] = split
+    return load_dataset(path, **kwargs)
+
+# =====================================================================
 # Main Benchmark Pipeline
 # =====================================================================
 def run_benchmark(api_key=None):
-    from datasets import load_dataset
-    
     # 1. Setup SABER Orchestrator
     config = SaberConfig()
     registry = SpecialistRegistry()
@@ -142,7 +154,7 @@ def run_benchmark(api_key=None):
     
     # 2.1 Science: GPQA Diamond (198 cases)
     try:
-        gpqa = load_dataset("idavidrein/gpqa", "gpqa_diamond", split="train")
+        gpqa = load_hf_dataset("idavidrein/gpqa", "gpqa_diamond", split="train")
         for row in gpqa:
             choices = [row["correct_answer"], row["incorrect_answer1"], row["incorrect_answer2"], row["incorrect_answer3"]]
             random.seed(42)
@@ -184,7 +196,7 @@ def run_benchmark(api_key=None):
 
     # 2.2 Science: MMLU-Pro (300 cases stratified)
     try:
-        mmlu_pro = load_dataset("TIGER-Lab/MMLU-Pro", split="test[:300]")
+        mmlu_pro = load_hf_dataset("TIGER-Lab/MMLU-Pro", split="test[:300]")
         for row in mmlu_pro:
             choices = row.get("options", [])
             choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
@@ -200,7 +212,7 @@ def run_benchmark(api_key=None):
 
     # 2.3 Coding: HumanEval (164 cases)
     try:
-        he = load_dataset("openai/openai_humaneval", split="test")
+        he = load_hf_dataset("openai/openai_humaneval", split="test")
         for row in he:
             bench_cases.append({
                 "type": "open_ended", # Code generation is open-ended for our prompt setup
@@ -214,7 +226,7 @@ def run_benchmark(api_key=None):
 
     # 2.4 Coding: SWE-bench Verified (100 cases)
     try:
-        swe = load_dataset("princeton-nlp/SWE-bench_Verified", split="test[:100]")
+        swe = load_hf_dataset("princeton-nlp/SWE-bench_Verified", split="test[:100]")
         for row in swe:
             bench_cases.append({
                 "type": "open_ended",
@@ -228,7 +240,7 @@ def run_benchmark(api_key=None):
 
     # 2.5 Coding: LiveCodeBench (100 cases)
     try:
-        lcb = load_dataset("livecodebench/code_generation_lite", split="test[:100]")
+        lcb = load_hf_dataset("livecodebench/code_generation_lite", split="test[:100]")
         for row in lcb:
             bench_cases.append({
                 "type": "open_ended",
@@ -242,7 +254,7 @@ def run_benchmark(api_key=None):
 
     # 2.6 Medical: MedQA USMLE (100 cases)
     try:
-        medqa = load_dataset("GBaker/MedQA-USMLE-4-options", split="test[:100]")
+        medqa = load_hf_dataset("GBaker/MedQA-USMLE-4-options", split="test[:100]")
         for row in medqa:
             bench_cases.append({
                 "type": "exact",
@@ -256,7 +268,7 @@ def run_benchmark(api_key=None):
 
     # 2.7 Medical: MedMCQA (50 cases)
     try:
-        medmcqa = load_dataset("openlifescienceai/medmcqa", split="validation[:50]")
+        medmcqa = load_hf_dataset("openlifescienceai/medmcqa", split="validation[:50]")
         for row in medmcqa:
             cop_idx = row["cop"]
             cop_char = chr(65 + cop_idx) if 0 <= cop_idx < 4 else str(cop_idx)
@@ -320,7 +332,7 @@ def run_benchmark(api_key=None):
 
     # 2.10 Multi-domain / Orchestrator + Synthesis (GAIA)
     try:
-        gaia = load_dataset("gaia-benchmark/GAIA", "2023_all", split="validation[:100]")
+        gaia = load_hf_dataset("gaia-benchmark/GAIA", "2023_all", split="validation[:100]")
         for row in gaia:
             bench_cases.append({
                 "type": "open_ended",
