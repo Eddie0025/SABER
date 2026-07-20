@@ -160,13 +160,13 @@ class Sentinel:
             if not queries_to_run:
                 queries_to_run = [compiled_text[:120]]
 
-            # STRICT CIRCUIT BREAKER: Deduplicate claims and cap at top 3 to prevent network bottlenecks
+            # STRICT CIRCUIT BREAKER: Deduplicate claims to kill autoregressive loops
             unique_queries = []
             for q in queries_to_run:
                 if q not in unique_queries:
                     unique_queries.append(q)
                 
-            queries_to_run = unique_queries[:3]
+            queries_to_run = unique_queries
 
             # Run search for each query with consecutive duplicate bypass
             all_results = []
