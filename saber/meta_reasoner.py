@@ -211,7 +211,7 @@ class MetaReasoner:
             flags_in_cycle: List[Signal] = []
 
             for domain, out_sig in outputs.items():
-                # Meta-Reasoning Layer sends VERIFICATION_SIGNAL via Sentinel
+                domain_flags = []
                 try:
                     ver_res = self.sentinel.verify_interpretation(
                         specialist_domain=domain,
@@ -219,6 +219,8 @@ class MetaReasoner:
                         compiled_text=compiled_text,
                         config=self.config
                     )
+                    if ver_res.signal_type == SignalType.FLAG_SIGNAL:
+                        domain_flags.append(ver_res)
                     
                     # Step-level CoT verification (if CoT chain available)
                     cot_data = out_sig.payload.get("cot_chain")
@@ -229,9 +231,7 @@ class MetaReasoner:
                             compiled_text=compiled_text,
                             config=self.config,
                         )
-                        flags_in_cycle.extend(step_flags)
-                        all_flags.extend(step_flags)
-                        total_flags_raised += len(step_flags)
+                        domain_flags.extend(step_flags)
                 except Exception as e:
                     self.audit.log("failure", query_id, {
                         "category": FailureCategory.VERIFICATION_FAILURE.value,
@@ -239,10 +239,30 @@ class MetaReasoner:
                     }, component="sentinel")
                     continue
 
-                if ver_res.signal_type == SignalType.FLAG_SIGNAL:
-                    flags_in_cycle.append(ver_res)
-                    all_flags.append(ver_res)
-                    total_flags_raised += 1
+                if domain_flags:
+                    flags_in_cycle.extend(domain_flags)
+                    all_flags.extend(domain_flags)
+                    total_flags_raised += len(domain_flags)
+
+                    # Send verification signal with flags back to Specialist for self-correction
+                    spec = self.registry.get(domain)
+                    if spec:
+                        print(f"[MetaReasoner] Sending {len(domain_flags)} Sentinel flags back to '{domain}' Specialist for self-correction.")
+                        ver_sig = Signal(
+                            signal_type=SignalType.VERIFICATION_SIGNAL,
+                            query_id=query_id,
+                            source_id=self.reasoner_id,
+                            target_id=f"SPEC-{domain.upper()}",
+                            payload={
+                                "status": "FLAGGED",
+                                "flags": [f.payload for f in domain_flags],
+                                "compiled_text": compiled_text
+                            }
+                        ).freeze_and_hash()
+                        
+                        # Specialist performs self-correction and returns corrected COT_SIGNAL
+                        corrected_cot = spec.handle_signal(ver_sig)
+                        outputs[domain] = corrected_cot
 
             # Record verification pass
             pass_record = {
@@ -258,14 +278,14 @@ class MetaReasoner:
                 # All GREEN_CHITs received
                 break
 
-            if os.getenv("SABER_BENCHMARK_MODE") == "1":
-                # Skip applying patches/rewriting in benchmark mode to prevent loading the meta-reasoner
-                print("[MetaReasoner] Benchmark mode: skipping LLM patch/rewrite cycle.")
-                break
-
-            # 7. Apply Patches (LLM Rewrite)
+            # 7. Update Compiled Text from the self-corrected Specialist outputs
             pre_revision = compiled_text
-            compiled_text = self._apply_patches(compiled_text, flags_in_cycle)
+            if os.getenv("SABER_BENCHMARK_MODE") == "1" and len(outputs) == 1:
+                domain = list(outputs.keys())[0]
+                compiled_text = outputs[domain].payload.get("raw_response", "")
+            else:
+                compiled_text, meta_reasoning_data = self._meta_reasoning_synthesis(outputs, query, query_id)
+            
             revision_count += 1
 
             # Track which flags were addressed
