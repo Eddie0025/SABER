@@ -9,51 +9,45 @@
 ```
 User Query
     │
-    ├───────────────────────────────────────────────────────┐
-    │ (immediate)                                           │
-    ▼                                                       ▼
-┌───────────────────────────────────┐   ┌──────────────────────────────┐
-│  FRONTEND RESPONDER               │   │  ORCHESTRATOR (async)        │
-│  Qwen 2.5-0.5B (350M params)     │   │  Runs on GPU backend         │
-│                                   │   │                              │
-│  - Loads with the chat interface  │   │  1. Ambiguity Detection      │
-│  - Runs on CPU, instant response  │   │  2. Query Completeness Check │
-│  - Parses query topic and gives   │   │     (asks follow-ups if      │
-│    context-aware acknowledgment:  │   │      info is missing)        │
-│    "Analyzing your cybersecurity  │   │  3. Few-Shot LLM Domain      │
-│     question — routing to our     │   │     Classification (7B)      │
-│     security specialist..."       │   │     with confidence gate     │
-│  - Replaced by real answer when   │   │  4. Specialist Selection     │
-│    backend pipeline completes     │   │  5. Verification Tier        │
-│                                   │   │     Assignment               │
-└───────────────────────────────────┘   └─────────────┬────────────────┘
-                                                      │
-                                       activated specialists + tier
-                                                      ▼
+    ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  SPECIALIST EXECUTION (one by one, sequentially)                 │
+│  ORCHESTRATOR (bare Qwen 2.5-7B)                                 │
+│  The base 7B model — no LoRA adapter. Uses its general LLM       │
+│  capabilities for all pre-routing checks.                        │
 │                                                                  │
-│  For each activated specialist:                                  │
-│    ┌─────────────────────────────────────────────────────────┐   │
-│    │  1. Receive TASK_SIGNAL → confirm task (CONFIRMATION)   │   │
-│    │  2. Load domain LoRA adapter via LLMEngine              │   │
-│    │  3. Generate answer with CoT Maintainer plugged in:     │   │
-│    │       IDENTIFY → ANALYZE → EVIDENCE → CONCLUDE          │   │
-│    │  4. Parse output into structured Claim objects           │   │
-│    │  5. Package claims + CoT chain into COT_SIGNAL          │   │
-│    │  6. Sentinel integrity check (SHA-256 hash verify)      │   │
-│    │  7. Sentinel semantic verification cycles               │   │
-│    │     (0, 2, or 4 checks depending on tier)               │   │
-│    │     - Web-grounded fact-checking (DuckDuckGo)           │   │
-│    │     - CoT step-level logic verification                 │   │
-│    │     - If FLAG raised → LLM rewrites the answer          │   │
-│    │     - If all GREEN_CHITs → pass                         │   │
-│    └─────────────────────────────────────────────────────────┘   │
+│  1. Ambiguity Detection                                         │
+│  2. Query Completeness Check (asks follow-ups if info missing)  │
+│  3. Few-Shot Domain Classification with confidence gate          │
+│  4. Specialist Selection                                        │
+│  5. Verification Tier Assignment                                │
 │                                                                  │
-│  Output: Verified claims + CoT chains from ALL specialists       │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │ all verified specialist outputs
-                       ▼
+│  Once routing is finalized:                                      │
+│  ──► Pings 0.5B Chatbot with routing decision                   │
+│  ──► Dispatches tasks to specialists                            │
+└───────┬──────────────────────────────────────────┬───────────────┘
+        │                                          │
+        │ routing decision                         │ TASK_SIGNALs
+        ▼                                          ▼
+┌───────────────────────────┐   ┌──────────────────────────────────────────┐
+│  CHATBOT (Qwen 2.5-0.5B) │   │  SPECIALIST EXECUTION (sequential)       │
+│  Runs on CPU              │   │                                          │
+│                           │   │  For each activated specialist:          │
+│  Receives routing info    │   │    ┌────────────────────────────────┐    │
+│  from Orchestrator and    │   │    │  1. Confirm task               │    │
+│  gives user a context-    │   │    │  2. Load LoRA adapter          │    │
+│  aware status message:    │   │    │  3. Generate answer with CoT   │    │
+│                           │   │    │  4. Parse into Claims          │    │
+│  "Routing to our cyber    │   │    │  5. Sentinel verification      │    │
+│   security specialist     │   │    │     cycles (tier-dependent)    │    │
+│   — analyzing your MITRE  │   │    │  6. If FLAG → rewrite          │    │
+│   ATT&CK question..."     │   │    │  7. If GREEN_CHIT → pass       │    │
+│                           │   │    └────────────────────────────────┘    │
+│  Replaced when real       │   │                                          │
+│  answer arrives           │   │  Output: Verified claims + CoT chains    │
+└───────────────────────────┘   └──────────────────┬───────────────────────┘
+                                                   │
+                                    all verified specialist outputs
+                                                   ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  META-REASONING LAYER (synthesis — runs AFTER all specialists)   │
 │                                                                  │
@@ -79,31 +73,34 @@ User Query
 └──────────────────────┬───────────────────────────────────────────┘
                        │
                        ▼
-                 Final Answer → User (replaces greeting)
+                 Final Answer → User (replaces chatbot message)
 ```
 
 ---
 
 ## Component Details
 
-### 0. Frontend Responder (Qwen 2.5-0.5B)
+### 0. Chatbot (Qwen 2.5-0.5B)
 
 **Model**: `Qwen/Qwen2.5-0.5B` (350M parameters)
 
-A lightweight model that **loads with the chat interface** and runs on CPU. Its sole purpose is latency masking — the moment a user sends a query, the frontend responder immediately generates a context-aware acknowledgment (e.g., *"Analyzing your cybersecurity question about MITRE ATT&CK — routing to our security specialist..."*) while the full SABER pipeline processes the query on the GPU backend.
+A lightweight model that **loads with the chat interface** and runs on CPU. It does NOT fire immediately when the user sends a query — it waits for the **Orchestrator to finalize routing** and then receives a ping with the routing decision.
+
+Once pinged, the chatbot generates a **context-aware status message** based on which specialists were activated (e.g., *"Routing to our cybersecurity specialist — analyzing your MITRE ATT&CK question..."*). This message is displayed to the user while the specialists work in the background.
 
 - **Runs on CPU** — no GPU contention with the specialist pipeline.
-- **Loads once at startup** — always warm, instant response (<500ms).
-- **Context-aware** — parses the query topic to generate a relevant greeting, not a generic "Processing...".
-- **Replaced transparently** — when the backend pipeline returns the real answer, it replaces the greeting in the chat interface.
+- **Loads once at startup** — always warm, instant response once pinged.
+- **Informed by routing** — knows which specialists were activated, so the message is specific, not generic.
+- **Replaced transparently** — when the backend pipeline returns the real answer, it replaces the chatbot message in the UI.
+- **Also handles simple greetings** — if the user sends a non-domain message ("hi", "thanks", etc.), the chatbot handles it directly without invoking the full pipeline.
 
-This model does NOT participate in any reasoning, routing, or verification. It is purely a UX component.
+This model does NOT participate in any reasoning, routing, or verification.
 
-### 1. Orchestrator
+### 1. Orchestrator (bare Qwen 2.5-7B)
 
 **File**: `saber/orchestrator.py`
 
-The entry point. It does NOT generate answers — it only routes.
+The entry point. It is the **bare Qwen 2.5-7B base model** — no LoRA adapter, no domain fine-tuning. It uses its general-purpose LLM capabilities to handle all pre-routing checks: ambiguity detection, query completeness verification, and domain classification. It does NOT generate domain answers — it only validates, classifies, and routes.
 
 | Step | What It Does |
 |------|-------------|
