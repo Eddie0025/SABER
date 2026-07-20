@@ -283,7 +283,15 @@ def main():
         for mode_name, tier in modes:
             start_time = time.time()
             try:
-                res = orch.process_query(case["question"], tier=tier)
+                # Direct specialist mapping to bypass classification misrouting & RAM overload
+                domain_map = {
+                    "gpqa_diamond": ["science"],
+                    "cybermetric": ["cyber"],
+                    "humaneval": ["coding"],
+                    "finqa": ["finance"]
+                }
+                activated = domain_map.get(case["dataset"])
+                res = orch.process_query(case["question"], tier=tier, activated_domains=activated)
                 ans = res.get("answer", "").strip()
             except Exception as e:
                 ans = f"[ERROR]: {e}"

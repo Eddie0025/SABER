@@ -263,6 +263,7 @@ class Orchestrator:
         self,
         query: str,
         tier: Optional[VerificationTier] = None,
+        activated_domains: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Run the full SABER pipeline for a user query.
 
@@ -277,40 +278,45 @@ class Orchestrator:
         # --- Conversational Primer: Disabled for now to avoid latency ---
         primer = ""
 
-        # --- Ambiguity check ---
-        ambiguity = self.detect_ambiguity(query)
-        if ambiguity >= self.config.ambiguity_threshold:
-            result = {
-                "query_id": query_id,
-                "status": "clarification_needed",
-                "ambiguity_score": ambiguity,
-                "answer": (
-                    f"{primer}\n\n" if primer else ""
-                ) + (
-                    "Your query appears ambiguous.  Could you provide more "
-                    "detail or specify the domain (medical, legal, cyber, finance)?"
-                ),
-                "confidence": 0.0,
-                "flags": [],
-                "domains_activated": [],
-                "verification_tier": 0,
-                "verification_cycles": 0,
-            }
-            self.audit.log_output(query_id, result["answer"])
-            return result
+        # --- Ambiguity & Domain Selection ---
+        if activated_domains is not None:
+            activated = activated_domains
+            domain_scores = {}
+        else:
+            # --- Ambiguity check ---
+            ambiguity = self.detect_ambiguity(query)
+            if ambiguity >= self.config.ambiguity_threshold:
+                result = {
+                    "query_id": query_id,
+                    "status": "clarification_needed",
+                    "ambiguity_score": ambiguity,
+                    "answer": (
+                        f"{primer}\n\n" if primer else ""
+                    ) + (
+                        "Your query appears ambiguous.  Could you provide more "
+                        "detail or specify the domain (medical, legal, cyber, finance)?"
+                    ),
+                    "confidence": 0.0,
+                    "flags": [],
+                    "domains_activated": [],
+                    "verification_tier": 0,
+                    "verification_cycles": 0,
+                }
+                self.audit.log_output(query_id, result["answer"])
+                return result
 
-        # --- Domain classification & specialist selection ---
-        domain_scores = self.classify_domains(query)
-        activated = self.select_specialists(domain_scores)
+            # --- Domain classification & specialist selection ---
+            domain_scores = self.classify_domains(query)
+            activated = self.select_specialists(domain_scores)
 
-        if not activated and domain_scores:
-            best_domain = max(domain_scores, key=domain_scores.get)
-            if domain_scores[best_domain] > 0.0:
-                activated = [best_domain]
-                self.audit.log("forced_activation", query_id, {
-                    "domain": best_domain,
-                    "score": domain_scores[best_domain],
-                }, component="orchestrator")
+            if not activated and domain_scores:
+                best_domain = max(domain_scores, key=domain_scores.get)
+                if domain_scores[best_domain] > 0.0:
+                    activated = [best_domain]
+                    self.audit.log("forced_activation", query_id, {
+                        "domain": best_domain,
+                        "score": domain_scores[best_domain],
+                    }, component="orchestrator")
 
         if not activated:
             # ----------------------------------------------------------
