@@ -321,73 +321,54 @@ def run_benchmark(api_key=None):
             "dataset": "conv_finqa"
         })
 
-    # 2.8.5 Cyber: CyberMetric (95 cases)
+    # 2.8.5 Cyber: SecBench (100 cases)
     try:
-        import subprocess
-        if not os.path.exists("CyberMetric"):
-            print("[*] Cloning CyberMetric GitHub repository...")
-            subprocess.run(["git", "clone", "https://github.com/cybermetric/CyberMetric.git"], check=True)
-            
-        json_path = ""
-        for r, d, files in os.walk("CyberMetric"):
-            for f in files:
-                if "80" in f and f.endswith(".json"):
-                    json_path = os.path.join(r, f)
-                    break
-            if json_path:
-                break
-                
-        if not json_path:
-            for r, d, files in os.walk("CyberMetric"):
-                for f in files:
-                    if f.endswith(".json"):
-                        json_path = os.path.join(r, f)
-                        break
-                if json_path:
-                    break
-                    
-        if json_path and os.path.exists(json_path):
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    for k, v in data.items():
-                        if isinstance(v, list):
-                            data = v
-                            break
-                count = 0
-                for row in data:
-                    q_text = row.get("question") or row.get("Question")
-                    choices = []
-                    if "choices" in row:
-                        choices = row["choices"]
-                    else:
-                        for opt in ["a", "b", "c", "d", "A", "B", "C", "D"]:
-                            if opt in row:
-                                choices.append(row[opt])
-                    correct_ans = row.get("answer") or row.get("Answer") or row.get("correct") or row.get("correct_answer")
-                    if not q_text or not correct_ans:
+        import urllib.request
+        url = "https://raw.githubusercontent.com/secbench-git/SecBench/main/data/MCQs_2730.jsonl"
+        all_cyber = []
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                lines = response.read().decode("utf-8").splitlines()
+                for line in lines:
+                    if not line.strip():
                         continue
-                    choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-                    if str(correct_ans).upper() in ["A", "B", "C", "D"]:
-                        correct_char = str(correct_ans).upper()
-                    else:
-                        try:
-                            idx = choices.index(correct_ans)
-                            correct_char = chr(65 + idx)
-                        except ValueError:
-                            correct_char = "A"
-                    bench_cases.append({
-                        "type": "exact",
-                        "question": f"Question: {q_text}\nOptions:\n{choices_str}",
-                        "expected": correct_char,
-                        "domain": "cyber",
-                        "dataset": "cybermetric"
-                    })
-                    count += 1
-                    if count >= 95:
-                        break
+                    row = json.loads(line)
+                    if row.get("language") == "English":
+                        q_text = row.get("question")
+                        choices = list(row.get("answers", []))
+                        label_char = row.get("label", "").upper().strip()
+                        if len(choices) != 4 or not label_char or not q_text:
+                            continue
+                        correct_idx = ord(label_char) - 65
+                        if not (0 <= correct_idx < 4):
+                            continue
+                        correct_ans = choices[correct_idx]
+                        
+                        # Shuffle choices
+                        random.seed(42)
+                        random.shuffle(choices)
+                        choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                        correct_char = chr(65 + choices.index(correct_ans))
+                        
+                        all_cyber.append({
+                            "type": "exact",
+                            "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                            "expected": correct_char,
+                            "domain": "cyber",
+                            "dataset": "secbench"
+                        })
+        except Exception as e:
+            print(f"[!] Failed to fetch SecBench from GitHub: {e}")
+            
+        if all_cyber:
+            sliced_cyber = all_cyber[-100:]
+            bench_cases.extend(sliced_cyber)
+            print(f"[+] Loaded {len(sliced_cyber)} Cyber (SecBench) cases.")
+        else:
+            print("[!] Failed to load SecBench cases.")
     except Exception as e:
-        print(f"[!] CyberMetric load failed: {e}")
+        print(f"[!] SecBench load failed: {e}")
 
     # 2.9 Cyber, Architecture, Meta-Reasoner (80-100 cases using curated evaluation files scaled)
     eval_domains = [("medical", "eval_medical"), ("science", "eval_science"), ("coding", "eval_coding"), ("architecture", "eval_architecture"), ("finance", "eval_finance"), ("meta_reasoner", "eval_meta_reasoner")]

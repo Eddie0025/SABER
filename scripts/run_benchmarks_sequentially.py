@@ -180,103 +180,57 @@ def main(api_key=None):
     print("\n[*] Loading benchmark datasets...")
     bench_cases = []
     
-    # 2.1 Science: GPQA Diamond (Last 78 cases)
-    try:
-        gpqa = load_hf_dataset("idavidrein/gpqa", "gpqa_diamond", split="train")
-        all_gpqa = list(gpqa)
-        sliced_gpqa = all_gpqa[-78:]
-        for row in sliced_gpqa:
-            corr = row.get("correct_answer") or row.get("Correct Answer")
-            inc1 = row.get("incorrect_answer1") or row.get("Incorrect Answer 1")
-            inc2 = row.get("incorrect_answer2") or row.get("Incorrect Answer 2")
-            inc3 = row.get("incorrect_answer3") or row.get("Incorrect Answer 3")
-            q_text = row.get("question") or row.get("Question")
-            
-            if not corr or not q_text:
-                continue
-                
-            choices = [corr, inc1, inc2, inc3]
-            random.seed(42)
-            random.shuffle(choices)
-            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-            correct_char = chr(65 + choices.index(corr))
-            
-            bench_cases.append({
-                "type": "exact",
-                "question": f"Question: {q_text}\nOptions:\n{choices_str}",
-                "expected": correct_char,
-                "domain": "science",
-                "dataset": "gpqa_diamond"
-            })
-        print(f"[+] Loaded {len(sliced_gpqa)} Science (GPQA Diamond) cases.")
-    except Exception as e:
-        print(f"[!] Error loading GPQA: {e}")
+    # 2.1 Science: GPQA Diamond (Bypassed)
+    pass
 
-    # 2.2 Cyber: CyberMetric (Last 60 cases)
+    # 2.2 Cyber: SecBench (Last 100 English cases)
     try:
         import urllib.request
-        data = []
-        urls = [
-            "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-500-v1.json",
-            "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-80-v1.json"
-        ]
-        
-        for url in urls:
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    raw_data = json.loads(response.read().decode("utf-8"))
-                    if isinstance(raw_data, dict):
-                        for k, v in raw_data.items():
-                            if isinstance(v, list):
-                                data = v
-                                break
-                    elif isinstance(raw_data, list):
-                        data = raw_data
-                    if data:
-                        break
-            except Exception:
-                continue
-
-        if data:
-            all_cyber = []
-            for row in data:
-                q_text = row.get("question") or row.get("Question")
-                choices = []
-                choices_dict = row.get("answers") or row.get("choices") or row
-                if isinstance(choices_dict, list):
-                    choices = choices_dict
-                elif isinstance(choices_dict, dict):
-                    for opt in ["A", "B", "C", "D", "a", "b", "c", "d", "1", "2", "3", "4"]:
-                        if opt in choices_dict and choices_dict[opt]:
-                            choices.append(choices_dict[opt])
-                
-                correct_ans = row.get("solution") or row.get("answer") or row.get("Answer") or row.get("correct") or row.get("correct_answer")
-                if not q_text or not correct_ans or not choices:
-                    continue
-                choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-                if str(correct_ans).upper() in ["A", "B", "C", "D"]:
-                    correct_char = str(correct_ans).upper()
-                else:
-                    try:
-                        idx = choices.index(correct_ans)
-                        correct_char = chr(65 + idx)
-                    except ValueError:
-                        correct_char = "A"
-                all_cyber.append({
-                    "type": "exact",
-                    "question": f"Question: {q_text}\nOptions:\n{choices_str}",
-                    "expected": correct_char,
-                    "domain": "cyber",
-                    "dataset": "cybermetric"
-                })
-            sliced_cyber = all_cyber[-60:]
+        url = "https://raw.githubusercontent.com/secbench-git/SecBench/main/data/MCQs_2730.jsonl"
+        all_cyber = []
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                lines = response.read().decode("utf-8").splitlines()
+                for line in lines:
+                    if not line.strip():
+                        continue
+                    row = json.loads(line)
+                    if row.get("language") == "English":
+                        q_text = row.get("question")
+                        choices = list(row.get("answers", []))
+                        label_char = row.get("label", "").upper().strip()
+                        if len(choices) != 4 or not label_char or not q_text:
+                            continue
+                        correct_idx = ord(label_char) - 65
+                        if not (0 <= correct_idx < 4):
+                            continue
+                        correct_ans = choices[correct_idx]
+                        
+                        # Shuffle choices
+                        random.seed(42)
+                        random.shuffle(choices)
+                        choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                        correct_char = chr(65 + choices.index(correct_ans))
+                        
+                        all_cyber.append({
+                            "type": "exact",
+                            "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                            "expected": correct_char,
+                            "domain": "cyber",
+                            "dataset": "secbench"
+                        })
+        except Exception as e:
+            print(f"[!] Failed to fetch SecBench from GitHub: {e}")
+            
+        if all_cyber:
+            sliced_cyber = all_cyber[-100:]
             bench_cases.extend(sliced_cyber)
-            print(f"[+] Loaded {len(sliced_cyber)} Cyber (CyberMetric) cases.")
+            print(f"[+] Loaded {len(sliced_cyber)} Cyber (SecBench) cases.")
         else:
-            print("[!] Failed to fetch CyberMetric Raw JSON.")
+            print("[!] Failed to load SecBench cases.")
     except Exception as e:
-        print(f"[!] CyberMetric load failed: {e}")
+        print(f"[!] SecBench load failed: {e}")
 
     # 2.3 Coding: HumanEval (Last 78 cases)
     try:
@@ -320,8 +274,6 @@ def main(api_key=None):
 
     # 3. Process each case across the 3 Sentinel Tiers (Without Sentinel, 2-Check, 4-Check)
     for idx, case in enumerate(bench_cases, 1):
-        if idx < 25:
-            continue
         ds_name = case["dataset"]
         domain = case["domain"]
         print(f"\n[{idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {case['question'][:75].strip()}...")
