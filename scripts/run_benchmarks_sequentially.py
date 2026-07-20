@@ -320,6 +320,8 @@ def main(api_key=None):
 
     # 3. Process each case across the 3 Sentinel Tiers (Without Sentinel, 2-Check, 4-Check)
     for idx, case in enumerate(bench_cases, 1):
+        if idx < 20:
+            continue
         ds_name = case["dataset"]
         domain = case["domain"]
         print(f"\n[{idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {case['question'][:75].strip()}...")
