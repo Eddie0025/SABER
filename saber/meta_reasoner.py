@@ -307,27 +307,48 @@ class MetaReasoner:
     # ------------------------------------------------------------------
 
     def _decompose_to_tasks(self, query_sig: Signal, domains: List[str]) -> Dict[str, Signal]:
-        from saber.llm_engine import LLMEngine
+        """Decompose query into per-specialist task signals.
+
+        For single-specialist queries, the original query is passed directly
+        to preserve all context (including multiple-choice options, code
+        prompts, numerical data, etc.).  LLM-based decomposition is only
+        used for multi-specialist queries where the query genuinely needs
+        to be split across domains.
+        """
         query_text = query_sig.payload.get("text", "")
         tasks = {}
-        orchestrator_model = self.config.base_model
-        system_prompt = "You are SABER Orchestrator. Output ONLY the task objective string."
 
-        with LLMEngine(orchestrator_model) as engine:
-            for domain in domains:
-                prompt = f"Query: {query_text}\nExtract the {domain.upper()} task objective."
-                try:
-                    obj = engine.generate(prompt, system_prompt=system_prompt)
-                except Exception:
-                    obj = f"Analyze {query_text}"
+        if len(domains) == 1:
+            # Single specialist — pass original query verbatim
+            domain = domains[0]
+            tasks[domain] = Signal(
+                signal_type=SignalType.TASK_SIGNAL,
+                query_id=query_sig.query_id,
+                source_id=self.reasoner_id,
+                target_id=f"SPEC-{domain.upper()}",
+                payload={"objective": query_text}
+            ).freeze_and_hash()
+        else:
+            # Multi-specialist — use LLM to decompose
+            from saber.llm_engine import LLMEngine
+            orchestrator_model = self.config.base_model
+            system_prompt = "You are SABER Orchestrator. Output ONLY the task objective string. Preserve all original details, options, and data."
 
-                tasks[domain] = Signal(
-                    signal_type=SignalType.TASK_SIGNAL,
-                    query_id=query_sig.query_id,
-                    source_id=self.reasoner_id,
-                    target_id=f"SPEC-{domain.upper()}",
-                    payload={"objective": obj}
-                ).freeze_and_hash()
+            with LLMEngine(orchestrator_model) as engine:
+                for domain in domains:
+                    prompt = f"Query: {query_text}\nExtract the {domain.upper()} task objective. Include ALL original details and options."
+                    try:
+                        obj = engine.generate(prompt, system_prompt=system_prompt)
+                    except Exception:
+                        obj = query_text
+
+                    tasks[domain] = Signal(
+                        signal_type=SignalType.TASK_SIGNAL,
+                        query_id=query_sig.query_id,
+                        source_id=self.reasoner_id,
+                        target_id=f"SPEC-{domain.upper()}",
+                        payload={"objective": obj}
+                    ).freeze_and_hash()
         return tasks
 
     def _parse_synthesis_json(self, raw_text: str) -> Dict[str, Any]:
