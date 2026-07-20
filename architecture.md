@@ -22,28 +22,17 @@ User Query
 │  5. Verification Tier Assignment                                │
 │                                                                  │
 │  Once routing is finalized, three things happen simultaneously:  │
-│  ──► Pings 0.5B Chatbot with routing decision                   │
+│  ──► Sends simple routing ping to 0.5B Chatbot                  │
 │  ──► Sends original query + specialist list to Meta-Reasoner    │
 │  ──► Dispatches domain-specific sub-tasks to specialists        │
 └───────┬──────────────────┬───────────────────────┬───────────────┘
         │                  │                       │
-        │ routing info     │ query + spec list     │ TASK_SIGNALs
+        │ simple ping      │ query + spec list     │ TASK_SIGNALs
         ▼                  ▼                       ▼
 ┌─────────────────┐  ┌─────────────────────┐  ┌───────────────────────────┐
 │ CHATBOT (0.5B)  │  │ META-REASONER       │  │ SPECIALIST EXECUTION      │
 │ Runs on CPU     │  │ (reads & holds)     │  │ (sequential)              │
 │                 │  │                     │  │                           │
-│ Gives user a    │  │ Reads the original  │  │ Each specialist receives: │
-│ context-aware   │  │ query and holds it  │  │  - Original query         │
-│ status message  │  │ quietly. Also knows │  │    (for context)          │
-│                 │  │ which specialists   │  │  - Focused sub-task       │
-│ "Routing to our │  │ were activated, so  │  │    (domain-specific)      │
-│  cyber security │  │ it can track when   │  │                           │
-│  specialist..." │  │ ALL outputs have    │  │ 1. Confirm task           │
-│                 │  │ arrived before it   │  │ 2. Load LoRA adapter      │
-│ Replaced when   │  │ begins synthesis.   │  │ 3. Answer with CoT        │
-│ real answer     │  │                     │  │ 4. Parse into Claims      │
-│ arrives         │  │ Waits...            │  │ 5. Sentinel verification  │
 │                 │  │                     │  │ 6. FLAG → rewrite         │
 │                 │  │                     │  │ 7. GREEN_CHIT → pass      │
 └─────────────────┘  └─────────────────────┘  └─────────────┬─────────────┘
@@ -91,15 +80,15 @@ User Query
 
 **Model**: `Qwen/Qwen2.5-0.5B` (350M parameters)
 
-A lightweight model that **loads with the chat interface** and runs on CPU. It does NOT fire immediately when the user sends a query — it waits for the **Orchestrator to finalize routing** and then receives a ping with the routing decision.
+A lightweight model that **loads with the chat interface** and runs on CPU. It does NOT fire immediately when the user sends a query — it waits for the **Orchestrator to finalize routing** and then receives a simple status ping.
 
-Once pinged, the chatbot generates a **context-aware status message** based on which specialists were activated (e.g., *"Routing to our cybersecurity specialist — analyzing your MITRE ATT&CK question..."*). This message is displayed to the user while the specialists work in the background.
+Once pinged, the chatbot generates a **generic boilerplate status message** to keep the user occupied (e.g., *"Your query is being analyzed — processing your request..."*). This message is displayed to the user while the specialists work in the background.
 
 - **Runs on CPU** — no GPU contention with the specialist pipeline.
 - **Loads once at startup** — always warm, instant response once pinged.
-- **Informed by routing** — knows which specialists were activated, so the message is specific, not generic.
+- **Generic keeping-occupied strategy** — outputs standard status updates ("Analyzing...", "Running verification...", etc.) instead of domain-specific text.
 - **Replaced transparently** — when the backend pipeline returns the real answer, it replaces the chatbot message in the UI.
-- **Also handles simple greetings** — if the user sends a non-domain message ("hi", "thanks", etc.), the chatbot handles it directly without invoking the full pipeline.
+- **Also handles simple greetings** — if the user sends a non-domain message ("hi", "thanks", etc.), the chatbot handles it directly with generic pleasantries without invoking the full pipeline.
 
 This model does NOT participate in any reasoning, routing, or verification.
 
@@ -110,7 +99,7 @@ This model does NOT participate in any reasoning, routing, or verification.
 The entry point. It is the **bare Qwen 2.5-7B base model** — no LoRA adapter, no domain fine-tuning. It uses its general-purpose LLM capabilities to handle all pre-routing checks: ambiguity detection, query completeness verification, and domain classification. It does NOT generate domain answers — it only validates, classifies, routes, and dispatches.
 
 Once routing is finalized, the Orchestrator does three things simultaneously:
-1. **Pings the 0.5B Chatbot** with the routing decision (which specialists were activated)
+1. **Pings the 0.5B Chatbot** with a simple status update notification
 2. **Sends the original query + activated specialist list** to the Meta-Reasoning Layer (it reads and holds quietly until all specialist outputs arrive)
 3. **Decomposes the query into domain-specific sub-tasks** and dispatches them to the activated specialists
 
