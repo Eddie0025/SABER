@@ -18,40 +18,47 @@ User Query
 │  1. Ambiguity Detection                                         │
 │  2. Query Completeness Check (asks follow-ups if info missing)  │
 │  3. Few-Shot Domain Classification with confidence gate          │
-│  4. Specialist Selection                                        │
+│  4. Specialist Selection + Task Decomposition                   │
 │  5. Verification Tier Assignment                                │
 │                                                                  │
-│  Once routing is finalized:                                      │
+│  Once routing is finalized, three things happen simultaneously:  │
 │  ──► Pings 0.5B Chatbot with routing decision                   │
-│  ──► Dispatches tasks to specialists                            │
-└───────┬──────────────────────────────────────────┬───────────────┘
-        │                                          │
-        │ routing decision                         │ TASK_SIGNALs
-        ▼                                          ▼
-┌───────────────────────────┐   ┌──────────────────────────────────────────┐
-│  CHATBOT (Qwen 2.5-0.5B) │   │  SPECIALIST EXECUTION (sequential)       │
-│  Runs on CPU              │   │                                          │
-│                           │   │  For each activated specialist:          │
-│  Receives routing info    │   │    ┌────────────────────────────────┐    │
-│  from Orchestrator and    │   │    │  1. Confirm task               │    │
-│  gives user a context-    │   │    │  2. Load LoRA adapter          │    │
-│  aware status message:    │   │    │  3. Generate answer with CoT   │    │
-│                           │   │    │  4. Parse into Claims          │    │
-│  "Routing to our cyber    │   │    │  5. Sentinel verification      │    │
-│   security specialist     │   │    │     cycles (tier-dependent)    │    │
-│   — analyzing your MITRE  │   │    │  6. If FLAG → rewrite          │    │
-│   ATT&CK question..."     │   │    │  7. If GREEN_CHIT → pass       │    │
-│                           │   │    └────────────────────────────────┘    │
-│  Replaced when real       │   │                                          │
-│  answer arrives           │   │  Output: Verified claims + CoT chains    │
-└───────────────────────────┘   └──────────────────┬───────────────────────┘
-                                                   │
-                                    all verified specialist outputs
-                                                   ▼
+│  ──► Sends original query + specialist list to Meta-Reasoner    │
+│  ──► Dispatches domain-specific sub-tasks to specialists        │
+└───────┬──────────────────┬───────────────────────┬───────────────┘
+        │                  │                       │
+        │ routing info     │ query + spec list     │ TASK_SIGNALs
+        ▼                  ▼                       ▼
+┌─────────────────┐  ┌─────────────────────┐  ┌───────────────────────────┐
+│ CHATBOT (0.5B)  │  │ META-REASONER       │  │ SPECIALIST EXECUTION      │
+│ Runs on CPU     │  │ (reads & holds)     │  │ (sequential)              │
+│                 │  │                     │  │                           │
+│ Gives user a    │  │ Reads the original  │  │ Each specialist receives: │
+│ context-aware   │  │ query and holds it  │  │  - Original query         │
+│ status message  │  │ quietly. Also knows │  │    (for context)          │
+│                 │  │ which specialists   │  │  - Focused sub-task       │
+│ "Routing to our │  │ were activated, so  │  │    (domain-specific)      │
+│  cyber security │  │ it can track when   │  │                           │
+│  specialist..." │  │ ALL outputs have    │  │ 1. Confirm task           │
+│                 │  │ arrived before it   │  │ 2. Load LoRA adapter      │
+│ Replaced when   │  │ begins synthesis.   │  │ 3. Answer with CoT        │
+│ real answer     │  │                     │  │ 4. Parse into Claims      │
+│ arrives         │  │ Waits...            │  │ 5. Sentinel verification  │
+│                 │  │                     │  │ 6. FLAG → rewrite         │
+│                 │  │                     │  │ 7. GREEN_CHIT → pass      │
+└─────────────────┘  └─────────────────────┘  └─────────────┬─────────────┘
+                                                            │
+                              verified outputs arrive       │
+                              one by one as specialists     │
+                              complete                      │
+                                                            │
+                     ┌──────────────────────────────────────┘
+                     ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  META-REASONING LAYER (synthesis — runs AFTER all specialists)   │
+│  META-REASONING LAYER (activates once ALL outputs received)      │
 │                                                                  │
-│  Receives: All specialist claims + CoT chains (post-sentinel)    │
+│  Already has: Original query (read at start)                     │
+│  Now receives: All specialist claims + CoT chains                │
 │                                                                  │
 │  1. CLAIM EXTRACTION — list key claims from each specialist      │
 │  2. CONFIDENCE ANALYSIS — weight specialist confidence levels    │
@@ -60,8 +67,8 @@ User Query
 │  5. RESOLUTION PATH — reconcile conflicting views                │
 │  6. FINAL ANSWER — produce one coherent, detailed answer         │
 │                                                                  │
-│  Also: Disagreement detection (confidence spread > 0.3)          │
-│  Also: Final confidence scoring with flag/cycle penalty          │
+│  Uses the original query to ensure the final answer directly     │
+│  addresses what the user actually asked.                          │
 └──────────────────────┬───────────────────────────────────────────┘
                        │ final synthesized answer
                        ▼
@@ -100,7 +107,12 @@ This model does NOT participate in any reasoning, routing, or verification.
 
 **File**: `saber/orchestrator.py`
 
-The entry point. It is the **bare Qwen 2.5-7B base model** — no LoRA adapter, no domain fine-tuning. It uses its general-purpose LLM capabilities to handle all pre-routing checks: ambiguity detection, query completeness verification, and domain classification. It does NOT generate domain answers — it only validates, classifies, and routes.
+The entry point. It is the **bare Qwen 2.5-7B base model** — no LoRA adapter, no domain fine-tuning. It uses its general-purpose LLM capabilities to handle all pre-routing checks: ambiguity detection, query completeness verification, and domain classification. It does NOT generate domain answers — it only validates, classifies, routes, and dispatches.
+
+Once routing is finalized, the Orchestrator does three things simultaneously:
+1. **Pings the 0.5B Chatbot** with the routing decision (which specialists were activated)
+2. **Sends the original query + activated specialist list** to the Meta-Reasoning Layer (it reads and holds quietly until all specialist outputs arrive)
+3. **Decomposes the query into domain-specific sub-tasks** and dispatches them to the activated specialists
 
 | Step | What It Does |
 |------|-------------|
@@ -108,7 +120,7 @@ The entry point. It is the **bare Qwen 2.5-7B base model** — no LoRA adapter, 
 | **Query Completeness Check** | Uses the 7B model to assess whether the query contains enough information for the specialists to produce a useful answer. If critical information is missing, the system asks targeted follow-up questions before proceeding (see below). |
 | **Domain Classification** | Few-shot LLM classification using the 7B base model (see below). |
 | **Confidence Gate** | If the classifier's confidence is < 95%, the query is re-classified with expanded context (full specialist descriptions + example queries). Routing must be near-100% accurate — wrong routing makes everything downstream useless. |
-| **Specialist Selection** | Activates specialists whose relevance score ≥ 0.30 (configurable threshold). In benchmark mode, forces exactly one specialist (highest score). |
+| **Specialist Selection + Task Decomposition** | Activates specialists whose relevance score ≥ 0.30. For multi-domain queries, the Orchestrator uses the 7B model to decompose the query into **domain-specific sub-tasks** (see below). |
 | **Tier Assignment** | Assigns verification depth: Tier 0 (no checks), Tier 1 (2 checks), Tier 2 (4 checks), Tier 3 (6 checks). |
 
 #### Query Completeness Check
@@ -170,6 +182,34 @@ The model sees the reference table + these synthetic examples, then classifies t
 **Confidence Gate**: If the highest confidence score is **below 95%**, the Orchestrator re-runs classification with an **expanded prompt** — more synthetic examples, step-by-step reasoning instructions, and the full specialist capability descriptions. This two-pass approach ensures near-perfect routing accuracy.
 
 No keyword heuristic fallback is used. Routing accuracy is mission-critical and only the LLM has the semantic understanding to get it right.
+
+#### Task Decomposition — Multi-Domain Query Handling
+
+For **single-domain queries**, the original query is passed directly to the specialist as its task.
+
+For **multi-domain queries**, the Orchestrator uses the 7B model to decompose the query into **domain-specific sub-tasks**. Each specialist's TASK_SIGNAL contains both:
+
+- **The original full query** — for context, so the specialist understands the bigger picture
+- **A focused sub-task** — reformulated in the specialist's domain language, telling it exactly what aspect to address
+
+Example decomposition for *"What's the risk exposure of our cloud infrastructure to supply chain attacks?"*:
+
+```
+TASK_SIGNAL → cyber specialist:
+  original_query: "What's the risk exposure of our cloud infrastructure
+                   to supply chain attacks?"
+  focused_task:   "Assess supply chain attack vectors, threat actors,
+                   and vulnerability exposure for cloud-hosted systems."
+
+TASK_SIGNAL → architecture specialist:
+  original_query: "What's the risk exposure of our cloud infrastructure
+                   to supply chain attacks?"
+  focused_task:   "Evaluate the cloud architecture's resilience, defense-
+                   in-depth posture, and single points of failure against
+                   external dependency compromise."
+```
+
+This decomposition is cheap — one LLM call on the bare 7B that's already loaded from the classification step. The meta-reasoner later stitches the domain-specific answers back together using the original query as its guide.
 
 ### 2. Domain Specialists
 
@@ -251,9 +291,21 @@ The independent verification authority. **Critically uses the unbiased base mode
 
 **File**: `saber/meta_reasoner.py`
 
-**Runs AFTER all specialists have generated and verified their outputs.** It does NOT generate domain answers — it is purely a synthesis engine.
+Purely a synthesis engine — it does NOT generate domain answers.
 
-It receives the verified claims and CoT chains from all activated specialists and produces one coherent final answer through a structured 6-section analysis:
+**Two-phase operation:**
+
+#### Phase 1: Read & Hold (happens at dispatch time)
+When the Orchestrator finalizes routing, it sends two things to the Meta-Reasoner:
+1. The **original user query** — so the meta-reasoner understands what the user actually asked.
+2. The **list of activated specialists** — so it knows exactly how many outputs to expect.
+
+The Meta-Reasoner reads these, holds them quietly, and waits. It does nothing until all expected specialist outputs have arrived.
+
+#### Phase 2: Synthesis (activates once ALL specialist outputs received)
+Once every activated specialist has sent its verified claims + CoT chain, the Meta-Reasoner checks them all off against its expected list and begins synthesis. Because it already knows the original query, it can ensure the final answer directly addresses what the user asked — not just what the specialists chose to talk about.
+
+Structured 6-section analysis:
 
 1. **CLAIM EXTRACTION** — Lists the key claims from each specialist.
 2. **CONFIDENCE ANALYSIS** — Assesses specialist confidence levels and assigns weights.
