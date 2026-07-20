@@ -164,10 +164,10 @@ class LLMEngine:
                 del _MODEL_CACHE[cache_key]
             _MODEL_CACHE[cache_key] = (self.model, self.tokenizer)
             
-            # Enforce strict VRAM cache limit (max 2 loaded models)
-            # This keeps the active specialist and base model loaded, but evicts older ones
-            # to prevent CUDA Out of Memory on multiple specialist swaps.
-            MAX_CACHE_SIZE = 2
+            # Enforce VRAM cache limit (max 3 loaded models)
+            # This keeps the active specialist, orchestrator, and sentinel loaded concurrently
+            # to prevent eviction loop thrashing, while keeping VRAM safely below 50GB.
+            MAX_CACHE_SIZE = 3
             while len(_MODEL_CACHE) > MAX_CACHE_SIZE:
                 # Evict oldest cached model
                 evict_key = next(iter(_MODEL_CACHE))
