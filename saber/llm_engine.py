@@ -75,17 +75,74 @@ class LLMEngine:
 
         # Define data type based on device to save memory
         dtype = torch.float16
-        if self.device == "mps":
-            dtype = torch.float16
+
+        # ----------------------------------------------------------
+        # Smart Quantization: Auto-detect platform & memory
+        # ----------------------------------------------------------
+        # CUDA (H100/A100): fp16 by default (~14GB), 4-bit optional
+        # MPS (Mac) / CPU:  Auto 4-bit quantization (~5GB)
+        # Override: set SABER_QUANTIZE=1 to force 4-bit on any platform
+        #           set SABER_QUANTIZE=0 to force fp16 on any platform
+        # ----------------------------------------------------------
+        import os
+        quantize_env = os.getenv("SABER_QUANTIZE", "").strip()
+        
+        should_quantize = False
+        if quantize_env == "1":
+            should_quantize = True
+        elif quantize_env == "0":
+            should_quantize = False
+        elif self.device in ("mps", "cpu"):
+            # Auto-enable quantization on memory-constrained local machines
+            should_quantize = True
+
+        load_kwargs = {
+            "torch_dtype": dtype,
+            "trust_remote_code": True,
+        }
+
+        if self.device == "cuda":
+            load_kwargs["device_map"] = {"": 0}
+
+        if should_quantize:
+            quantized = False
+            # Strategy 1: BitsAndBytesConfig (best for CUDA, experimental MPS)
+            try:
+                from transformers import BitsAndBytesConfig
+                load_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                )
+                if self.device not in ("cuda",):
+                    # BnB needs device_map for non-CUDA quantization
+                    load_kwargs["device_map"] = {"": self.device}
+                quantized = True
+                print(f"[LLMEngine] 4-bit quantization enabled (BitsAndBytes NF4) → ~5GB footprint")
+            except (ImportError, Exception):
+                pass
+
+            # Strategy 2: QuantoConfig (cross-platform fallback)
+            if not quantized:
+                try:
+                    from transformers import QuantoConfig
+                    load_kwargs["quantization_config"] = QuantoConfig(weights="int4")
+                    quantized = True
+                    print(f"[LLMEngine] 4-bit quantization enabled (Quanto int4) → ~5GB footprint")
+                except (ImportError, Exception):
+                    pass
+
+            if not quantized:
+                print(f"[LLMEngine] Warning: No quantization library available. Falling back to fp16 (~14GB).")
+                print(f"[LLMEngine] Install with: pip install bitsandbytes   OR   pip install optimum-quanto")
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id_or_path,
-            torch_dtype=dtype,
-            device_map={"": 0} if self.device == "cuda" else None,
-            trust_remote_code=True,
+            **load_kwargs,
         )
 
-        if self.device == "mps":
+        if self.device == "mps" and not should_quantize:
             try:
                 self.model = self.model.to(self.device)
             except Exception:
