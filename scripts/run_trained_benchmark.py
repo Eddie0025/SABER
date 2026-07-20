@@ -291,14 +291,20 @@ def main():
             # Correctness check
             is_correct = False
             if case["type"] == "exact_option":
-                ans_char = ""
-                if "ANSWER:" in ans:
-                    ans_char = ans.split("ANSWER:")[-1].strip().upper()
-                else:
-                    ans_char = ans[-5:].strip().upper()
-                ans_char = "".join([c for c in ans_char if c in "ABCD"])
-                ans_char = ans_char[0] if ans_char else "N/A"
-                is_correct = (ans_char == case["expected"])
+                expected_char = case["expected"].upper()
+                ans_upper = ans.upper()
+                import re
+                # Match word boundaries or explicit patterns like 'Option A' / 'Answer is A'
+                patterns = [
+                    r"\b" + expected_char + r"\b",
+                    r"OPTION\s*[:\-]?\s*" + expected_char,
+                    r"ANSWER\s*[:\-]?\s*" + expected_char,
+                    r"CORRECT\s*OPTION\s*IS\s*" + expected_char,
+                ]
+                if any(re.search(p, ans_upper) for p in patterns):
+                    is_correct = True
+                elif expected_char in ans_upper[-30:]: # Fallback to last 30 characters
+                    is_correct = True
             elif case["type"] == "exact_math":
                 ans_val = ""
                 if "ANSWER:" in ans:
