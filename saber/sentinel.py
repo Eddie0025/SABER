@@ -155,8 +155,11 @@ class Sentinel:
             if claims_data and isinstance(claims_data, list):
                 for claim in claims_data:
                     stmt = claim.get("statement", "").strip()
-                    if stmt:
-                        queries_to_run.append(stmt[:120])
+                    if stmt and len(stmt) > 15:
+                        # Skip generic statements like "The correct answer is B"
+                        lower_stmt = stmt.lower()
+                        if not ("the correct answer" in lower_stmt or "option" in lower_stmt and "is correct" in lower_stmt):
+                            queries_to_run.append(stmt[:120])
             if not queries_to_run:
                 queries_to_run = [compiled_text[:120]]
 

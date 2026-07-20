@@ -307,27 +307,18 @@ class MetaReasoner:
     # ------------------------------------------------------------------
 
     def _decompose_to_tasks(self, query_sig: Signal, domains: List[str]) -> Dict[str, Signal]:
-        from saber.llm_engine import LLMEngine
         query_text = query_sig.payload.get("text", "")
         tasks = {}
-        orchestrator_model = self.config.base_model
-        system_prompt = "You are SABER Orchestrator. Output ONLY the task objective string."
-
-        with LLMEngine(orchestrator_model) as engine:
-            for domain in domains:
-                prompt = f"Query: {query_text}\nExtract the {domain.upper()} task objective."
-                try:
-                    obj = engine.generate(prompt, system_prompt=system_prompt)
-                except Exception:
-                    obj = f"Analyze {query_text}"
-
-                tasks[domain] = Signal(
-                    signal_type=SignalType.TASK_SIGNAL,
-                    query_id=query_sig.query_id,
-                    source_id=self.reasoner_id,
-                    target_id=f"SPEC-{domain.upper()}",
-                    payload={"objective": obj}
-                ).freeze_and_hash()
+        for domain in domains:
+            # Pass the full query to avoid dropping context (like multiple choice options)
+            obj = f"Perform the {domain.upper()} task for this query:\n\n{query_text}"
+            tasks[domain] = Signal(
+                signal_type=SignalType.TASK_SIGNAL,
+                query_id=query_sig.query_id,
+                source_id=self.reasoner_id,
+                target_id=f"SPEC-{domain.upper()}",
+                payload={"objective": obj}
+            ).freeze_and_hash()
         return tasks
 
     def _parse_synthesis_json(self, raw_text: str) -> Dict[str, Any]:
