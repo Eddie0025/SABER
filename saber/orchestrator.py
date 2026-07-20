@@ -274,8 +274,8 @@ class Orchestrator:
         query_id = str(uuid.uuid4())
         self.audit.log_query(query_id, query)
 
-        # --- Conversational Primer: Quick acknowledgment ---
-        primer = self._generate_primer(query)
+        # --- Conversational Primer: Disabled for now to avoid latency ---
+        primer = ""
 
         # --- Ambiguity check ---
         ambiguity = self.detect_ambiguity(query)

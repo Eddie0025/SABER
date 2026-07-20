@@ -15,6 +15,7 @@ os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 os.environ["SABER_KEEP_MODELS_LOADED"] = "1"
+os.environ["SABER_BENCHMARK_MODE"] = "1"
 
 from saber.config import SaberConfig, VerificationTier
 from saber.registry import SpecialistRegistry
