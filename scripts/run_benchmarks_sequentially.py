@@ -345,8 +345,16 @@ def main(api_key=None):
         for mode_name, tier in modes:
             start = time.time()
             try:
-                res = orch.process_query(q, tier=tier)
-                ans = res.get("answer", "").strip()
+                import sys
+                import os
+                original_stdout = sys.stdout
+                sys.stdout = open(os.devnull, 'w')
+                try:
+                    res = orch.process_query(q, tier=tier)
+                    ans = res.get("answer", "").strip()
+                finally:
+                    sys.stdout.close()
+                    sys.stdout = original_stdout
             except Exception as e:
                 ans = f"[ERROR]: {e}"
             latency = time.time() - start
