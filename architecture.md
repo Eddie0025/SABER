@@ -265,7 +265,7 @@ The independent verification authority. **Critically uses the unbiased base mode
 - Mismatch → immediate `FLAG_SIGNAL` with severity `CRITICAL` (tampering or corruption).
 
 #### Level 2: Semantic Verification (LLM + Web Grounding)
-- **Online mode**: Queries DuckDuckGo for each specialist claim. Search results are injected as "ground truth" into the verification prompt.
+- **Online mode**: Queries the Chrome Search API for factual verification of claims. Latency is an explicitly accepted tradeoff here for the extreme accuracy required in high-tier (4 or 6-pass) verifications. Search results are injected as "ground truth" into the verification prompt.
 - **Offline mode**: Falls back to logical consistency checks only.
 - **Targeted verification routing**: Different aspects get checked by different reviewers:
   - Cyber content → `technical_accuracy` by cyber, `logical_reasoning` by science
@@ -273,7 +273,7 @@ The independent verification authority. **Critically uses the unbiased base mode
   - Medical content → `clinical_accuracy` by medical, `logical_reasoning` by science
 - Runs the configured number of verification cycles (tier-dependent).
 - Each cycle: if all checks return `CONFIRMED` → `GREEN_CHIT`. If errors found → `FLAG_SIGNAL` with structured JSON (issue_type, severity, evidence, reasoning, proposed_fix).
-- Flagged answers are **rewritten by the LLM** to integrate corrections seamlessly.
+- **Self-Correcting Rewrites**: When Sentinel flags an answer, it explicitly provides the correct grounded fact from the web in the `FLAG_SIGNAL` (via `proposed_fix`). The specialist simply rewrites its answer to integrate the provided correction, practically eliminating the risk of infinite rewrite loops.
 
 #### CoT Step-Level Verification
 - Checks that the first step is `IDENTIFY` and last step is `CONCLUDE`.
@@ -383,6 +383,15 @@ Thread-safe, append-only JSONL logger. Every event in the system is recorded.
 | `CONSENSUS_FAILURE` | No valid specialist outputs |
 | `SYNTHESIS_FAILURE` | Meta-reasoning synthesis fails |
 | `SYSTEM_FAILURE` | Infrastructure failures |
+
+### 9. Chat Context Memory (Multi-turn Support)
+
+**File**: `saber/memory.py`
+
+To support multi-turn conversations without overflowing the context window, SABER uses a rolling Chat Context Memory:
+- **Injection**: The Orchestrator injects this summarized memory into the prompt during Ambiguity/Completeness checks, and passes it down to the specialists so they have full conversation history.
+- **Updates**: After generating the final answer, the Meta-Reasoner adds a summarized entry of the user's query and the final answer to the memory ledger.
+- **Compression**: To save space and preserve attention, every 5 new entries, the Meta-Reasoner compresses and re-summarizes the entire history into a dense, high-level context block.
 
 ---
 
