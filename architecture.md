@@ -125,15 +125,51 @@ Once the query is deemed complete, it moves to domain classification.
 
 #### Domain Classification — Few-Shot LLM Routing
 
-The Orchestrator uses the Qwen 2.5-7B base model to classify queries into specialist domains. The classification prompt includes:
+The Orchestrator uses the bare Qwen 2.5-7B to classify queries. The classification prompt is built from two components:
 
-1. **Explicit domain descriptions** — each specialist's capabilities, not just names.
-2. **Few-shot examples** — 2-3 example queries per domain showing correct classification, covering edge cases and ambiguous phrasing.
-3. **Structured output** — the model outputs a JSON list of activated domains with a confidence score per domain.
+**1. Specialist Reference Table**
 
-If the highest confidence score is **below 95%**, the Orchestrator re-runs classification with an **expanded prompt** that includes full specialist metadata, more few-shot examples, and asks the model to reason step-by-step before deciding. This two-pass approach ensures near-perfect routing accuracy — if the model isn't sure on the fast pass, it gets a second chance with more context.
+A structured table is injected into the prompt listing every registered specialist, its domain name, and its specific areas of expertise. The model reads this table to understand what each specialist can handle:
 
-No keyword heuristic fallback is used. Routing accuracy is mission-critical and only the LLM has the semantic understanding to get it right on ambiguous queries.
+```
+| Domain        | Specializations                                                    |
+|---------------|--------------------------------------------------------------------|
+| science       | Physics, chemistry, math, calculus, quantum mechanics, thermodynamics |
+| cyber         | Vulnerabilities, malware, firewalls, MITRE ATT&CK, CVEs, pentesting |
+| coding        | Algorithms, debugging, optimization, code review, data structures    |
+| finance       | Revenue analysis, EBITDA, portfolio management, valuation, hedging   |
+| medical       | Diagnosis, treatment protocols, pathology, pharmacology, clinical    |
+| architecture  | System design, microservices, Kubernetes, scaling, cloud infra       |
+```
+
+This table is dynamically generated from the Specialist Registry, so adding a new specialist automatically updates the routing table — no hardcoded lists to maintain.
+
+**2. Synthetic Few-Shot Examples**
+
+Before the actual query, the prompt includes a few passes of synthetic example queries with their correct routing decisions. These are hand-crafted to cover:
+
+- **Clear single-domain queries** — showing straightforward classification
+- **Edge cases** — queries that could plausibly belong to multiple domains
+- **Cross-domain queries** — showing when multiple specialists should be activated
+- **Trick queries** — e.g., "What's the half-life of this investment?" (finance, not science despite "half-life")
+
+Example passes in the prompt:
+```
+Query: "Explain the MITRE ATT&CK framework's credential access tactics"
+→ {"domains": [{"name": "cyber", "confidence": 0.98}]}
+
+Query: "Calculate the derivative of e^(2x) * sin(x)"  
+→ {"domains": [{"name": "science", "confidence": 0.99}]}
+
+Query: "What's the risk exposure of our cloud infrastructure to supply chain attacks?"
+→ {"domains": [{"name": "cyber", "confidence": 0.85}, {"name": "architecture", "confidence": 0.75}]}
+```
+
+The model sees the reference table + these synthetic examples, then classifies the actual user query. It outputs a JSON list of activated domains with confidence scores.
+
+**Confidence Gate**: If the highest confidence score is **below 95%**, the Orchestrator re-runs classification with an **expanded prompt** — more synthetic examples, step-by-step reasoning instructions, and the full specialist capability descriptions. This two-pass approach ensures near-perfect routing accuracy.
+
+No keyword heuristic fallback is used. Routing accuracy is mission-critical and only the LLM has the semantic understanding to get it right.
 
 ### 2. Domain Specialists
 
