@@ -180,8 +180,36 @@ def main(api_key=None):
     print("\n[*] Loading benchmark datasets...")
     bench_cases = []
     
-    # 2.1 Science: GPQA Diamond (Bypassed)
-    pass
+    # 2.1 Science: GPQA Diamond (All 198 cases)
+    try:
+        gpqa = load_hf_dataset("idavidrein/gpqa", "gpqa_diamond", split="train")
+        all_gpqa = list(gpqa)
+        for row in all_gpqa:
+            corr = row.get("correct_answer") or row.get("Correct Answer")
+            inc1 = row.get("incorrect_answer1") or row.get("Incorrect Answer 1")
+            inc2 = row.get("incorrect_answer2") or row.get("Incorrect Answer 2")
+            inc3 = row.get("incorrect_answer3") or row.get("Incorrect Answer 3")
+            q_text = row.get("question") or row.get("Question")
+            
+            if not corr or not q_text:
+                continue
+                
+            choices = [corr, inc1, inc2, inc3]
+            random.seed(42)
+            random.shuffle(choices)
+            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+            correct_char = chr(65 + choices.index(corr))
+            
+            bench_cases.append({
+                "type": "exact",
+                "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                "expected": correct_char,
+                "domain": "science",
+                "dataset": "gpqa_diamond"
+            })
+        print(f"[+] Loaded {len(all_gpqa)} Science (GPQA Diamond) cases.")
+    except Exception as e:
+        print(f"[!] Error loading GPQA: {e}")
 
     # 2.2 Cyber: SecBench (Last 100 English cases)
     try:
@@ -224,12 +252,11 @@ def main(api_key=None):
     except Exception as e:
         print(f"[!] SecBench load failed: {e}")
 
-    # 2.3 Coding: HumanEval (Last 78 cases)
+    # 2.3 Coding: HumanEval (All 164 cases)
     try:
         he = load_hf_dataset("openai/openai_humaneval", split="test")
         all_he = list(he)
-        sliced_he = all_he[-78:]
-        for row in sliced_he:
+        for row in all_he:
             bench_cases.append({
                 "type": "open_ended",
                 "question": f"Complete the following Python function:\n{row['prompt']}",
@@ -237,7 +264,7 @@ def main(api_key=None):
                 "domain": "coding",
                 "dataset": "humaneval"
             })
-        print(f"[+] Loaded {len(sliced_he)} Coding (HumanEval) cases.")
+        print(f"[+] Loaded {len(all_he)} Coding (HumanEval) cases.")
     except Exception as e:
         print(f"[!] HumanEval load failed: {e}")
 
