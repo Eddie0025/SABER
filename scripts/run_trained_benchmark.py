@@ -21,17 +21,35 @@ from saber.registry import SpecialistRegistry
 from saber.audit import AuditLogger
 from saber.orchestrator import Orchestrator
 
-def print_scoreboard(domain_name, idx, total, correct_count, flagged_count):
-    acc = (correct_count / idx) * 100.0 if idx > 0 else 0.0
-    flag_pct = (flagged_count / idx) * 100.0 if idx > 0 else 0.0
-    print(f"\n=======================================================")
-    print(f"[LIVE UPDATE] {domain_name} Progress: {idx}/{total} cases completed.")
-    print(f"Pipeline Dynamic Scoreboard:")
-    print(f"| Metric | Current Value |")
-    print(f"| :--- | :--- |")
-    print(f"| Pipeline Accuracy | {acc:.1f}% ({correct_count}/{idx}) |")
-    print(f"| Sentinel Flag Rate | {flag_pct:.1f}% ({flagged_count}/{idx}) |")
-    print(f"=======================================================\n")
+def print_scoreboard(results):
+    # Group results by dataset
+    summary = {}
+    for r in results:
+        ds = r["dataset"]
+        if ds not in summary:
+            summary[ds] = {
+                "Without Sentinel": {"correct": 0, "total": 0},
+                "2-Check Sentinel": {"correct": 0, "total": 0},
+                "4-Check Sentinel": {"correct": 0, "total": 0}
+            }
+            
+        for mode in ["Without Sentinel", "2-Check Sentinel", "4-Check Sentinel"]:
+            if r["runs"][mode]["correct"]:
+                summary[ds][mode]["correct"] += 1
+            summary[ds][mode]["total"] += 1
+
+    print(f"\n=====================================================================")
+    print(f"[LIVE UPDATE] Progress Scoreboard:")
+    print("| Dataset | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |")
+    print("| :--- | :--- | :--- | :--- |")
+    for ds, m_data in summary.items():
+        cells = [ds]
+        for mode in ["Without Sentinel", "2-Check Sentinel", "4-Check Sentinel"]:
+            st = m_data[mode]
+            pct = (st["correct"] / st["total"]) * 100.0 if st["total"] > 0 else 0.0
+            cells.append(f"{pct:.1f}% ({st['correct']}/{st['total']})")
+        print("| " + " | ".join(cells) + " |")
+    print("=====================================================================\n")
 
 # =====================================================================
 # CODING CORRECTNESS SANDBOX
@@ -66,12 +84,11 @@ def check_coding_correctness(prompt, completion, test_code, entry_point):
                 pass
 
 # =====================================================================
-# BENCHMARK RUNNERS
+# DATASET LOADERS
 # =====================================================================
 
-def run_science_benchmark(orch):
-    print("\n" + "="*55)
-    print("[*] Loading GPQA Diamond dataset from Hugging Face Hub (Last 78 records)...")
+def load_science_cases():
+    print("[*] Loading GPQA Diamond dataset (Last 78 records)...")
     try:
         from datasets import load_dataset
         hf_token = os.getenv("HF_TOKEN")
@@ -93,63 +110,30 @@ def run_science_benchmark(orch):
             if not corr or not q_text: continue
             
             choices = [corr, inc1, inc2, inc3]
-            random.seed(42) # Consistent shuffle
+            random.seed(42)
             random.shuffle(choices)
             choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
             expected_char = chr(65 + choices.index(corr))
             
             cases.append({
+                "type": "exact_option",
                 "question": f"Question: {q_text}\nOptions:\n{choices_str}",
-                "expected": expected_char
+                "expected": expected_char,
+                "dataset": "gpqa_diamond"
             })
+        return cases
     except Exception as e:
         print(f"[!] Failed to load GPQA: {e}")
-        return 0.0
+        return []
 
-    print(f"[+] Successfully loaded {len(cases)} cases.\n")
-
-    correct_count = 0
-    flagged_count = 0
-
-    for idx, case in enumerate(cases, 1):
-        print(f"[*] Science Case {idx}/{len(cases)}")
-        res = orch.process_query(case["question"])
-        ans = res.get("answer", "").strip()
-        
-        # Check if Sentinel verification flagged this case
-        if res.get("flags"):
-            flagged_count += 1
-            
-        ans_char = ""
-        if "ANSWER:" in ans:
-            ans_char = ans.split("ANSWER:")[-1].strip().upper()
-        else:
-            ans_char = ans[-5:].strip().upper()
-            
-        ans_char = "".join([c for c in ans_char if c in "ABCD"])
-        ans_char = ans_char[0] if ans_char else "N/A"
-            
-        is_correct = (ans_char == case["expected"])
-        if is_correct:
-            correct_count += 1
-            
-        if idx % 10 == 0 or idx == len(cases):
-            print_scoreboard("Science (GPQA) Pipeline", idx, len(cases), correct_count, flagged_count)
-            
-    final_score = (correct_count / len(cases)) * 100.0 if cases else 0.0
-    print(f"[+] Science (GPQA) Pipeline Benchmark Completed: {final_score:.1f}%")
-    return final_score
-
-def run_cyber_benchmark(orch):
-    print("\n" + "="*55)
-    print("[*] Loading CyberMetric from GitHub Raw URL (Last 60 records)...")
+def load_cyber_cases():
+    print("[*] Loading CyberMetric dataset (Last 60 records)...")
     try:
         data = []
         urls = [
             "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-500-v1.json",
             "https://raw.githubusercontent.com/cybermetric/CyberMetric/main/CyberMetric-80-v1.json"
         ]
-        
         for url in urls:
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -168,8 +152,7 @@ def run_cyber_benchmark(orch):
                 continue
 
         if not data:
-            print("[!] Failed to load CyberMetric raw data.")
-            return 0.0
+            return []
 
         all_cases = []
         for row in data:
@@ -198,95 +181,38 @@ def run_cyber_benchmark(orch):
                     correct_char = "A"
                     
             all_cases.append({
+                "type": "exact_option",
                 "question": f"Question: {q_text}\nOptions:\n{choices_str}",
-                "expected": correct_char
+                "expected": correct_char,
+                "dataset": "cybermetric"
             })
-            
-        cases = all_cases[-60:]
+        return all_cases[-60:]
     except Exception as e:
-        print(f"[!] Failed to parse CyberMetric dataset: {e}")
-        return 0.0
+        print(f"[!] Failed to load CyberMetric: {e}")
+        return []
 
-    print(f"[+] Successfully loaded {len(cases)} cases.\n")
-
-    correct_count = 0
-    flagged_count = 0
-
-    for idx, case in enumerate(cases, 1):
-        print(f"[*] Cyber Case {idx}/{len(cases)}")
-        res = orch.process_query(case["question"])
-        ans = res.get("answer", "").strip()
-        
-        # Check if Sentinel verification flagged this case
-        if res.get("flags"):
-            flagged_count += 1
-            
-        ans_char = ""
-        if "ANSWER:" in ans:
-            ans_char = ans.split("ANSWER:")[-1].strip().upper()
-        else:
-            ans_char = ans[-5:].strip().upper()
-            
-        ans_char = "".join([c for c in ans_char if c in "ABCD"])
-        ans_char = ans_char[0] if ans_char else "N/A"
-            
-        is_correct = (ans_char == case["expected"])
-        if is_correct:
-            correct_count += 1
-            
-        if idx % 10 == 0 or idx == len(cases):
-            print_scoreboard("Cyber (CyberMetric) Pipeline", idx, len(cases), correct_count, flagged_count)
-            
-    final_score = (correct_count / len(cases)) * 100.0 if cases else 0.0
-    print(f"[+] Cyber (CyberMetric) Pipeline Benchmark Completed: {final_score:.1f}%")
-    return final_score
-
-def run_coding_benchmark(orch):
-    print("\n" + "="*55)
+def load_coding_cases():
     print("[*] Loading HumanEval dataset (All 164 records)...")
     try:
         from datasets import load_dataset
         ds = load_dataset("openai/openai_humaneval", split="test")
-        cases = list(ds)
+        cases = []
+        for row in list(ds):
+            cases.append({
+                "type": "code",
+                "question": f"Complete the following Python function:\n{row['prompt']}",
+                "prompt": row["prompt"],
+                "test": row["test"],
+                "entry_point": row["entry_point"],
+                "dataset": "humaneval"
+            })
+        return cases
     except Exception as e:
         print(f"[!] Failed to load HumanEval: {e}")
-        return 0.0
+        return []
 
-    print(f"[+] Successfully loaded {len(cases)} cases.\n")
-
-    correct_count = 0
-    flagged_count = 0
-
-    for idx, case in enumerate(cases, 1):
-        print(f"[*] Coding Case {idx}/{len(cases)}")
-        prompt = case["prompt"]
-        test_code = case["test"]
-        entry_point = case["entry_point"]
-        question_str = f"Complete the following Python function:\n{prompt}"
-        
-        res = orch.process_query(question_str)
-        ans = res.get("answer", "").strip()
-        
-        # Check if Sentinel verification flagged this case
-        if res.get("flags"):
-            flagged_count += 1
-            
-        is_correct = check_coding_correctness(prompt, ans, test_code, entry_point)
-        if is_correct:
-            correct_count += 1
-            
-        if idx % 10 == 0 or idx == len(cases):
-            print_scoreboard("Coding (HumanEval) Pipeline", idx, len(cases), correct_count, flagged_count)
-            
-    final_score = (correct_count / len(cases)) * 100.0 if cases else 0.0
-    print(f"[+] Coding (HumanEval) Pipeline Benchmark Completed: {final_score:.1f}%")
-    return final_score
-
-def run_finance_benchmark(orch):
-    print("\n" + "="*55)
-    print("[*] Generating FinQA calculations dataset (100 records)...")
-    
-    # Reproducible seed math calculations generator
+def load_finance_cases():
+    print("[*] Generating FinQA math dataset (100 records)...")
     random.seed(42)
     cases = []
     for idx in range(1, 101):
@@ -294,60 +220,26 @@ def run_finance_benchmark(orch):
         cogs = random.randint(50, int(rev * 0.6))
         gp = rev - cogs
         cases.append({
+            "type": "exact_math",
             "question": f"Context: Revenue: ${rev}M, COGS: ${cogs}M.\nQuestion: Calculate Gross Profit.",
-            "expected": str(gp)
+            "expected": str(gp),
+            "dataset": "finqa"
         })
-        
-    print(f"[+] Successfully loaded {len(cases)} cases.\n")
-
-    correct_count = 0
-    flagged_count = 0
-
-    for idx, case in enumerate(cases, 1):
-        print(f"[*] Finance Case {idx}/{len(cases)}")
-        res = orch.process_query(case["question"])
-        ans = res.get("answer", "").strip()
-        
-        # Check if Sentinel verification flagged this case
-        if res.get("flags"):
-            flagged_count += 1
-            
-        ans_val = ""
-        if "ANSWER:" in ans:
-            ans_val = ans.split("ANSWER:")[-1].strip()
-        else:
-            ans_val = ans[-20:].strip()
-            
-        is_correct = False
-        expected_str = case["expected"]
-        if expected_str in ans_val:
-            is_correct = True
-            correct_count += 1
-            
-        if idx % 10 == 0 or idx == len(cases):
-            print_scoreboard("Finance (FinQA Math) Pipeline", idx, len(cases), correct_count, flagged_count)
-            
-    final_score = (correct_count / len(cases)) * 100.0 if cases else 0.0
-    print(f"[+] Finance (FinQA Math) Pipeline Benchmark Completed: {final_score:.1f}%")
-    return final_score
+    return cases
 
 # =====================================================================
 # MAIN PIPELINE
 # =====================================================================
 def main():
     print("=====================================================================")
-    print("[*] SABER Multi-Agent Pipeline Benchmark (H100 single-GPU optimized)")
+    print("[*] SABER Multi-Agent Pipeline Benchmark (H100 3-Mode Swapping)")
     print("=====================================================================\n")
     
-    # Initialize the Orchestrator with auto-discovered specialists
+    # 1. Initialize Orchestrator
     config = SaberConfig()
-    # Force Tier 2 (4-check Sentinel) by default for comprehensive pipeline evaluation
-    config.verification_tier = VerificationTier.TIER_2
-    
     registry = SpecialistRegistry()
     registry.auto_discover()
     
-    # Load domain specialty adapter checkpoints
     for domain, specialist in registry.all().items():
         model_path = f"models/{domain}_v2"
         if os.path.exists(model_path):
@@ -359,23 +251,75 @@ def main():
             
     audit = AuditLogger()
     orch = Orchestrator(config=config, registry=registry, audit=audit)
+
+    # 2. Collect all cases
+    all_cases = []
+    all_cases.extend(load_science_cases())
+    all_cases.extend(load_cyber_cases())
+    all_cases.extend(load_coding_cases())
+    all_cases.extend(load_finance_cases())
+
+    print(f"\n[+] Total benchmark cases loaded: {len(all_cases)}")
     
-    # Run pipeline benchmarks sequentially
-    science_score = run_science_benchmark(orch)
-    cyber_score = run_cyber_benchmark(orch)
-    coding_score = run_coding_benchmark(orch)
-    finance_score = run_finance_benchmark(orch)
-    
-    print("\n" + "="*55)
-    print("=== FINAL PIPELINE BENCHMARK SUMMARY (Single-GPU Sequential) ===")
-    print("="*55)
-    print(f"| Benchmark | Score |")
-    print(f"| :--- | :--- |")
-    print(f"| Science (GPQA last 78) | {science_score:.1f}% |")
-    print(f"| Cyber (CyberMetric last 60) | {cyber_score:.1f}% |")
-    print(f"| Coding (HumanEval all 164) | {coding_score:.1f}% |")
-    print(f"| Finance (FinQA math 100) | {finance_score:.1f}% |")
-    print("=======================================================")
+    results = []
+    modes = [
+        ("Without Sentinel", VerificationTier.TIER_0),
+        ("2-Check Sentinel", VerificationTier.TIER_1),
+        ("4-Check Sentinel", VerificationTier.TIER_2)
+    ]
+
+    # 3. Benchmark loop
+    for idx, case in enumerate(all_cases, 1):
+        print(f"\n[*] Processing Case {idx}/{len(all_cases)} | Dataset: {case['dataset']}")
+        
+        case_res = {
+            "dataset": case["dataset"],
+            "question": case["question"],
+            "runs": {}
+        }
+
+        # Run under all 3 Sentinel verification modes
+        for mode_name, tier in modes:
+            start_time = time.time()
+            try:
+                res = orch.process_query(case["question"], tier=tier)
+                ans = res.get("answer", "").strip()
+            except Exception as e:
+                ans = f"[ERROR]: {e}"
+            latency = time.time() - start_time
+
+            # Correctness check
+            is_correct = False
+            if case["type"] == "exact_option":
+                ans_char = ""
+                if "ANSWER:" in ans:
+                    ans_char = ans.split("ANSWER:")[-1].strip().upper()
+                else:
+                    ans_char = ans[-5:].strip().upper()
+                ans_char = "".join([c for c in ans_char if c in "ABCD"])
+                ans_char = ans_char[0] if ans_char else "N/A"
+                is_correct = (ans_char == case["expected"])
+            elif case["type"] == "exact_math":
+                ans_val = ""
+                if "ANSWER:" in ans:
+                    ans_val = ans.split("ANSWER:")[-1].strip()
+                else:
+                    ans_val = ans[-20:].strip()
+                is_correct = (case["expected"] in ans_val)
+            elif case["type"] == "code":
+                is_correct = check_coding_correctness(case["prompt"], ans, case["test"], case["entry_point"])
+
+            case_res["runs"][mode_name] = {
+                "answer": ans,
+                "correct": is_correct,
+                "latency": latency
+            }
+            
+        results.append(case_res)
+
+        # Print Live Scoreboard Table every 10 records and at the end of the run
+        if idx % 10 == 0 or idx == len(all_cases):
+            print_scoreboard(results)
 
 if __name__ == "__main__":
     main()
