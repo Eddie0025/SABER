@@ -46,27 +46,7 @@ class ArchitectureSpecialist(Specialist):
     def process_task(self, objective: str) -> List[Claim]:
         if self.meta.model_path:
             raw_output = self._infer(objective)
-            try:
-                claims_data = json.loads(raw_output)
-                if not isinstance(claims_data, list):
-                    claims_data = [claims_data]
-                    
-                claims = []
-                for c in claims_data:
-                    claims.append(Claim(
-                        statement=c.get("text", str(c)),
-                        confidence=float(c.get("confidence", 0.9)),
-                        domain=self.domain,
-                        status=ClaimStatus.UNVERIFIED
-                    ))
-                return claims
-            except Exception:
-                return [Claim(
-                    statement=raw_output,
-                    confidence=0.5,
-                    domain=self.domain,
-                    status=ClaimStatus.UNVERIFIED
-                )]
+            return self.parse_raw_output_to_claims(raw_output)
         else:
             return [Claim(
                 statement=f"[Architecture Placeholder] Analysis of: {objective}",

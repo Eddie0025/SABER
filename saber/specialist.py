@@ -264,6 +264,107 @@ class Specialist:
     def clear_cache(self) -> None:
         self._cached_response = None
 
+    def parse_claims(self, raw_response: str) -> list[str]:
+        """Robust, case-insensitive extraction of claims from a raw text response."""
+        import re
+        claims_texts = []
+        
+        # Try finding the claims section case-insensitively
+        claims_match = re.search(r"claims:?\s*", raw_response, re.IGNORECASE)
+        if claims_match:
+            claims_start = claims_match.end()
+            # Find where the next section (like CODE:, ANSWER:, or REASONING:) starts
+            next_section = re.search(r"(answer:|code:|reasoning:)", raw_response[claims_start:], re.IGNORECASE)
+            if next_section:
+                claims_block = raw_response[claims_start:claims_start + next_section.start()]
+            else:
+                claims_block = raw_response[claims_start:]
+                
+            # Extract individual claims from the block
+            for line in claims_block.split("\n"):
+                line = line.strip()
+                if line:
+                    # Remove prefixes like "1. ", "2) ", "- ", etc.
+                    clean_line = re.sub(r"^(?:\d+[\s\.)\-]*|[\-\*\+]\s*)", "", line).strip()
+                    if clean_line and len(clean_line) > 5:
+                        claims_texts.append(clean_line)
+                        
+        # If no claims found under "claims:" header, search the whole text for numbered lines
+        if not claims_texts:
+            for line in raw_response.split("\n"):
+                line = line.strip()
+                match = re.match(r"^\d+[\s\.)\-]+(.*)", line)
+                if match:
+                    clean_line = match.group(1).strip()
+                    if clean_line and len(clean_line) > 5:
+                        claims_texts.append(clean_line)
+                        
+        # If still empty, split raw_response into sentences and take the first few logical assertions
+        if not claims_texts:
+            sentences = re.split(r'(?<=[.!?])\s+', raw_response)
+            for s in sentences:
+                s_clean = s.strip()
+                if s_clean and not any(h in s_clean.lower() for h in ["reasoning:", "answer:", "code:"]) and len(s_clean) > 15:
+                    claims_texts.append(s_clean)
+                    if len(claims_texts) >= 3:
+                        break
+                        
+        # Ultimate fallback to first 100 characters if nothing else matches
+        if not claims_texts:
+            claims_texts = [raw_response[:100]]
+            
+        return claims_texts
+
+    def parse_raw_output_to_claims(self, raw_output: str) -> list[Claim]:
+        """Convert raw LLM output into a list of Claim objects.
+        
+        Tries parsing as a JSON list first. If that fails (or is empty), 
+        extracts text-based claims using a robust, case-insensitive parser.
+        """
+        import json
+        from saber.signal import Claim, ClaimStatus
+        
+        raw_output_str = raw_output.strip()
+        
+        # 1. Try JSON parsing
+        try:
+            clean_json = raw_output_str.replace("```json", "").replace("```", "").strip()
+            start = clean_json.find("[")
+            end = clean_json.rfind("]")
+            if start != -1 and end != -1:
+                clean_json = clean_json[start:end+1]
+                
+            claims_data = json.loads(clean_json)
+            if not isinstance(claims_data, list):
+                claims_data = [claims_data]
+                
+            claims = []
+            for c in claims_data:
+                stmt = c.get("text", c.get("statement", str(c))) if isinstance(c, dict) else str(c)
+                conf = float(c.get("confidence", 0.9)) if isinstance(c, dict) else 0.9
+                claims.append(Claim(
+                    statement=stmt,
+                    confidence=conf,
+                    domain=self.domain,
+                    status=ClaimStatus.UNVERIFIED
+                ))
+            if claims:
+                return claims
+        except Exception:
+            pass
+            
+        # 2. Fall back to robust text-based claims parser
+        claims_texts = self.parse_claims(raw_output_str)
+        claims = []
+        for text in claims_texts:
+            claims.append(Claim(
+                statement=text,
+                confidence=0.9 if len(claims_texts) > 1 else 0.5,
+                domain=self.domain,
+                status=ClaimStatus.UNVERIFIED
+            ))
+        return claims
+
     def _handle_verification(self, verification_signal: Signal) -> Signal:
         """Check mode: Verify the Meta-Reasoning Layer's compiled text."""
         # Default verification returns GREEN_CHIT

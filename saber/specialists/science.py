@@ -46,29 +46,7 @@ class ScienceSpecialist(Specialist):
         """Perform domain reasoning and return a list of Claims."""
         if self.meta.model_path:
             raw_output = self._infer(objective)
-            try:
-                # Attempt to parse the LLM's JSON output
-                claims_data = json.loads(raw_output)
-                if not isinstance(claims_data, list):
-                    claims_data = [claims_data]
-                    
-                claims = []
-                for c in claims_data:
-                    claims.append(Claim(
-                        statement=c.get("text", str(c)),
-                        confidence=float(c.get("confidence", 0.9)),
-                        domain=self.domain,
-                        status=ClaimStatus.UNVERIFIED
-                    ))
-                return claims
-            except json.JSONDecodeError:
-                # Fallback if LLM fails to output strict JSON
-                return [Claim(
-                    statement=raw_output,
-                    confidence=0.5,
-                    domain=self.domain,
-                    status=ClaimStatus.UNVERIFIED
-                )]
+            return self.parse_raw_output_to_claims(raw_output)
         else:
             return [Claim(
                 statement=f"[Science Placeholder] Analytical calculation of: {objective}",
