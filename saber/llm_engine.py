@@ -94,7 +94,7 @@ class LLMEngine:
             base_model = AutoModelForCausalLM.from_pretrained(
                 base_model_name,
                 torch_dtype=dtype,
-                device_map="auto" if self.device == "cuda" else None,
+                device_map={"": self.device} if self.device == "cuda" else None,
                 trust_remote_code=True,
             )
             # Wrap with PeftModel
@@ -103,15 +103,14 @@ class LLMEngine:
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_id_or_path,
                 torch_dtype=dtype,
-                device_map="auto" if self.device == "cuda" else None,
+                device_map={"": self.device} if self.device == "cuda" else None,
                 trust_remote_code=True,
             )
 
-        if self.device == "mps" or (self.device == "cuda" and not os.path.exists(adapter_config_path)):
-            try:
-                self.model = self.model.to(self.device)
-            except Exception:
-                pass
+        try:
+            self.model = self.model.to(self.device)
+        except Exception:
+            pass
 
         return self
 
