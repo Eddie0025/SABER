@@ -39,11 +39,13 @@ class MetaReasoner:
         registry: SpecialistRegistry,
         audit: AuditLogger,
     ) -> None:
+        import os
         self.config = config
         self.registry = registry
         self.audit = audit
         self.sentinel = Sentinel()
         self.reasoner_id = "META_REASONER"
+        self.model_path = "models/meta_reasoner_v2" if os.path.exists("models/meta_reasoner_v2") else self.config.base_model
 
     def execute(
         self,
@@ -398,7 +400,7 @@ class MetaReasoner:
         )
 
         try:
-            with LLMEngine(self.config.base_model, max_new_tokens=1024) as engine:
+            with LLMEngine(self.model_path, max_new_tokens=1024) as engine:
                 raw_response = engine.generate(prompt, system_prompt=system_prompt)
 
             # ── Step 2: Parse sections from the free-text response ──
@@ -535,7 +537,7 @@ class MetaReasoner:
         system_prompt = "You are the SABER Meta-Reasoning Layer. You are an expert at revising texts based on strict verification flags."
 
         try:
-            with LLMEngine(self.config.base_model) as engine:
+            with LLMEngine(self.model_path) as engine:
                 return engine.generate(prompt, system_prompt=system_prompt).strip()
         except Exception as e:
             print(f"[MetaReasoner] _apply_patches failed: {e}")

@@ -50,10 +50,12 @@ class Orchestrator:
         registry: SpecialistRegistry,
         audit: AuditLogger,
     ) -> None:
+        import os
         self.config = config
         self.registry = registry
         self.audit = audit
         self.meta_reasoner = MetaReasoner(config=config, registry=registry, audit=audit)
+        self.model_path = "models/orchestrator_v2" if os.path.exists("models/orchestrator_v2") else self.config.base_model
 
     # ------------------------------------------------------------------
     # 1. Ambiguity Detection
@@ -122,7 +124,7 @@ class Orchestrator:
         )
 
         try:
-            with LLMEngine(self.config.base_model, max_new_tokens=32) as engine:
+            with LLMEngine(self.model_path, max_new_tokens=32) as engine:
                 raw_output = engine.generate(prompt).strip()
                 clean_json = raw_output.replace("```json", "").replace("```", "").strip()
                 start = clean_json.find("[")

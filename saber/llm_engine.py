@@ -14,7 +14,6 @@ Usage:
 from __future__ import annotations
 
 import gc
-import sys
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
