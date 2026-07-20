@@ -238,22 +238,6 @@ class Specialist:
         self.cot.begin_chain(self.domain, query_id)
         claims = self.process_task(task_objective)
         
-        # Populate CoT chain reasoning steps generically if in benchmark mode
-        import os
-        if os.getenv("SABER_BENCHMARK_MODE") == "1":
-            raw_output = getattr(self, "_last_raw_response", None)
-            if raw_output and "REASONING:" in raw_output:
-                try:
-                    reasoning_part = raw_output.split("REASONING:")[1].split("CLAIMS:")[0].strip()
-                    import re
-                    sentences = re.split(r'(?<=[.!?])\s+', reasoning_part)
-                    for s in sentences:
-                        s = s.strip()
-                        if s:
-                            self.cot.add_step(action="ANALYZE", content=s, confidence=0.9)
-                except Exception:
-                    pass
-        
         if not self.cot._current_chain.is_complete:
             conclusion = claims[0].statement if claims else task_objective
             confidence = claims[0].confidence if claims else 0.5
