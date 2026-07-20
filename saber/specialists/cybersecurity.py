@@ -49,6 +49,19 @@ class CyberSpecialist(Specialist):
             self._last_raw_response = raw_output
             
             if os.getenv("SABER_BENCHMARK_MODE") == "1":
+                # Populate CoT chain reasoning steps
+                if "REASONING:" in raw_output:
+                    try:
+                        reasoning_part = raw_output.split("REASONING:")[1].split("CLAIMS:")[0].strip()
+                        import re
+                        sentences = re.split(r'(?<=[.!?])\s+', reasoning_part)
+                        for s in sentences:
+                            s = s.strip()
+                            if s:
+                                self.cot.add_step(action="ANALYZE", content=s, confidence=0.9)
+                    except Exception:
+                        pass
+                
                 # Parse claims from sequential benchmark format
                 claims_texts = []
                 if "CLAIMS:" in raw_output:
