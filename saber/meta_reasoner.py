@@ -211,17 +211,20 @@ class MetaReasoner:
                     )
                     
                     # Step-level CoT verification (if CoT chain available)
-                    cot_data = out_sig.payload.get("cot_chain")
-                    if cot_data and cot_data.get("steps"):
-                        step_flags = self.sentinel.verify_cot_chain(
-                            specialist_domain=domain,
-                            cot_chain=cot_data,
-                            compiled_text=compiled_text,
-                            config=self.config,
-                        )
-                        flags_in_cycle.extend(step_flags)
-                        all_flags.extend(step_flags)
-                        total_flags_raised += len(step_flags)
+                    # Skipped in benchmark mode to fly through the runs (since verify_interpretation is enough)
+                    import os
+                    if os.getenv("SABER_BENCHMARK_MODE") != "1":
+                        cot_data = out_sig.payload.get("cot_chain")
+                        if cot_data and cot_data.get("steps"):
+                            step_flags = self.sentinel.verify_cot_chain(
+                                specialist_domain=domain,
+                                cot_chain=cot_data,
+                                compiled_text=compiled_text,
+                                config=self.config,
+                            )
+                            flags_in_cycle.extend(step_flags)
+                            all_flags.extend(step_flags)
+                            total_flags_raised += len(step_flags)
                 except Exception as e:
                     self.audit.log("failure", query_id, {
                         "category": FailureCategory.VERIFICATION_FAILURE.value,

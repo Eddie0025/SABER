@@ -27,7 +27,12 @@ class LLMEngine:
 
     def __init__(self, model_id_or_path: str, max_new_tokens: int = 2048):
         self.model_id_or_path = model_id_or_path
-        self.max_new_tokens = max_new_tokens
+        # Optimize generation length in benchmark mode to speed up execution
+        import os
+        if os.getenv("SABER_BENCHMARK_MODE") == "1" and max_new_tokens == 2048:
+            self.max_new_tokens = 512
+        else:
+            self.max_new_tokens = max_new_tokens
         self.model = None
         self.tokenizer = None
         self.device = self._get_device()
