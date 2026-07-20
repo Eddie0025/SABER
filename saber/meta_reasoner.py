@@ -180,24 +180,8 @@ class MetaReasoner:
                     "confidences": confidences,
                 }, component="manager")
 
-        # 5. Compilation via Meta-Reasoning Layer
-        import os
-        if os.getenv("SABER_BENCHMARK_MODE") == "1" and len(outputs) == 1:
-            domain = list(outputs.keys())[0]
-            compiled_text = outputs[domain].payload.get("raw_response", "")
-            meta_reasoning_data = {
-                "internal_ledger": {"note": "Bypassed synthesis for benchmark"},
-                "external_summary": {"confidence": confidences[domain]}
-            }
-        else:
-            compiled_text, meta_reasoning_data = self._meta_reasoning_synthesis(outputs, query, query_id)
-            
-        ledger["meta_reasoning_path"] = meta_reasoning_data.get("internal_ledger", {})
-        ledger["external_meta_reasoning"] = meta_reasoning_data.get("external_summary", {})
-        self.audit.log_compilation(query_id, compiled_text)
-
-        # 6. Check Mode Loop (VERIFICATION_SIGNALs) with full metric tracking
-        # Hard Python-level enforcement to prevent infinite looping
+        # 5. Check Mode Loop (VERIFICATION_SIGNALs) - Specialist self-correction loops
+        # Sentinel checks the Specialist answers directly before any Meta-Reasoner synthesis.
         MAX_RETRIES = 2
         max_cycles = min(verification_tier.max_cycles, MAX_RETRIES)
         cycles_run = 0
@@ -212,11 +196,13 @@ class MetaReasoner:
 
             for domain, out_sig in outputs.items():
                 domain_flags = []
+                # Use Specialist's own raw response as the text to verify directly
+                spec_response = out_sig.payload.get("raw_response", "")
                 try:
                     ver_res = self.sentinel.verify_interpretation(
                         specialist_domain=domain,
                         original_signal=out_sig,
-                        compiled_text=compiled_text,
+                        compiled_text=spec_response,
                         config=self.config
                     )
                     if ver_res.signal_type == SignalType.FLAG_SIGNAL:
@@ -228,7 +214,7 @@ class MetaReasoner:
                         step_flags = self.sentinel.verify_cot_chain(
                             specialist_domain=domain,
                             cot_chain=cot_data,
-                            compiled_text=compiled_text,
+                            compiled_text=spec_response,
                             config=self.config,
                         )
                         domain_flags.extend(step_flags)
@@ -247,7 +233,7 @@ class MetaReasoner:
                     # Send verification signal with flags back to Specialist for self-correction
                     spec = self.registry.get(domain)
                     if spec:
-                        print(f"[MetaReasoner] Sending {len(domain_flags)} Sentinel flags back to '{domain}' Specialist for self-correction.")
+                        print(f"[MetaReasoner] Sentinel flagged '{domain}' reasoning. Sending back for Specialist self-correction.")
                         ver_sig = Signal(
                             signal_type=SignalType.VERIFICATION_SIGNAL,
                             query_id=query_id,
@@ -256,7 +242,7 @@ class MetaReasoner:
                             payload={
                                 "status": "FLAGGED",
                                 "flags": [f.payload for f in domain_flags],
-                                "compiled_text": compiled_text
+                                "compiled_text": spec_response
                             }
                         ).freeze_and_hash()
                         
@@ -278,17 +264,7 @@ class MetaReasoner:
                 # All GREEN_CHITs received
                 break
 
-            # 7. Update Compiled Text from the self-corrected Specialist outputs
-            pre_revision = compiled_text
-            if os.getenv("SABER_BENCHMARK_MODE") == "1" and len(outputs) == 1:
-                domain = list(outputs.keys())[0]
-                compiled_text = outputs[domain].payload.get("raw_response", "")
-            else:
-                compiled_text, meta_reasoning_data = self._meta_reasoning_synthesis(outputs, query, query_id)
-            
             revision_count += 1
-
-            # Track which flags were addressed
             flags_resolved_this_cycle = len(flags_in_cycle)
             total_flags_resolved += flags_resolved_this_cycle
 
@@ -299,7 +275,24 @@ class MetaReasoner:
             })
             ledger["flags"].extend([f.payload for f in flags_in_cycle])
 
-        # 8. Compute final confidence & Output
+        # 6. Compilation via Meta-Reasoning Layer (Synthesis)
+        # Synthesizes the finalized, verified specialist outputs at the very end.
+        import os
+        if os.getenv("SABER_BENCHMARK_MODE") == "1" and len(outputs) == 1:
+            domain = list(outputs.keys())[0]
+            compiled_text = outputs[domain].payload.get("raw_response", "")
+            meta_reasoning_data = {
+                "internal_ledger": {"note": "Bypassed synthesis for benchmark"},
+                "external_summary": {"confidence": confidences[domain]}
+            }
+        else:
+            compiled_text, meta_reasoning_data = self._meta_reasoning_synthesis(outputs, query, query_id)
+            
+        ledger["meta_reasoning_path"] = meta_reasoning_data.get("internal_ledger", {})
+        ledger["external_meta_reasoning"] = meta_reasoning_data.get("external_summary", {})
+        self.audit.log_compilation(query_id, compiled_text)
+
+        # 7. Compute final confidence & Output
         base_conf = 0.0
         if "external_meta_reasoning" in ledger and "confidence" in ledger["external_meta_reasoning"]:
             base_conf = ledger["external_meta_reasoning"]["confidence"]
