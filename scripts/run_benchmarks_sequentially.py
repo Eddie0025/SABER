@@ -345,8 +345,6 @@ def main(api_key=None):
         for mode_name, tier in modes:
             start = time.time()
             try:
-                import sys
-                import os
                 original_stdout = sys.stdout
                 sys.stdout = open(os.devnull, 'w')
                 try:
