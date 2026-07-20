@@ -78,14 +78,36 @@ class LLMEngine:
         if self.device == "mps":
             dtype = torch.float16
 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_id_or_path,
-            torch_dtype=dtype,
-            device_map="auto" if self.device == "cuda" else None,
-            trust_remote_code=True,
-        )
+        # Check if loading a PEFT adapter
+        import os
+        import json
+        adapter_config_path = os.path.join(self.model_id_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+            from peft import PeftModel
+            try:
+                with open(adapter_config_path, "r") as f:
+                    base_model_name = json.load(f)["base_model_name_or_path"]
+            except Exception:
+                base_model_name = "Qwen/Qwen2.5-7B"
 
-        if self.device == "mps":
+            # Load the base model first
+            base_model = AutoModelForCausalLM.from_pretrained(
+                base_model_name,
+                torch_dtype=dtype,
+                device_map="auto" if self.device == "cuda" else None,
+                trust_remote_code=True,
+            )
+            # Wrap with PeftModel
+            self.model = PeftModel.from_pretrained(base_model, self.model_id_or_path)
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_id_or_path,
+                torch_dtype=dtype,
+                device_map="auto" if self.device == "cuda" else None,
+                trust_remote_code=True,
+            )
+
+        if self.device == "mps" or (self.device == "cuda" and not os.path.exists(adapter_config_path)):
             try:
                 self.model = self.model.to(self.device)
             except Exception:
