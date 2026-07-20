@@ -250,18 +250,31 @@ class Orchestrator:
                 }, component="orchestrator")
 
         if not activated:
-            from saber.errors import FailureCategory
-            self.audit.log("failure", query_id, {"category": FailureCategory.ROUTING_FAILURE.value, "reason": "No specialists activated"}, "orchestrator")
+            # ----------------------------------------------------------
+            # General Conversation Fallback: Use base Qwen for greetings,
+            # chitchat, and queries outside specialist domains.
+            # ----------------------------------------------------------
+            from saber.llm_engine import LLMEngine
+            try:
+                with LLMEngine(self.config.base_model, max_new_tokens=512) as engine:
+                    general_answer = engine.generate(
+                        query,
+                        system_prompt=(
+                            "You are SABER, a helpful, knowledgeable AI assistant. "
+                            "Respond naturally and conversationally. Be friendly, "
+                            "concise, and helpful."
+                        ),
+                    )
+            except Exception as e:
+                general_answer = f"I'm sorry, I encountered an issue: {e}"
+
             result = {
                 "query_id": query_id,
-                "status": "no_specialists",
-                "answer": (
-                    "No domain specialists were activated for this query.  "
-                    "Please include domain-relevant terms or specify the domain."
-                ),
-                "confidence": 0.0,
+                "status": "general_conversation",
+                "answer": general_answer,
+                "confidence": 0.7,
                 "flags": [],
-                "domains_activated": [],
+                "domains_activated": ["general"],
                 "verification_tier": 0,
                 "verification_cycles": 0,
                 "domain_scores": domain_scores,
