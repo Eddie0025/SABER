@@ -9,16 +9,26 @@
 ```
 User Query
     │
-    ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  ORCHESTRATOR                                                    │
-│  1. Ambiguity Detection (reject vague queries)                   │
-│  2. LLM-Based Domain Classification (route to specialists)      │
-│  3. Specialist Selection (activate domains above threshold)      │
-│  4. Verification Tier Assignment (how many sentinel checks)      │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │ activated specialists + verification tier
-                       ▼
+    ├───────────────────────────────────────────────────────┐
+    │ (immediate)                                           │
+    ▼                                                       ▼
+┌───────────────────────────────────┐   ┌──────────────────────────────┐
+│  FRONTEND RESPONDER               │   │  ORCHESTRATOR (async)        │
+│  Qwen 2.5-0.5B (350M params)     │   │  Runs on GPU backend         │
+│                                   │   │                              │
+│  - Loads with the chat interface  │   │  1. Ambiguity Detection      │
+│  - Runs on CPU, instant response  │   │  2. Few-Shot LLM Domain      │
+│  - Parses query topic and gives   │   │     Classification (7B)      │
+│    context-aware acknowledgment:  │   │     with confidence gate      │
+│    "Analyzing your cybersecurity  │   │     (< 95% → re-classify     │
+│     question — routing to our     │   │      with more context)       │
+│     security specialist..."       │   │  3. Specialist Selection     │
+│  - Replaced by real answer when   │   │  4. Verification Tier        │
+│    backend pipeline completes     │   │     Assignment               │
+└───────────────────────────────────┘   └─────────────┬────────────────┘
+                                                      │
+                                       activated specialists + tier
+                                                      ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  SPECIALIST EXECUTION (one by one, sequentially)                 │
 │                                                                  │
@@ -55,7 +65,7 @@ User Query
 │  5. RESOLUTION PATH — reconcile conflicting views                │
 │  6. FINAL ANSWER — produce one coherent, detailed answer         │
 │                                                                  │
-│  Also: Disagreeement detection (confidence spread > 0.3)         │
+│  Also: Disagreement detection (confidence spread > 0.3)          │
 │  Also: Final confidence scoring with flag/cycle penalty          │
 └──────────────────────┬───────────────────────────────────────────┘
                        │ final synthesized answer
@@ -68,12 +78,25 @@ User Query
 └──────────────────────┬───────────────────────────────────────────┘
                        │
                        ▼
-                 Final Answer → User
+                 Final Answer → User (replaces greeting)
 ```
 
 ---
 
 ## Component Details
+
+### 0. Frontend Responder (Qwen 2.5-0.5B)
+
+**Model**: `Qwen/Qwen2.5-0.5B` (350M parameters)
+
+A lightweight model that **loads with the chat interface** and runs on CPU. Its sole purpose is latency masking — the moment a user sends a query, the frontend responder immediately generates a context-aware acknowledgment (e.g., *"Analyzing your cybersecurity question about MITRE ATT&CK — routing to our security specialist..."*) while the full SABER pipeline processes the query on the GPU backend.
+
+- **Runs on CPU** — no GPU contention with the specialist pipeline.
+- **Loads once at startup** — always warm, instant response (<500ms).
+- **Context-aware** — parses the query topic to generate a relevant greeting, not a generic "Processing...".
+- **Replaced transparently** — when the backend pipeline returns the real answer, it replaces the greeting in the chat interface.
+
+This model does NOT participate in any reasoning, routing, or verification. It is purely a UX component.
 
 ### 1. Orchestrator
 
@@ -84,9 +107,22 @@ The entry point. It does NOT generate answers — it only routes.
 | Step | What It Does |
 |------|-------------|
 | **Ambiguity Detection** | Scores query ambiguity (0–1) based on word count, pronoun density, and domain keyword coverage. Queries ≥ 0.70 are rejected with a clarification request. |
-| **Domain Classification** | Uses Qwen-7B itself (32-token generation, sub-100ms) to classify the query into specialist domains. Falls back to keyword heuristics if LLM fails. |
+| **Domain Classification** | Few-shot LLM classification using the 7B base model (see below). |
+| **Confidence Gate** | If the classifier's confidence is < 95%, the query is re-classified with expanded context (full specialist descriptions + example queries). Routing must be near-100% accurate — wrong routing makes everything downstream useless. |
 | **Specialist Selection** | Activates specialists whose relevance score ≥ 0.30 (configurable threshold). In benchmark mode, forces exactly one specialist (highest score). |
 | **Tier Assignment** | Assigns verification depth: Tier 0 (no checks), Tier 1 (2 checks), Tier 2 (4 checks), Tier 3 (6 checks). |
+
+#### Domain Classification — Few-Shot LLM Routing
+
+The Orchestrator uses the Qwen 2.5-7B base model to classify queries into specialist domains. The classification prompt includes:
+
+1. **Explicit domain descriptions** — each specialist's capabilities, not just names.
+2. **Few-shot examples** — 2-3 example queries per domain showing correct classification, covering edge cases and ambiguous phrasing.
+3. **Structured output** — the model outputs a JSON list of activated domains with a confidence score per domain.
+
+If the highest confidence score is **below 95%**, the Orchestrator re-runs classification with an **expanded prompt** that includes full specialist metadata, more few-shot examples, and asks the model to reason step-by-step before deciding. This two-pass approach ensures near-perfect routing accuracy — if the model isn't sure on the fast pass, it gets a second chance with more context.
+
+No keyword heuristic fallback is used. Routing accuracy is mission-critical and only the LLM has the semantic understanding to get it right on ambiguous queries.
 
 ### 2. Domain Specialists
 
