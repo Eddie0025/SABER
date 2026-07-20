@@ -233,6 +233,32 @@ class Orchestrator:
     # 5. Full Pipeline
     # ------------------------------------------------------------------
 
+    def _generate_primer(self, query: str) -> str:
+        """Generate a quick conversational acknowledgment before deep processing.
+
+        This makes SABER feel responsive — like a real expert who says
+        'Great question! Let me analyze that...' before diving in.
+        """
+        from saber.llm_engine import LLMEngine
+        try:
+            with LLMEngine(self.config.base_model, max_new_tokens=60) as engine:
+                primer = engine.generate(
+                    query,
+                    system_prompt=(
+                        "You are SABER, a friendly AI assistant. "
+                        "Generate ONLY a brief 1-sentence acknowledgment of the user's message. "
+                        "If it's a greeting, respond warmly. "
+                        "If it's a question, briefly acknowledge it and say you'll analyze it. "
+                        "Do NOT answer the question itself. Keep it under 20 words. "
+                        "Examples: 'Great question! Let me analyze this for you.' "
+                        "'Hey there! How can I help you today?' "
+                        "'Interesting problem — let me dig into this.'"
+                    ),
+                )
+            return primer.strip()
+        except Exception:
+            return ""
+
     def process_query(
         self,
         query: str,
@@ -248,6 +274,9 @@ class Orchestrator:
         query_id = str(uuid.uuid4())
         self.audit.log_query(query_id, query)
 
+        # --- Conversational Primer: Quick acknowledgment ---
+        primer = self._generate_primer(query)
+
         # --- Ambiguity check ---
         ambiguity = self.detect_ambiguity(query)
         if ambiguity >= self.config.ambiguity_threshold:
@@ -256,6 +285,8 @@ class Orchestrator:
                 "status": "clarification_needed",
                 "ambiguity_score": ambiguity,
                 "answer": (
+                    f"{primer}\n\n" if primer else ""
+                ) + (
                     "Your query appears ambiguous.  Could you provide more "
                     "detail or specify the domain (medical, legal, cyber, finance)?"
                 ),
@@ -285,20 +316,33 @@ class Orchestrator:
             # ----------------------------------------------------------
             # General Conversation Fallback: Use base Qwen for greetings,
             # chitchat, and queries outside specialist domains.
+            # The primer IS the response for simple greetings.
+            # For longer general queries, generate a full response.
             # ----------------------------------------------------------
             from saber.llm_engine import LLMEngine
-            try:
-                with LLMEngine(self.config.base_model, max_new_tokens=512) as engine:
-                    general_answer = engine.generate(
-                        query,
-                        system_prompt=(
-                            "You are SABER, a helpful, knowledgeable AI assistant. "
-                            "Respond naturally and conversationally. Be friendly, "
-                            "concise, and helpful."
-                        ),
-                    )
-            except Exception as e:
-                general_answer = f"I'm sorry, I encountered an issue: {e}"
+            query_lower = query.strip().lower()
+            greeting_words = {"hi", "hello", "hey", "howdy", "sup", "yo", "hola",
+                              "good morning", "good afternoon", "good evening"}
+
+            # For simple greetings, the primer alone is sufficient
+            if query_lower in greeting_words or len(query.split()) <= 3:
+                general_answer = primer if primer else "Hey there! How can I help you today?"
+            else:
+                # For longer general queries, generate a full conversational response
+                try:
+                    with LLMEngine(self.config.base_model, max_new_tokens=512) as engine:
+                        general_answer = engine.generate(
+                            query,
+                            system_prompt=(
+                                "You are SABER, a helpful, knowledgeable AI assistant. "
+                                "Respond naturally and conversationally. Be friendly, "
+                                "concise, and helpful."
+                            ),
+                        )
+                    if primer:
+                        general_answer = f"{primer}\n\n{general_answer}"
+                except Exception as e:
+                    general_answer = f"I'm sorry, I encountered an issue: {e}"
 
             result = {
                 "query_id": query_id,
@@ -325,5 +369,10 @@ class Orchestrator:
             verification_tier=ver_tier,
         )
 
+        # Prepend the conversational primer to the specialist's deep answer
+        if primer and result.get("answer"):
+            result["answer"] = f"{primer}\n\n{result['answer']}"
+
         self.audit.log_output(query_id, result.get("answer", ""))
         return result
+
