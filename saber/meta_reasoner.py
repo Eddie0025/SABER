@@ -58,6 +58,8 @@ class MetaReasoner:
         start_time = time.time()
 
         # Decision Ledger accumulator — everything about this query
+        print(f"[DEBUG MetaReasoner] self.config.base_model: {self.config.base_model}")
+        print(f"[DEBUG MetaReasoner] self.model_path: {self.model_path}")
         ledger = {
             "query_id": query_id,
             "query": query,
