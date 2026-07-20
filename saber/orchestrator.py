@@ -69,8 +69,40 @@ class Orchestrator:
         * Very short queries (< 5 words).
         * Excessive use of pronouns without antecedents.
         * Missing domain indicators.
+
+        Conversational intents (greetings, chitchat, general questions)
+        are detected first and bypass the ambiguity gate entirely.
         """
+        query_lower = query.strip().lower()
         words = query.split()
+
+        # ----------------------------------------------------------
+        # Conversational Intent Detection: Greetings and general
+        # queries should never be flagged as ambiguous.
+        # ----------------------------------------------------------
+        greeting_patterns = {
+            "hi", "hello", "hey", "howdy", "sup", "yo", "hola",
+            "good morning", "good afternoon", "good evening", "good night",
+            "how are you", "what's up", "whats up", "how's it going",
+            "how do you do", "nice to meet you", "pleased to meet you",
+            "thanks", "thank you", "bye", "goodbye", "see you",
+            "who are you", "what are you", "what can you do",
+            "help", "help me", "what is saber", "tell me about yourself",
+        }
+        # Check exact match or prefix match for greetings
+        if query_lower in greeting_patterns:
+            return 0.0
+        for pattern in greeting_patterns:
+            if query_lower.startswith(pattern):
+                return 0.0
+
+        # General questions (starts with interrogative words) are not ambiguous
+        question_starters = ("what", "how", "why", "when", "where", "who", "which",
+                             "can you", "could you", "would you", "tell me", "explain",
+                             "describe", "show me", "give me")
+        if any(query_lower.startswith(qs) for qs in question_starters):
+            return 0.0
+
         score = 0.0
 
         # Short queries are more ambiguous
