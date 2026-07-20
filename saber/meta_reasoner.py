@@ -258,6 +258,11 @@ class MetaReasoner:
                 # All GREEN_CHITs received
                 break
 
+            if os.getenv("SABER_BENCHMARK_MODE") == "1":
+                # Skip applying patches/rewriting in benchmark mode to prevent loading the meta-reasoner
+                print("[MetaReasoner] Benchmark mode: skipping LLM patch/rewrite cycle.")
+                break
+
             # 7. Apply Patches (LLM Rewrite)
             pre_revision = compiled_text
             compiled_text = self._apply_patches(compiled_text, flags_in_cycle)
