@@ -145,8 +145,12 @@ class Sentinel:
         claims_data = original_signal.payload.get("claims", [])
         claims_str = json.dumps(claims_data, indent=2)
 
-        # Determine if online and compile grounding info
-        online = is_internet_available()
+        # Force offline in benchmark mode to prevent network hangs and speed up runs
+        import os
+        if os.getenv("SABER_BENCHMARK_MODE") == "1":
+            online = False
+        else:
+            online = is_internet_available()
         grounding_str = ""
         
         if online:
