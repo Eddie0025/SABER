@@ -185,43 +185,35 @@ def main(api_key=None):
 
     # 2.2 Cyber: SecBench (Last 100 English cases)
     try:
-        import urllib.request
-        url = "https://raw.githubusercontent.com/secbench-git/SecBench/main/data/MCQs_2730.jsonl"
+        secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train")
         all_cyber = []
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as response:
-                lines = response.read().decode("utf-8").splitlines()
-                for line in lines:
-                    if not line.strip():
-                        continue
-                    row = json.loads(line)
-                    if row.get("language") == "English":
-                        q_text = row.get("question")
-                        choices = list(row.get("answers", []))
-                        label_char = row.get("label", "").upper().strip()
-                        if len(choices) != 4 or not label_char or not q_text:
-                            continue
-                        correct_idx = ord(label_char) - 65
-                        if not (0 <= correct_idx < 4):
-                            continue
-                        correct_ans = choices[correct_idx]
-                        
-                        # Shuffle choices
-                        random.seed(42)
-                        random.shuffle(choices)
-                        choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-                        correct_char = chr(65 + choices.index(correct_ans))
-                        
-                        all_cyber.append({
-                            "type": "exact",
-                            "question": f"Question: {q_text}\nOptions:\n{choices_str}",
-                            "expected": correct_char,
-                            "domain": "cyber",
-                            "dataset": "secbench"
-                        })
-        except Exception as e:
-            print(f"[!] Failed to fetch SecBench from GitHub: {e}")
+        for row in secbench:
+            if row.get("language") == "English":
+                q_text = row.get("question")
+                choices = list(row.get("answers", []))
+                label_char = row.get("label", "").upper().strip()
+                if len(choices) != 4 or not label_char or not q_text:
+                    continue
+                if len(label_char) != 1 or label_char not in ["A", "B", "C", "D"]:
+                    continue
+                correct_idx = ord(label_char) - 65
+                if not (0 <= correct_idx < 4):
+                    continue
+                correct_ans = choices[correct_idx]
+                
+                # Shuffle choices
+                random.seed(42)
+                random.shuffle(choices)
+                choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                correct_char = chr(65 + choices.index(correct_ans))
+                
+                all_cyber.append({
+                    "type": "exact",
+                    "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                    "expected": correct_char,
+                    "domain": "cyber",
+                    "dataset": "secbench"
+                })
             
         if all_cyber:
             sliced_cyber = all_cyber[-100:]
