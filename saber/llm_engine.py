@@ -48,6 +48,9 @@ class LLMEngine:
         cache_key = self.model_id_or_path
         if cache_key in _MODEL_CACHE:
             self.model, self.tokenizer = _MODEL_CACHE[cache_key]
+            # Move to end of cache dict to mark as Most Recently Used (MRU)
+            del _MODEL_CACHE[cache_key]
+            _MODEL_CACHE[cache_key] = (self.model, self.tokenizer)
             return self
 
         # pyrefly: ignore [missing-import]
@@ -155,7 +158,35 @@ class LLMEngine:
         if os.getenv("SABER_KEEP_MODELS_LOADED") == "1":
             # Cache weights instead of unloading to save swap time
             cache_key = self.model_id_or_path
+            
+            # Move the key to the end to mark it as most recently used
+            if cache_key in _MODEL_CACHE:
+                del _MODEL_CACHE[cache_key]
             _MODEL_CACHE[cache_key] = (self.model, self.tokenizer)
+            
+            # Enforce strict VRAM cache limit (max 2 loaded models)
+            # This keeps the active specialist and base model loaded, but evicts older ones
+            # to prevent CUDA Out of Memory on multiple specialist swaps.
+            MAX_CACHE_SIZE = 2
+            while len(_MODEL_CACHE) > MAX_CACHE_SIZE:
+                # Evict oldest cached model
+                evict_key = next(iter(_MODEL_CACHE))
+                evicted_model, evicted_tokenizer = _MODEL_CACHE.pop(evict_key)
+                print(f"[LLMEngine] Evicting model '{evict_key}' from memory cache to free VRAM.")
+                del evicted_model
+                del evicted_tokenizer
+                
+                # Garbage collect and clear hardware cache immediately
+                gc.collect()
+                try:
+                    import torch
+                    if self.device == "cuda":
+                        torch.cuda.empty_cache()
+                    elif self.device == "mps":
+                        torch.mps.empty_cache()
+                except Exception:
+                    pass
+                    
             self.model = None
             self.tokenizer = None
             return
