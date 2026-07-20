@@ -233,7 +233,6 @@ class Specialist:
     def _handle_task(self, task_signal: Signal) -> Signal:
         """Process the task and return a COT_SIGNAL."""
         task_objective = task_signal.payload.get("objective", "")
-        self._last_objective = task_objective
         query_id = task_signal.query_id
         
         self.cot.begin_chain(self.domain, query_id)
@@ -249,7 +248,6 @@ class Specialist:
         self._cached_response = {
             "claims": [c.model_dump() for c in claims],
             "cot_chain": self.cot.export_for_signal(),
-            "raw_response": getattr(self, "_last_raw_response", None),
         }
         
         return Signal(
@@ -267,153 +265,16 @@ class Specialist:
         self._cached_response = None
 
     def _handle_verification(self, verification_signal: Signal) -> Signal:
-        """Check mode: Receive flags from Sentinel and perform self-correction."""
-        import os
-        import json
-        from saber.llm_engine import LLMEngine
-        
-        payload = verification_signal.payload
-        status = payload.get("status")
-        
-        if status != "FLAGGED":
-            return Signal(
-                signal_type=SignalType.VERIFICATION_SIGNAL,
-                query_id=verification_signal.query_id,
-                source_id=self.meta.specialist_id,
-                target_id=verification_signal.source_id,
-                payload={"status": "GREEN_CHIT"}
-            ).freeze_and_hash()
-
-        # Perform self-correction using the specialist's model
-        flags = payload.get("flags", [])
-        compiled_text = payload.get("compiled_text", "")
-        
-        flags_desc = []
-        for f in flags:
-            issue = f.get('issue_type', 'REASONING_ERROR')
-            reasoning = f.get('reasoning', f.get('description', ''))
-            fix = f.get('proposed_fix', '')
-            flags_desc.append(f"- [{issue.upper()}] {reasoning}\n  FIX: {fix}")
-        flags_str = "\n".join(flags_desc)
-
-        original_objective = getattr(self, "_last_objective", compiled_text)
-
-        # Build self-correction prompt
-        prompt = (
-            f"Original Objective: {original_objective}\n\n"
-            f"Your previous response:\n{getattr(self, '_last_raw_response', compiled_text)}\n\n"
-            f"The verifier found the following errors in your response:\n{flags_str}\n\n"
-            "Please regenerate your complete response. Correct all identified errors, "
-            "but make sure to preserve the exact formatting. "
-        )
-        
-        if os.getenv("SABER_BENCHMARK_MODE") == "1":
-            if self.domain == "science" or self.domain == "cyber":
-                system_prompt = (
-                    f"You are an expert {self.domain} specialist. First, think step by step to deduce the answer. "
-                    "Second, output exactly 3 factual claims that support your reasoning. "
-                    "Finally, state the correct option letter (A, B, C, or D).\n\n"
-                    "Use this strict format:\n"
-                    "REASONING: <your step by step thought process>\n"
-                    "CLAIMS:\n1. <claim 1>\n2. <claim 2>\n3. <claim 3>\n"
-                    "ANSWER: <A, B, C, or D>"
-                )
-            elif self.domain == "coding":
-                system_prompt = (
-                    "You are an expert coding specialist. First, think step by step to solve the task. "
-                    "Second, output exactly 3 factual claims about the logic/complexity. "
-                    "Finally, output the complete Python implementation wrapped inside a ```python block.\n\n"
-                    "Use this strict format:\n"
-                    "REASONING: <your step by step thought process>\n"
-                    "CLAIMS:\n1. <claim 1>\n2. <claim 2>\n3. <claim 3>\n"
-                    "CODE:\n```python\n<your code here>\n```"
-                )
-            elif self.domain == "finance":
-                system_prompt = (
-                    "You are an expert financial analyst. First, think step by step to solve the question. "
-                    "Second, output exactly 3 factual claims that support your reasoning. "
-                    "Finally, state the correct numerical answer.\n\n"
-                    "Use this strict format:\n"
-                    "REASONING: <your step by step thought process>\n"
-                    "CLAIMS:\n1. <claim 1>\n2. <claim 2>\n3. <claim 3>\n"
-                    "ANSWER: <numeric value>"
-                )
-        else:
-            if self.domain == "science":
-                system_prompt = "You are a Science AI specialist. Do NOT output conversational text. Output ONLY a valid JSON array of claims containing step-by-step scientific or mathematical derivation."
-            elif self.domain == "cyber":
-                system_prompt = "You are a Cybersecurity AI specialist. Do NOT output conversational text. Output ONLY a valid JSON array of claims."
-            elif self.domain == "coding":
-                system_prompt = "You are a Coding and Software Engineering AI specialist. Do NOT output conversational text. Output ONLY a valid JSON array of claims."
-            elif self.domain == "finance":
-                system_prompt = "You are a Finance and Economics AI specialist. Do NOT output conversational text. Output ONLY a valid JSON array of claims."
-            else:
-                system_prompt = f"You are an expert {self.domain} specialist."
-
-        model_path = self.meta.model_path or "Qwen/Qwen2.5-7B"
-        
-        try:
-            with LLMEngine(model_path) as engine:
-                corrected_output = engine.generate(prompt, system_prompt=system_prompt)
-            
-            self._last_raw_response = corrected_output
-            
-            # Reparse the claims from the corrected response
-            claims = []
-            if os.getenv("SABER_BENCHMARK_MODE") == "1":
-                claims_texts = []
-                if "CLAIMS:" in corrected_output:
-                    try:
-                        after_claims = corrected_output.split("CLAIMS:")[1]
-                        end_marker = "ANSWER:" if "ANSWER:" in after_claims else "CODE:"
-                        claims_block = after_claims.split(end_marker)[0]
-                        for line in claims_block.split("\n"):
-                            line = line.strip()
-                            if line and (line[0].isdigit() or line.startswith("-")):
-                                clean_claim = line.lstrip("1234567890.- ").strip()
-                                if clean_claim:
-                                    claims_texts.append(clean_claim)
-                    except Exception:
-                        pass
-                if not claims_texts:
-                    claims_texts = [corrected_output[:100]]
-                for text in claims_texts:
-                    claims.append(Claim(statement=text, confidence=0.9, domain=self.domain, status=ClaimStatus.VERIFIED))
-            else:
-                try:
-                    claims_data = json.loads(corrected_output)
-                    if not isinstance(claims_data, list):
-                        claims_data = [claims_data]
-                    for c in claims_data:
-                        claims.append(Claim(statement=c.get("text", str(c)), confidence=float(c.get("confidence", 0.9)), domain=self.domain, status=ClaimStatus.VERIFIED))
-                except Exception:
-                    claims = [Claim(statement=corrected_output, confidence=0.5, domain=self.domain, status=ClaimStatus.VERIFIED)]
-
-            self._cached_response = {
-                "claims": [c.model_dump() for c in claims],
-                "cot_chain": self.cot.export_for_signal(),
-                "raw_response": corrected_output,
-            }
-
-            # Return a COT_SIGNAL (re-using COT_SIGNAL as response since it contains corrected answer)
-            # This follows the Signal lifecycle
-            return Signal(
-                signal_type=SignalType.COT_SIGNAL,
-                query_id=verification_signal.query_id,
-                source_id=self.meta.specialist_id,
-                target_id=verification_signal.source_id,
-                payload=self._cached_response
-            ).freeze_and_hash()
-
-        except Exception as e:
-            print(f"[{self.meta.specialist_id}] Self-correction failed: {e}")
-            return Signal(
-                signal_type=SignalType.VERIFICATION_SIGNAL,
-                query_id=verification_signal.query_id,
-                source_id=self.meta.specialist_id,
-                target_id=verification_signal.source_id,
-                payload={"status": "GREEN_CHIT"}
-            ).freeze_and_hash()
+        """Check mode: Verify the Meta-Reasoning Layer's compiled text."""
+        # Default verification returns GREEN_CHIT
+        # Override this or use SENTINEL's LLM engine to perform strict verification
+        return Signal(
+            signal_type=SignalType.VERIFICATION_SIGNAL,
+            query_id=verification_signal.query_id,
+            source_id=self.meta.specialist_id,
+            target_id=verification_signal.source_id,
+            payload={"status": "GREEN_CHIT"}
+        ).freeze_and_hash()
 
     # ------------------------------------------------------------------
     # Abstract Methods for Subclasses

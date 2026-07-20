@@ -58,8 +58,6 @@ class MetaReasoner:
         start_time = time.time()
 
         # Decision Ledger accumulator — everything about this query
-        print(f"[DEBUG MetaReasoner] self.config.base_model: {self.config.base_model}")
-        print(f"[DEBUG MetaReasoner] self.model_path: {self.model_path}")
         ledger = {
             "query_id": query_id,
             "query": query,
@@ -182,8 +180,14 @@ class MetaReasoner:
                     "confidences": confidences,
                 }, component="manager")
 
-        # 5. Check Mode Loop (VERIFICATION_SIGNALs) - Specialist self-correction loops
-        # Sentinel checks the Specialist answers directly before any Meta-Reasoner synthesis.
+        # 5. Compilation via Meta-Reasoning Layer
+        compiled_text, meta_reasoning_data = self._meta_reasoning_synthesis(outputs, query, query_id)
+        ledger["meta_reasoning_path"] = meta_reasoning_data.get("internal_ledger", {})
+        ledger["external_meta_reasoning"] = meta_reasoning_data.get("external_summary", {})
+        self.audit.log_compilation(query_id, compiled_text)
+
+        # 6. Check Mode Loop (VERIFICATION_SIGNALs) with full metric tracking
+        # Hard Python-level enforcement to prevent infinite looping
         MAX_RETRIES = 2
         max_cycles = min(verification_tier.max_cycles, MAX_RETRIES)
         cycles_run = 0
@@ -197,18 +201,14 @@ class MetaReasoner:
             flags_in_cycle: List[Signal] = []
 
             for domain, out_sig in outputs.items():
-                domain_flags = []
-                # Use Specialist's own raw response as the text to verify directly
-                spec_response = out_sig.payload.get("raw_response", "")
+                # Meta-Reasoning Layer sends VERIFICATION_SIGNAL via Sentinel
                 try:
                     ver_res = self.sentinel.verify_interpretation(
                         specialist_domain=domain,
                         original_signal=out_sig,
-                        compiled_text=spec_response,
+                        compiled_text=compiled_text,
                         config=self.config
                     )
-                    if ver_res.signal_type == SignalType.FLAG_SIGNAL:
-                        domain_flags.append(ver_res)
                     
                     # Step-level CoT verification (if CoT chain available)
                     cot_data = out_sig.payload.get("cot_chain")
@@ -216,10 +216,12 @@ class MetaReasoner:
                         step_flags = self.sentinel.verify_cot_chain(
                             specialist_domain=domain,
                             cot_chain=cot_data,
-                            compiled_text=spec_response,
+                            compiled_text=compiled_text,
                             config=self.config,
                         )
-                        domain_flags.extend(step_flags)
+                        flags_in_cycle.extend(step_flags)
+                        all_flags.extend(step_flags)
+                        total_flags_raised += len(step_flags)
                 except Exception as e:
                     self.audit.log("failure", query_id, {
                         "category": FailureCategory.VERIFICATION_FAILURE.value,
@@ -227,30 +229,10 @@ class MetaReasoner:
                     }, component="sentinel")
                     continue
 
-                if domain_flags:
-                    flags_in_cycle.extend(domain_flags)
-                    all_flags.extend(domain_flags)
-                    total_flags_raised += len(domain_flags)
-
-                    # Send verification signal with flags back to Specialist for self-correction
-                    spec = self.registry.get(domain)
-                    if spec:
-                        print(f"[MetaReasoner] Sentinel flagged '{domain}' reasoning. Sending back for Specialist self-correction.")
-                        ver_sig = Signal(
-                            signal_type=SignalType.VERIFICATION_SIGNAL,
-                            query_id=query_id,
-                            source_id=self.reasoner_id,
-                            target_id=f"SPEC-{domain.upper()}",
-                            payload={
-                                "status": "FLAGGED",
-                                "flags": [f.payload for f in domain_flags],
-                                "compiled_text": spec_response
-                            }
-                        ).freeze_and_hash()
-                        
-                        # Specialist performs self-correction and returns corrected COT_SIGNAL
-                        corrected_cot = spec.handle_signal(ver_sig)
-                        outputs[domain] = corrected_cot
+                if ver_res.signal_type == SignalType.FLAG_SIGNAL:
+                    flags_in_cycle.append(ver_res)
+                    all_flags.append(ver_res)
+                    total_flags_raised += 1
 
             # Record verification pass
             pass_record = {
@@ -266,7 +248,12 @@ class MetaReasoner:
                 # All GREEN_CHITs received
                 break
 
+            # 7. Apply Patches (LLM Rewrite)
+            pre_revision = compiled_text
+            compiled_text = self._apply_patches(compiled_text, flags_in_cycle)
             revision_count += 1
+
+            # Track which flags were addressed
             flags_resolved_this_cycle = len(flags_in_cycle)
             total_flags_resolved += flags_resolved_this_cycle
 
@@ -277,24 +264,7 @@ class MetaReasoner:
             })
             ledger["flags"].extend([f.payload for f in flags_in_cycle])
 
-        # 6. Compilation via Meta-Reasoning Layer (Synthesis)
-        # Synthesizes the finalized, verified specialist outputs at the very end.
-        import os
-        if os.getenv("SABER_BENCHMARK_MODE") == "1" and len(outputs) == 1:
-            domain = list(outputs.keys())[0]
-            compiled_text = outputs[domain].payload.get("raw_response", "")
-            meta_reasoning_data = {
-                "internal_ledger": {"note": "Bypassed synthesis for benchmark"},
-                "external_summary": {"confidence": confidences[domain]}
-            }
-        else:
-            compiled_text, meta_reasoning_data = self._meta_reasoning_synthesis(outputs, query, query_id)
-            
-        ledger["meta_reasoning_path"] = meta_reasoning_data.get("internal_ledger", {})
-        ledger["external_meta_reasoning"] = meta_reasoning_data.get("external_summary", {})
-        self.audit.log_compilation(query_id, compiled_text)
-
-        # 7. Compute final confidence & Output
+        # 8. Compute final confidence & Output
         base_conf = 0.0
         if "external_meta_reasoning" in ledger and "confidence" in ledger["external_meta_reasoning"]:
             base_conf = ledger["external_meta_reasoning"]["confidence"]
@@ -337,48 +307,27 @@ class MetaReasoner:
     # ------------------------------------------------------------------
 
     def _decompose_to_tasks(self, query_sig: Signal, domains: List[str]) -> Dict[str, Signal]:
-        """Decompose query into per-specialist task signals.
-
-        For single-specialist queries, the original query is passed directly
-        to preserve all context (including multiple-choice options, code
-        prompts, numerical data, etc.).  LLM-based decomposition is only
-        used for multi-specialist queries where the query genuinely needs
-        to be split across domains.
-        """
+        from saber.llm_engine import LLMEngine
         query_text = query_sig.payload.get("text", "")
         tasks = {}
+        orchestrator_model = self.config.base_model
+        system_prompt = "You are SABER Orchestrator. Output ONLY the task objective string."
 
-        if len(domains) == 1:
-            # Single specialist — pass original query verbatim
-            domain = domains[0]
-            tasks[domain] = Signal(
-                signal_type=SignalType.TASK_SIGNAL,
-                query_id=query_sig.query_id,
-                source_id=self.reasoner_id,
-                target_id=f"SPEC-{domain.upper()}",
-                payload={"objective": query_text}
-            ).freeze_and_hash()
-        else:
-            # Multi-specialist — use LLM to decompose
-            from saber.llm_engine import LLMEngine
-            orchestrator_model = self.config.base_model
-            system_prompt = "You are SABER Orchestrator. Output ONLY the task objective string. Preserve all original details, options, and data."
+        with LLMEngine(orchestrator_model) as engine:
+            for domain in domains:
+                prompt = f"Query: {query_text}\nExtract the {domain.upper()} task objective."
+                try:
+                    obj = engine.generate(prompt, system_prompt=system_prompt)
+                except Exception:
+                    obj = f"Analyze {query_text}"
 
-            with LLMEngine(orchestrator_model) as engine:
-                for domain in domains:
-                    prompt = f"Query: {query_text}\nExtract the {domain.upper()} task objective. Include ALL original details and options."
-                    try:
-                        obj = engine.generate(prompt, system_prompt=system_prompt)
-                    except Exception:
-                        obj = query_text
-
-                    tasks[domain] = Signal(
-                        signal_type=SignalType.TASK_SIGNAL,
-                        query_id=query_sig.query_id,
-                        source_id=self.reasoner_id,
-                        target_id=f"SPEC-{domain.upper()}",
-                        payload={"objective": obj}
-                    ).freeze_and_hash()
+                tasks[domain] = Signal(
+                    signal_type=SignalType.TASK_SIGNAL,
+                    query_id=query_sig.query_id,
+                    source_id=self.reasoner_id,
+                    target_id=f"SPEC-{domain.upper()}",
+                    payload={"objective": obj}
+                ).freeze_and_hash()
         return tasks
 
     def _parse_synthesis_json(self, raw_text: str) -> Dict[str, Any]:
@@ -442,11 +391,7 @@ class MetaReasoner:
             "## TRADEOFF EVALUATION\nAnalyse tradeoffs if specialists disagree.\n\n"
             "## RESOLUTION PATH\nExplain how you reconcile the specialist views.\n\n"
             "## FINAL ANSWER\nProvide the complete, coherent answer to the user's query. "
-            "This must be a direct answer, not meta-commentary. "
-            "CRITICAL: If the query contains multiple-choice options (A, B, C, D), you MUST end your "
-            "final answer with the line 'ANSWER: X' where X is the correct option letter. "
-            "If the query asks for code, provide the complete code. "
-            "If the query asks for a calculation, provide the exact numerical result."
+            "This must be a direct answer, not meta-commentary."
         )
         system_prompt = (
             "You are the SABER Meta-Reasoning Layer. You synthesize outputs from "
@@ -587,8 +532,6 @@ class MetaReasoner:
             "Your task is to completely rewrite the Original Draft to fix all identified errors. "
             "Do NOT just append corrections to the end. Seamlessly integrate the facts, correct the flawed logic, "
             "and produce a professional, accurate response. "
-            "CRITICAL: If the original draft contained multiple-choice options or ended with 'ANSWER: X', "
-            "you MUST end your revised text with 'ANSWER: X' where X is the correct option letter. "
             "Output ONLY the final revised text with no additional commentary."
         )
         system_prompt = "You are the SABER Meta-Reasoning Layer. You are an expert at revising texts based on strict verification flags."

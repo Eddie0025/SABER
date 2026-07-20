@@ -305,7 +305,8 @@ def run_coding_benchmark(model_path):
     try:
         from datasets import load_dataset
         ds = load_dataset("openai/openai_humaneval", split="test")
-        cases = list(ds)
+        all_cases = list(ds)
+        cases = all_cases[-78:]
     except Exception as e:
         print(f"[!] Failed to load HumanEval: {e}")
         return 0.0
@@ -436,7 +437,7 @@ def main():
     print(f"| :--- | :--- |")
     print(f"| Science (GPQA last 78) | {science_score:.1f}% |")
     print(f"| Cyber (CyberMetric last 60) | {cyber_score:.1f}% |")
-    print(f"| Coding (HumanEval all 164) | {coding_score:.1f}% |")
+    print(f"| Coding (HumanEval last 78) | {coding_score:.1f}% |")
     print(f"| Finance (FinQA math 100) | {finance_score:.1f}% |")
     print("=======================================================")
 

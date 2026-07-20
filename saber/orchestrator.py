@@ -69,40 +69,8 @@ class Orchestrator:
         * Very short queries (< 5 words).
         * Excessive use of pronouns without antecedents.
         * Missing domain indicators.
-
-        Conversational intents (greetings, chitchat, general questions)
-        are detected first and bypass the ambiguity gate entirely.
         """
-        query_lower = query.strip().lower()
         words = query.split()
-
-        # ----------------------------------------------------------
-        # Conversational Intent Detection: Greetings and general
-        # queries should never be flagged as ambiguous.
-        # ----------------------------------------------------------
-        greeting_patterns = {
-            "hi", "hello", "hey", "howdy", "sup", "yo", "hola",
-            "good morning", "good afternoon", "good evening", "good night",
-            "how are you", "what's up", "whats up", "how's it going",
-            "how do you do", "nice to meet you", "pleased to meet you",
-            "thanks", "thank you", "bye", "goodbye", "see you",
-            "who are you", "what are you", "what can you do",
-            "help", "help me", "what is saber", "tell me about yourself",
-        }
-        # Check exact match or prefix match for greetings
-        if query_lower in greeting_patterns:
-            return 0.0
-        for pattern in greeting_patterns:
-            if query_lower.startswith(pattern):
-                return 0.0
-
-        # General questions (starts with interrogative words) are not ambiguous
-        question_starters = ("what", "how", "why", "when", "where", "who", "which",
-                             "can you", "could you", "would you", "tell me", "explain",
-                             "describe", "show me", "give me")
-        if any(query_lower.startswith(qs) for qs in question_starters):
-            return 0.0
-
         score = 0.0
 
         # Short queries are more ambiguous
@@ -233,37 +201,10 @@ class Orchestrator:
     # 5. Full Pipeline
     # ------------------------------------------------------------------
 
-    def _generate_primer(self, query: str) -> str:
-        """Generate a quick conversational acknowledgment before deep processing.
-
-        This makes SABER feel responsive — like a real expert who says
-        'Great question! Let me analyze that...' before diving in.
-        """
-        from saber.llm_engine import LLMEngine
-        try:
-            with LLMEngine(self.config.base_model, max_new_tokens=60) as engine:
-                primer = engine.generate(
-                    query,
-                    system_prompt=(
-                        "You are SABER, a friendly AI assistant. "
-                        "Generate ONLY a brief 1-sentence acknowledgment of the user's message. "
-                        "If it's a greeting, respond warmly. "
-                        "If it's a question, briefly acknowledge it and say you'll analyze it. "
-                        "Do NOT answer the question itself. Keep it under 20 words. "
-                        "Examples: 'Great question! Let me analyze this for you.' "
-                        "'Hey there! How can I help you today?' "
-                        "'Interesting problem — let me dig into this.'"
-                    ),
-                )
-            return primer.strip()
-        except Exception:
-            return ""
-
     def process_query(
         self,
         query: str,
         tier: Optional[VerificationTier] = None,
-        activated_domains: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Run the full SABER pipeline for a user query.
 
@@ -275,88 +216,52 @@ class Orchestrator:
         query_id = str(uuid.uuid4())
         self.audit.log_query(query_id, query)
 
-        # --- Conversational Primer: Disabled for now to avoid latency ---
-        primer = ""
-
-        # --- Ambiguity & Domain Selection ---
-        if activated_domains is not None:
-            activated = activated_domains
-            domain_scores = {}
-        else:
-            # --- Ambiguity check ---
-            ambiguity = self.detect_ambiguity(query)
-            if ambiguity >= self.config.ambiguity_threshold:
-                result = {
-                    "query_id": query_id,
-                    "status": "clarification_needed",
-                    "ambiguity_score": ambiguity,
-                    "answer": (
-                        f"{primer}\n\n" if primer else ""
-                    ) + (
-                        "Your query appears ambiguous.  Could you provide more "
-                        "detail or specify the domain (medical, legal, cyber, finance)?"
-                    ),
-                    "confidence": 0.0,
-                    "flags": [],
-                    "domains_activated": [],
-                    "verification_tier": 0,
-                    "verification_cycles": 0,
-                }
-                self.audit.log_output(query_id, result["answer"])
-                return result
-
-            # --- Domain classification & specialist selection ---
-            domain_scores = self.classify_domains(query)
-            activated = self.select_specialists(domain_scores)
-
-            if not activated and domain_scores:
-                best_domain = max(domain_scores, key=domain_scores.get)
-                if domain_scores[best_domain] > 0.0:
-                    activated = [best_domain]
-                    self.audit.log("forced_activation", query_id, {
-                        "domain": best_domain,
-                        "score": domain_scores[best_domain],
-                    }, component="orchestrator")
-
-        if not activated:
-            # ----------------------------------------------------------
-            # General Conversation Fallback: Use base Qwen for greetings,
-            # chitchat, and queries outside specialist domains.
-            # The primer IS the response for simple greetings.
-            # For longer general queries, generate a full response.
-            # ----------------------------------------------------------
-            from saber.llm_engine import LLMEngine
-            query_lower = query.strip().lower()
-            greeting_words = {"hi", "hello", "hey", "howdy", "sup", "yo", "hola",
-                              "good morning", "good afternoon", "good evening"}
-
-            # For simple greetings, the primer alone is sufficient
-            if query_lower in greeting_words or len(query.split()) <= 3:
-                general_answer = primer if primer else "Hey there! How can I help you today?"
-            else:
-                # For longer general queries, generate a full conversational response
-                try:
-                    with LLMEngine(self.config.base_model, max_new_tokens=512) as engine:
-                        general_answer = engine.generate(
-                            query,
-                            system_prompt=(
-                                "You are SABER, a helpful, knowledgeable AI assistant. "
-                                "Respond naturally and conversationally. Be friendly, "
-                                "concise, and helpful."
-                            ),
-                        )
-                    if primer:
-                        general_answer = f"{primer}\n\n{general_answer}"
-                except Exception as e:
-                    general_answer = f"I'm sorry, I encountered an issue: {e}"
-
+        # --- Ambiguity check ---
+        ambiguity = self.detect_ambiguity(query)
+        if ambiguity >= self.config.ambiguity_threshold:
             result = {
                 "query_id": query_id,
-                "status": "general_conversation",
-                "answer": general_answer,
-                "confidence": 0.7,
+                "status": "clarification_needed",
+                "ambiguity_score": ambiguity,
+                "answer": (
+                    "Your query appears ambiguous.  Could you provide more "
+                    "detail or specify the domain (medical, legal, cyber, finance)?"
+                ),
+                "confidence": 0.0,
                 "flags": [],
-                "domains_activated": ["general"],
+                "domains_activated": [],
+                "verification_tier": 0,
+                "verification_cycles": 0,
+            }
+            self.audit.log_output(query_id, result["answer"])
+            return result
+
+        # --- Domain classification & specialist selection ---
+        domain_scores = self.classify_domains(query)
+        activated = self.select_specialists(domain_scores)
+
+        if not activated and domain_scores:
+            best_domain = max(domain_scores, key=domain_scores.get)
+            if domain_scores[best_domain] > 0.0:
+                activated = [best_domain]
+                self.audit.log("forced_activation", query_id, {
+                    "domain": best_domain,
+                    "score": domain_scores[best_domain],
+                }, component="orchestrator")
+
+        if not activated:
+            from saber.errors import FailureCategory
+            self.audit.log("failure", query_id, {"category": FailureCategory.ROUTING_FAILURE.value, "reason": "No specialists activated"}, "orchestrator")
+            result = {
+                "query_id": query_id,
+                "status": "no_specialists",
+                "answer": (
+                    "No domain specialists were activated for this query.  "
+                    "Please include domain-relevant terms or specify the domain."
+                ),
+                "confidence": 0.0,
+                "flags": [],
+                "domains_activated": [],
                 "verification_tier": 0,
                 "verification_cycles": 0,
                 "domain_scores": domain_scores,
@@ -375,10 +280,5 @@ class Orchestrator:
             verification_tier=ver_tier,
         )
 
-        # Prepend the conversational primer to the specialist's deep answer
-        if primer and result.get("answer"):
-            result["answer"] = f"{primer}\n\n{result['answer']}"
-
         self.audit.log_output(query_id, result.get("answer", ""))
         return result
-
