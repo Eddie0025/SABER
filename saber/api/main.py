@@ -31,6 +31,13 @@ app.add_middleware(
 )
 
 # Global SABER components
+from saber.frontend_chatbot import FrontendChatbot
+from fastapi.responses import StreamingResponse
+import json
+import asyncio
+import threading
+
+# Global SABER components
 config = SaberConfig.from_env()
 
 # Dynamically plug in fine-tuned meta-reasoner if it exists
@@ -51,6 +58,12 @@ for domain in ["medical", "science", "cyber", "finance", "coding", "architecture
 
 orchestrator = Orchestrator(config=config, registry=registry, audit=audit)
 chat_history = ChatHistory(db_path="data/chat_history.db")
+chatbot = FrontendChatbot()
+
+@app.on_event("startup")
+async def startup_event():
+    # Warm up frontend chatbot in a background thread to prevent blocking FastAPI startup
+    threading.Thread(target=chatbot.warm_up, daemon=True).start()
 
 
 class QueryRequest(BaseModel):
@@ -60,7 +73,7 @@ class QueryRequest(BaseModel):
 
 @app.post("/api/query")
 async def run_query(req: QueryRequest):
-    """Run a query through the SABER pipeline."""
+    """Run a query through the SABER pipeline with streaming support."""
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
         
@@ -74,53 +87,87 @@ async def run_query(req: QueryRequest):
     # Save user message to history
     chat_history.add_message(role="user", content=req.query)
 
-    # BYPASS ORCHESTRATOR FOR TESTING: Route directly to Medical Specialist
-    try:
-        medical_spec = registry.get("medical")
-        model_path = medical_spec.meta.model_path if medical_spec and medical_spec.meta.model_path else config.base_model
+    async def event_generator():
+        loop = asyncio.get_event_loop()
         
-        from saber.llm_engine import LLMEngine
-        with LLMEngine(model_path) as engine:
-            # We fetch all history up to the current query
-            history = chat_history.get_messages()
-            # The medical model expects a system prompt at the very beginning of the history
-            if history and history[0]["role"] != "system":
-                history.insert(0, {"role": "system", "content": "You are SABER's dedicated Medical Specialist. Provide accurate, clinical answers."})
-                
-            final_answer = engine.generate_with_history(history)
+        # 1. Run domain classification in a background thread
+        try:
+            activated_domains = await loop.run_in_executor(
+                None, 
+                lambda: [
+                    d for d, score in orchestrator.classify_domains(req.query).items()
+                    if score >= orchestrator.config.activation_threshold
+                ]
+            )
+        except Exception as e:
+            print(f"[API] Domain classification failed: {e}")
+            activated_domains = []
+
+        # 2. Check if we have activated expert domains
+        if not activated_domains:
+            # General conversation / Greeting: stream from SmolLM frontend agent
+            history = chat_history.get_messages()[:-1]  # Exclude the current query
+            smol_history = [{"role": m["role"], "content": m["content"]} for m in history]
+            smol_history.append({"role": "user", "content": req.query})
+
+            full_response = ""
+            try:
+                for token in chatbot.generate_response_stream(req.query, history=smol_history):
+                    full_response += token
+                    yield json.dumps({"type": "smol_delta", "content": token}) + "\n"
+                    await asyncio.sleep(0.005)
+            except Exception as e:
+                full_response = f"Hello! How can I help you today? (Fallback: {e})"
+                yield json.dumps({"type": "smol_delta", "content": full_response}) + "\n"
+
+            # Save Smol's response to DB history
+            chat_history.add_message(
+                role="system",
+                content=full_response,
+                metadata={"query_id": "chitchat", "status": "complete", "domains_activated": []}
+            )
+            return
+
+        # 3. If real domain query: Stream a ping to Smol to tell user we are processing
+        domains_list = ", ".join([d.capitalize() for d in activated_domains])
+        ping_msg = f"I am activating our expert pipeline for {domains_list} to analyze this for you..."
+        yield json.dumps({"type": "ping", "content": ping_msg}) + "\n"
+
+        # 4. Run full pipeline in background thread
+        try:
+            result = await loop.run_in_executor(
+                None,
+                lambda: orchestrator.process_query(req.query, tier=tier)
+            )
             
-        result = {
-            "query_id": "direct-medical-test",
-            "status": "success",
-            "answer": final_answer,
-            "confidence": 1.0,
-            "domains_activated": ["medical"],
-            "verification_cycles": 0,
-            "total_flags_raised": 0,
-            "total_flags_resolved": 0,
-            "unresolved_flags": [],
-            "latency_seconds": 0.0,
-        }
-    except Exception as e:
-        result = {
-            "query_id": "error",
-            "status": "failed",
-            "answer": f"Error: {e}",
-            "confidence": 0.0
-        }
+            # Stream the final response
+            yield json.dumps({
+                "type": "expert_answer",
+                "answer": result.get("answer", ""),
+                "domains_activated": result.get("domains_activated", []),
+                "verification_cycles": result.get("verification_cycles", 0),
+                "confidence": result.get("confidence", 1.0),
+                "unresolved_flags": result.get("unresolved_flags", []),
+                "status": "complete"
+            }) + "\n"
 
-    # Save system response to history with metadata
-    chat_history.add_message(
-        role="system",
-        content=result.get("answer", ""),
-        metadata={
-            "query_id": result.get("query_id"),
-            "status": result.get("status"),
-            "domains_activated": result.get("domains_activated"),
-        },
-    )
+            # Save response to history
+            chat_history.add_message(
+                role="system",
+                content=result.get("answer", ""),
+                metadata={
+                    "query_id": result.get("query_id"),
+                    "status": "complete",
+                    "domains_activated": result.get("domains_activated"),
+                    "verification_cycles": result.get("verification_cycles"),
+                    "confidence": result.get("confidence"),
+                }
+            )
+        except Exception as e:
+            err_msg = f"Error in background pipeline: {e}"
+            yield json.dumps({"type": "error", "content": err_msg}) + "\n"
 
-    return result
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/api/specialists")

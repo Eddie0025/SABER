@@ -115,10 +115,15 @@ async function handleSubmit(e) {
     userInput.style.height = 'auto';
     sendBtn.disabled = true;
     
-    // 3. Show loading
+    // 3. Show loading spinner initially
     const loadingId = appendSystemLoading();
     
     isWaiting = true;
+    
+    // Elements for streaming
+    let systemMessageEl = null;
+    let messageContentEl = null;
+    let smolTextBuffer = "";
     
     try {
         const response = await fetch(`${API_BASE}/query`, {
@@ -132,15 +137,95 @@ async function handleSubmit(e) {
         
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
-        const data = await response.json();
-        
-        // 4. Remove loading & show answer
-        removeElement(loadingId);
-        appendSystemResponse(data);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            
+            // Keep the last partial line in the buffer
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const data = JSON.parse(line);
+                    
+                    if (data.type === "smol_delta") {
+                        // Remove initial loader on first token
+                        if (loadingId) removeElement(loadingId);
+                        
+                        // Create streaming system message element if not exists
+                        if (!systemMessageEl) {
+                            const id = 'msg-' + Date.now();
+                            const html = `
+                                <div class="message system-message" id="${id}">
+                                    <div class="avatar system-avatar">S</div>
+                                    <div class="message-content">
+                                        <div class="streaming-text"></div>
+                                    </div>
+                                </div>
+                            `;
+                            chatHistory.insertAdjacentHTML('beforeend', html);
+                            systemMessageEl = document.getElementById(id);
+                            messageContentEl = systemMessageEl.querySelector('.streaming-text');
+                        }
+                        
+                        smolTextBuffer += data.content;
+                        messageContentEl.innerHTML = marked.parse(smolTextBuffer);
+                        scrollToBottom();
+                    } 
+                    else if (data.type === "ping") {
+                        // Remove initial loader
+                        if (loadingId) removeElement(loadingId);
+                        
+                        // Show ping/boilerplate message
+                        const id = 'msg-' + Date.now();
+                        const html = `
+                            <div class="message system-message" id="${id}">
+                                <div class="avatar system-avatar">S</div>
+                                <div class="message-content">
+                                    <p class="ping-message" style="font-style: italic; color: var(--text-secondary)">
+                                        ${escapeHtml(data.content)}
+                                    </p>
+                                    <div class="loader" style="margin-top: 10px;">
+                                        <span></span><span></span><span></span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        chatHistory.insertAdjacentHTML('beforeend', html);
+                        systemMessageEl = document.getElementById(id);
+                        scrollToBottom();
+                    } 
+                    else if (data.type === "expert_answer") {
+                        // Remove previous streaming elements
+                        if (systemMessageEl) systemMessageEl.remove();
+                        if (loadingId) removeElement(loadingId);
+                        
+                        // Append final expert response
+                        appendSystemResponse(data);
+                    }
+                    else if (data.type === "error") {
+                        if (systemMessageEl) systemMessageEl.remove();
+                        if (loadingId) removeElement(loadingId);
+                        appendSystemError(data.content);
+                    }
+                } catch (err) {
+                    console.error("Failed to parse stream line:", line, err);
+                }
+            }
+        }
         
     } catch (error) {
         console.error('Query error:', error);
         removeElement(loadingId);
+        if (systemMessageEl) systemMessageEl.remove();
         appendSystemError('Communication with the Orchestrator failed. Please ensure the backend is running.');
     } finally {
         isWaiting = false;
