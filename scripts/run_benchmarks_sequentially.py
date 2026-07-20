@@ -7,6 +7,10 @@ import subprocess
 import tempfile
 import urllib.request
 
+# Disable Hugging Face verbose logs and cache models in memory (crucial for H100)
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["SABER_KEEP_MODELS_LOADED"] = "1"
+
 # Ensure SABER modules can be imported
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
