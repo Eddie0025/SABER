@@ -17,14 +17,15 @@ User Query
 │  Qwen 2.5-0.5B (350M params)     │   │  Runs on GPU backend         │
 │                                   │   │                              │
 │  - Loads with the chat interface  │   │  1. Ambiguity Detection      │
-│  - Runs on CPU, instant response  │   │  2. Few-Shot LLM Domain      │
-│  - Parses query topic and gives   │   │     Classification (7B)      │
-│    context-aware acknowledgment:  │   │     with confidence gate      │
-│    "Analyzing your cybersecurity  │   │     (< 95% → re-classify     │
-│     question — routing to our     │   │      with more context)       │
-│     security specialist..."       │   │  3. Specialist Selection     │
-│  - Replaced by real answer when   │   │  4. Verification Tier        │
-│    backend pipeline completes     │   │     Assignment               │
+│  - Runs on CPU, instant response  │   │  2. Query Completeness Check │
+│  - Parses query topic and gives   │   │     (asks follow-ups if      │
+│    context-aware acknowledgment:  │   │      info is missing)        │
+│    "Analyzing your cybersecurity  │   │  3. Few-Shot LLM Domain      │
+│     question — routing to our     │   │     Classification (7B)      │
+│     security specialist..."       │   │     with confidence gate     │
+│  - Replaced by real answer when   │   │  4. Specialist Selection     │
+│    backend pipeline completes     │   │  5. Verification Tier        │
+│                                   │   │     Assignment               │
 └───────────────────────────────────┘   └─────────────┬────────────────┘
                                                       │
                                        activated specialists + tier
@@ -107,10 +108,23 @@ The entry point. It does NOT generate answers — it only routes.
 | Step | What It Does |
 |------|-------------|
 | **Ambiguity Detection** | Scores query ambiguity (0–1) based on word count, pronoun density, and domain keyword coverage. Queries ≥ 0.70 are rejected with a clarification request. |
+| **Query Completeness Check** | Uses the 7B model to assess whether the query contains enough information for the specialists to produce a useful answer. If critical information is missing, the system asks targeted follow-up questions before proceeding (see below). |
 | **Domain Classification** | Few-shot LLM classification using the 7B base model (see below). |
 | **Confidence Gate** | If the classifier's confidence is < 95%, the query is re-classified with expanded context (full specialist descriptions + example queries). Routing must be near-100% accurate — wrong routing makes everything downstream useless. |
 | **Specialist Selection** | Activates specialists whose relevance score ≥ 0.30 (configurable threshold). In benchmark mode, forces exactly one specialist (highest score). |
 | **Tier Assignment** | Assigns verification depth: Tier 0 (no checks), Tier 1 (2 checks), Tier 2 (4 checks), Tier 3 (6 checks). |
+
+#### Query Completeness Check
+
+Before any routing happens, the Orchestrator uses the 7B model to determine if the query has enough detail to produce a meaningful answer. The model evaluates:
+
+- **Missing constraints** — e.g., *"Calculate the force"* but no mass or acceleration values provided.
+- **Underspecified scope** — e.g., *"How do I secure my system?"* — which system? What threat model? What's already in place?
+- **Missing context** — e.g., *"What's wrong with this code?"* but no code attached.
+
+If the query is incomplete, the system returns **targeted follow-up questions** to the user — not a generic "please provide more detail" but specific questions about what's missing (e.g., *"What mass and acceleration values should I use?"*). The pipeline does NOT proceed until the user provides enough information. This prevents specialists from generating answers based on assumptions that may be wrong.
+
+Once the query is deemed complete, it moves to domain classification.
 
 #### Domain Classification — Few-Shot LLM Routing
 
