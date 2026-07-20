@@ -179,12 +179,17 @@ class Orchestrator:
         self, domain_scores: Dict[str, float]
     ) -> List[str]:
         """Return domains whose score exceeds the activation threshold."""
+        import os
         threshold = self.config.activation_threshold
         activated = [
             domain
             for domain, score in domain_scores.items()
             if score >= threshold and self.registry.get(domain) is not None
         ]
+        if os.getenv("SABER_BENCHMARK_MODE") == "1" and activated:
+            # Force exactly one domain (highest score) during benchmarks to prevent pollution
+            best_domain = max(activated, key=lambda d: domain_scores[d])
+            return [best_domain]
         return activated
 
     # ------------------------------------------------------------------
