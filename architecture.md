@@ -19,6 +19,7 @@ User Query
 │  2. Query Completeness Check (asks follow-ups if info missing)  │
 │  3. Few-Shot Domain Classification with confidence gate          │
 │  4. Specialist Selection + Task Decomposition                   │
+│     (OR Generalist Fallback for out-of-domain queries)          │
 │  5. Verification Tier Assignment                                │
 │                                                                  │
 │  Once routing is finalized, three things happen simultaneously:  │
@@ -45,6 +46,7 @@ User Query
                      ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  META-REASONING LAYER (activates once ALL outputs received)      │
+│  (Has CoT Maintainer plugged in for synthesis reasoning)         │
 │                                                                  │
 │  Already has: Original query (read at start)                     │
 │  Now receives: All specialist claims + CoT chains                │
@@ -170,6 +172,8 @@ The model sees the reference table + these synthetic examples, then classifies t
 
 **Confidence Gate**: If the highest confidence score is **below 95%**, the Orchestrator re-runs classification with an **expanded prompt** — more synthetic examples, step-by-step reasoning instructions, and the full specialist capability descriptions. This two-pass approach ensures near-perfect routing accuracy.
 
+**Generalist Fallback (Out-of-Domain queries)**: If after the two-pass classification the highest confidence score is *still* below the 0.30 activation threshold (e.g., for general knowledge or translation tasks like *"What is the capital of Japan?"*), the Orchestrator **bypasses the specialist pipeline entirely**. It uses the Qwen 7B base model with internet access to answer the query directly. Future work will introduce specialized agents (e.g., for creative writing) to handle these cases.
+
 No keyword heuristic fallback is used. Routing accuracy is mission-critical and only the LLM has the semantic understanding to get it right.
 
 #### Task Decomposition — Multi-Domain Query Handling
@@ -230,7 +234,7 @@ Each specialist is a separate Python class with its own LoRA adapter. Currently 
 
 **File**: `saber/cot_maintainer.py`
 
-A bidirectional working memory module **plugged into each specialist during execution**. The specialist reads from and writes to it as it reasons.
+A bidirectional working memory module **plugged into each specialist during execution, and into the Meta-Reasoning Layer during synthesis**. The model reads from and writes to it as it reasons.
 
 **Step Types**: `IDENTIFY` → `ANALYZE` → `HYPOTHESIZE` → `EVIDENCE` → `EVALUATE` → `CONCLUDE`
 
@@ -293,6 +297,8 @@ The Meta-Reasoner reads these, holds them quietly, and waits. It does nothing un
 
 #### Phase 2: Synthesis (activates once ALL specialist outputs received)
 Once every activated specialist has sent its verified claims + CoT chain, the Meta-Reasoner checks them all off against its expected list and begins synthesis. Because it already knows the original query, it can ensure the final answer directly addresses what the user asked — not just what the specialists chose to talk about.
+
+**The Meta-Reasoner has its own CoT Maintainer plugged in.** Instead of suffering from context bloat by trying to synthesize massive raw specialist CoTs in one shot, it uses its own CoT module to step-by-step reason through the claims, evaluate conflicts, and plan the final synthesis.
 
 Structured 6-section analysis:
 
