@@ -182,6 +182,7 @@ class MetaReasoner:
 
         # 5. Compilation via Meta-Reasoning Layer
         compiled_text, meta_reasoning_data = self._meta_reasoning_synthesis(outputs, query, query_id)
+            
         ledger["meta_reasoning_path"] = meta_reasoning_data.get("internal_ledger", {})
         ledger["external_meta_reasoning"] = meta_reasoning_data.get("external_summary", {})
         self.audit.log_compilation(query_id, compiled_text)
@@ -557,6 +558,8 @@ class MetaReasoner:
             "Your task is to completely rewrite the Original Draft to fix all identified errors. "
             "Do NOT just append corrections to the end. Seamlessly integrate the facts, correct the flawed logic, "
             "and produce a professional, accurate response. "
+            "CRITICAL: If the original draft contained multiple-choice options or ended with 'ANSWER: X', "
+            "you MUST end your revised text with 'ANSWER: X' where X is the correct option letter. "
             "Output ONLY the final revised text with no additional commentary."
         )
         system_prompt = "You are the SABER Meta-Reasoning Layer. You are an expert at revising texts based on strict verification flags."
