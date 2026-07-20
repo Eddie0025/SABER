@@ -265,9 +265,11 @@ The independent verification authority. **Critically uses the unbiased base mode
 - Mismatch → immediate `FLAG_SIGNAL` with severity `CRITICAL` (tampering or corruption).
 
 #### Level 2: Semantic Verification (LLM + Web Grounding)
-- **Online mode**: Queries the Chrome Search API for factual verification of claims. Latency is an explicitly accepted tradeoff here for the extreme accuracy required in high-tier (4 or 6-pass) verifications. Search results are injected as "ground truth" into the verification prompt.
+- **Verification Batching**: Instead of verifying claims one by one, Sentinel batches all claims from a specialist into a single verification prompt (e.g., "Verify these 8 claims") to drastically reduce LLM call overhead. Latency remains an explicit tradeoff for high-tier checks, but batching prevents it from scaling linearly.
+- **Online mode**: Queries the Chrome Search API for factual verification of claims. Search results are injected as "ground truth" into the verification prompt.
 - **Offline mode**: Falls back to logical consistency checks only.
 - **Targeted verification routing**: Different aspects get checked by different reviewers:
+  - Task alignment → `task_relevance` check (Did the specialist actually answer the specific sub-task in the TASK_SIGNAL, or did it go on a factually correct tangent?)
   - Cyber content → `technical_accuracy` by cyber, `logical_reasoning` by science
   - Science content → `factual_accuracy` + `mathematical_reasoning` by science
   - Medical content → `clinical_accuracy` by medical, `logical_reasoning` by science
