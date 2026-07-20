@@ -45,6 +45,7 @@ class MedicalSpecialist(Specialist):
         """Perform domain reasoning and return a list of Claims."""
         if self.meta.model_path:
             raw_output = self._infer(objective)
+            self._last_raw_response = raw_output
             return self.parse_raw_output_to_claims(raw_output)
         else:
             return [Claim(
