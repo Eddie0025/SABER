@@ -391,7 +391,11 @@ class MetaReasoner:
             "## TRADEOFF EVALUATION\nAnalyse tradeoffs if specialists disagree.\n\n"
             "## RESOLUTION PATH\nExplain how you reconcile the specialist views.\n\n"
             "## FINAL ANSWER\nProvide the complete, coherent answer to the user's query. "
-            "This must be a direct answer, not meta-commentary."
+            "This must be a direct answer, not meta-commentary. "
+            "CRITICAL: If the query contains multiple-choice options (A, B, C, D), you MUST end your "
+            "final answer with the line 'ANSWER: X' where X is the correct option letter. "
+            "If the query asks for code, provide the complete code. "
+            "If the query asks for a calculation, provide the exact numerical result."
         )
         system_prompt = (
             "You are the SABER Meta-Reasoning Layer. You synthesize outputs from "
