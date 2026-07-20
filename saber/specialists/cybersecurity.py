@@ -43,8 +43,40 @@ class CyberSpecialist(Specialist):
         self.meta.authority_score = 0.92
 
     def process_task(self, objective: str) -> List[Claim]:
+        import os
         if self.meta.model_path:
             raw_output = self._infer(objective)
+            self._last_raw_response = raw_output
+            
+            if os.getenv("SABER_BENCHMARK_MODE") == "1":
+                # Parse claims from sequential benchmark format
+                claims_texts = []
+                if "CLAIMS:" in raw_output:
+                    try:
+                        after_claims = raw_output.split("CLAIMS:")[1]
+                        end_marker = "ANSWER:" if "ANSWER:" in after_claims else "CODE:"
+                        claims_block = after_claims.split(end_marker)[0]
+                        for line in claims_block.split("\n"):
+                            line = line.strip()
+                            if line and (line[0].isdigit() or line.startswith("-")):
+                                clean_claim = line.lstrip("1234567890.- ").strip()
+                                if clean_claim:
+                                    claims_texts.append(clean_claim)
+                    except Exception:
+                        pass
+                if not claims_texts:
+                    claims_texts = [raw_output[:100]]
+                    
+                claims = []
+                for text in claims_texts:
+                    claims.append(Claim(
+                        statement=text,
+                        confidence=0.9,
+                        domain=self.domain,
+                        status=ClaimStatus.UNVERIFIED
+                    ))
+                return claims
+                
             try:
                 claims_data = json.loads(raw_output)
                 if not isinstance(claims_data, list):
@@ -76,13 +108,25 @@ class CyberSpecialist(Specialist):
 
     def _infer(self, query: str) -> str:
         from saber.llm_engine import LLMEngine
+        import os
         try:
             with LLMEngine(self.meta.model_path) as engine:
-                system_prompt = (
-                    "You are a Cybersecurity AI specialist. Do NOT output conversational text. "
-                    "Output ONLY a valid JSON array of claims. "
-                    "Example: [{\"text\": \"CVE-2024-X detected\", \"confidence\": 0.95}]"
-                )
+                if os.getenv("SABER_BENCHMARK_MODE") == "1":
+                    system_prompt = (
+                        "You are an expert cybersecurity specialist. First, think step by step to deduce the answer. "
+                        "Second, output exactly 3 factual claims that support your reasoning. "
+                        "Finally, state the correct option letter (A, B, C, or D).\n\n"
+                        "Use this strict format:\n"
+                        "REASONING: <your step by step thought process>\n"
+                        "CLAIMS:\n1. <claim 1>\n2. <claim 2>\n3. <claim 3>\n"
+                        "ANSWER: <A, B, C, or D>"
+                    )
+                else:
+                    system_prompt = (
+                        "You are a Cybersecurity AI specialist. Do NOT output conversational text. "
+                        "Output ONLY a valid JSON array of claims. "
+                        "Example: [{\"text\": \"CVE-2024-X detected\", \"confidence\": 0.95}]"
+                    )
                 return engine.generate(query, system_prompt=system_prompt)
         except Exception as e:
             print(f"[CyberSpecialist] Inference failed: {e}")

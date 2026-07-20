@@ -248,6 +248,7 @@ class Specialist:
         self._cached_response = {
             "claims": [c.model_dump() for c in claims],
             "cot_chain": self.cot.export_for_signal(),
+            "raw_response": getattr(self, "_last_raw_response", None),
         }
         
         return Signal(
