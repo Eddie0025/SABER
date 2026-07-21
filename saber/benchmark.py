@@ -180,7 +180,7 @@ class BenchmarkEngine:
             query=question,
             query_id=qid,
             activated_domains=domains_to_activate,
-            verification_tier=VerificationTier.TIER_3,
+            verification_tier=VerificationTier.TIER_1,
         )
         latency = time.time() - start
         return {

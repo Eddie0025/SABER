@@ -478,7 +478,6 @@ def run_benchmark(api_key=None):
         modes = [
             ("Without Sentinel", VerificationTier.TIER_0),
             ("2-Check Sentinel", VerificationTier.TIER_1),
-            ("4-Check Sentinel", VerificationTier.TIER_2)
         ]
         
         case_res = {
@@ -544,11 +543,11 @@ def run_benchmark(api_key=None):
                             live_summary[ds][m_name]["corr_sum"] += float(corr_val)
                             live_summary[ds][m_name]["corr_cnt"] += 1
             
-            print("| Dataset | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |")
-            print("| :--- | :--- | :--- | :--- |")
+            print("| Dataset | Without Sentinel (SABER) | 2-Check Sentinel |")
+            print("| :--- | :--- | :--- |")
             for ds, m_data in live_summary.items():
                 cells = [ds]
-                for m_name in ["Without Sentinel", "2-Check Sentinel", "4-Check Sentinel"]:
+                for m_name in ["Without Sentinel", "2-Check Sentinel"]:
                     st = m_data.get(m_name, {})
                     if not st:
                         cells.append("N/A")
@@ -565,8 +564,8 @@ def run_benchmark(api_key=None):
     # 4. Final Aggregation and Save
     summary = {}
     table_lines = [
-        "| Dataset | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |",
-        "| :--- | :--- | :--- | :--- |"
+        "| Dataset | Without Sentinel (SABER) | 2-Check Sentinel |",
+        "| :--- | :--- | :--- |"
     ]
     for case_res in results:
         dataset = case_res["dataset"]
@@ -601,7 +600,7 @@ def run_benchmark(api_key=None):
     for ds, modes_data in summary.items():
         formatted_summary[ds] = {}
         row_cells = [ds]
-        for mode_name in ["Without Sentinel", "2-Check Sentinel", "4-Check Sentinel"]:
+        for mode_name in ["Without Sentinel", "2-Check Sentinel"]:
             stats = modes_data.get(mode_name, {})
             if not stats:
                 row_cells.append("N/A")
