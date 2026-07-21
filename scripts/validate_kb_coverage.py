@@ -36,7 +36,7 @@ def main():
     print(f"| {'Domain':<15} | {'Passages':<10} | {'Avg Length (ch)':<15} | {'Coverage %':<14} |")
     print("| :-------------- | :--------- | :-------------- | :------------- |")
     
-    domains = ["science", "cyber", "finance", "medical", "coding", "architecture", "meta_reasoner", "orchestrator"]
+    domains = ["science", "cyber", "finance", "coding", "architecture", "meta_reasoner", "orchestrator"]
     for d in domains:
         validate_domain_kb(d)
     print("=========================================================================\n")

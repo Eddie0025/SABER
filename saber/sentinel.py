@@ -37,12 +37,6 @@ _VERIFICATION_ROUTING: Dict[str, Dict[str, str]] = {
         "logical_reasoning": "science",
         "conflict_resolution": "meta_reasoner",
     },
-    "medical": {
-        "clinical_accuracy": "medical",
-        "diagnostic_reasoning": "medical",
-        "logical_reasoning": "science",
-        "conflict_resolution": "meta_reasoner",
-    },
 }
 _INTERNET_CHECKED = None
 _SEARCH_CACHE = {}

@@ -1395,7 +1395,7 @@ def fetch_orchestrator():
         print(f"[dataset_loader] Error downloading natural-instructions: {e}")
 
     # Synthetic Multi-Domain
-    domains = ["medical", "cyber", "science", "coding", "architecture", "finance"]
+    domains = ["cyber", "science", "coding", "architecture", "finance"]
     import itertools
     pairs = list(itertools.combinations(domains, 2))
     added_synth = 0

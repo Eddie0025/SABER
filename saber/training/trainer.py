@@ -55,10 +55,10 @@ class TrainConfig:
     Qwen2.5-7B-Instruct base model + LoRA.
     """
 
-    domain: str = "medical"
-    data_path: str = "data/processed/medical.jsonl"
+    domain: str = "science"
+    data_path: str = "data/processed/science.jsonl"
     base_model: str = "Qwen/Qwen2.5-7B-Instruct"
-    output_dir: str = "models/medical_v2"
+    output_dir: str = "models/science_v2"
     epochs: int = 3
     batch_size: int = 8                     # Per-device; safe for 80 GB H100
     learning_rate: float = 2e-4

@@ -141,7 +141,6 @@ A structured table is injected into the prompt listing every registered speciali
 | cyber         | Vulnerabilities, malware, firewalls, MITRE ATT&CK, CVEs, pentesting |
 | coding        | Algorithms, debugging, optimization, code review, data structures    |
 | finance       | Revenue analysis, EBITDA, portfolio management, valuation, hedging   |
-| medical       | Diagnosis, treatment protocols, pathology, pharmacology, clinical    |
 | architecture  | System design, microservices, Kubernetes, scaling, cloud infra       |
 ```
 
@@ -216,7 +215,6 @@ Each specialist is a separate Python class with its own LoRA adapter. Currently 
 | CybersecuritySpecialist | `cyber` | `models/cyber_v2/` |
 | CodingSpecialist | `coding` | `models/coding_v2/` |
 | FinanceSpecialist | `finance` | `models/finance_v2/` |
-| MedicalSpecialist | `medical` | `models/medical_v2/` |
 | ArchitectureSpecialist | `architecture` | `models/architecture_v2/` |
 
 **How a specialist processes a query:**
@@ -272,7 +270,6 @@ The independent verification authority. **Critically uses the unbiased base mode
   - Task alignment → `task_relevance` check (Did the specialist actually answer the specific sub-task in the TASK_SIGNAL, or did it go on a factually correct tangent?)
   - Cyber content → `technical_accuracy` by cyber, `logical_reasoning` by science
   - Science content → `factual_accuracy` + `mathematical_reasoning` by science
-  - Medical content → `clinical_accuracy` by medical, `logical_reasoning` by science
 - Runs the configured number of verification cycles (tier-dependent).
 - Each cycle: if all checks return `CONFIRMED` → `GREEN_CHIT`. If errors found → `FLAG_SIGNAL` with structured JSON (issue_type, severity, evidence, reasoning, proposed_fix).
 - **Self-Correcting Rewrites**: When Sentinel flags an answer, it explicitly provides the correct grounded fact from the web in the `FLAG_SIGNAL` (via `proposed_fix`). The specialist simply rewrites its answer to integrate the provided correction, practically eliminating the risk of infinite rewrite loops.

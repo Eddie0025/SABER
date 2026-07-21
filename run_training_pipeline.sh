@@ -102,7 +102,6 @@ train_model() {
 #   Orchestrator:    395 steps  (~5K records, 5 epochs)
 # ------------------------------------------------------------------
 
-train_model "medical"       3
 train_model "meta_reasoner" 4
 train_model "science"       5
 train_model "finance"       6
