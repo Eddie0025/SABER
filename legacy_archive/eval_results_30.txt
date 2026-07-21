@@ -1,6 +1,0 @@
-=========================================================
- SABER Medical Evaluation Suite (30 Cases)
- Loading Model: models/medical_v2
-=========================================================
-[LLMEngine] Loading models/medical_v2 into RAM...
-Failed to load model: [Errno 2] No such file or directory: 'models/medical_v2/adapter_config.json'
