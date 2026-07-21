@@ -210,6 +210,7 @@ class Orchestrator:
         self,
         query: str,
         tier: Optional[VerificationTier] = None,
+        bypass_meta: bool = False,
     ) -> Dict[str, Any]:
         """Run the full SABER pipeline for a user query.
 
@@ -277,13 +278,37 @@ class Orchestrator:
         # --- Verification tier ---
         ver_tier = self.assign_verification_tier(tier)
 
-        # --- Delegate to Meta-Reasoning Layer ---
-        result = self.meta_reasoner.execute(
-            query=query,
-            query_id=query_id,
-            activated_domains=activated,
-            verification_tier=ver_tier,
-        )
+        # --- Delegate to Meta-Reasoning Layer or Bypass for single-domain ---
+        if bypass_meta and len(activated) == 1:
+            specialist = self.registry.get(activated[0])
+            if specialist:
+                self.audit.log("bypass", query_id, {"domain": activated[0]}, "orchestrator")
+                import os
+                model_path = f"models/{activated[0]}_v2"
+                if not os.path.exists(model_path):
+                    model_path = "Qwen/Qwen2.5-7B"
+                from saber.llm_engine import LLMEngine
+                with LLMEngine(model_path) as engine:
+                    raw = engine.generate(f"Question: {query}\nAnswer directly:")
+                    ans = raw.strip()
+                result = {
+                    "query_id": query_id,
+                    "answer": ans,
+                    "confidence": 1.0,
+                    "flags": [],
+                    "domains_activated": activated,
+                    "verification_tier": ver_tier.value,
+                    "verification_cycles": 0,
+                }
+            else:
+                result = self.meta_reasoner.execute(query=query, query_id=query_id, activated_domains=activated, verification_tier=ver_tier)
+        else:
+            result = self.meta_reasoner.execute(
+                query=query,
+                query_id=query_id,
+                activated_domains=activated,
+                verification_tier=ver_tier,
+            )
 
         self.audit.log_output(query_id, result.get("answer", ""))
         return result

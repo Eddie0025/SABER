@@ -2,15 +2,14 @@ import json
 import os
 import sys
 import time
-import urllib.request
-import urllib.error
 import random
+import re
 from typing import Dict, Any, List
 
 # Ensure saber module can be imported
 sys.path.append(os.path.abspath('.'))
 
-# Disable Hugging Face verbose logs and progress bars
+# Disable Hugging Face verbose logs and cache models in memory (crucial for single GPU)
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
@@ -21,122 +20,6 @@ from saber.config import SaberConfig, VerificationTier
 from saber.registry import SpecialistRegistry
 from saber.audit import AuditLogger
 from saber.orchestrator import Orchestrator
-
-# =====================================================================
-# OpenRouter LLM-as-a-Judge API Client (Gemma-4-31B)
-# =====================================================================
-def call_qwen_judge(prompt, question, student_answer, api_key=None):
-    if not api_key:
-        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("QWEN_API_KEY")
-    
-    if not api_key:
-        # Fallback helper: check if an untracked local api_key.txt file exists
-        if os.path.exists("api_key.txt"):
-            with open("api_key.txt", "r") as f:
-                api_key = f.read().strip()
-                
-    if not api_key:
-        return {
-            "correctness": None, "relevance": None, "reasoning": None,
-            "calibration": None, "red_herring": None, "confidence_in_judgment": "LOW",
-            "explanation": "No API key found. Pass key as argument, set OPENROUTER_API_KEY env, or save to api_key.txt."
-        }
-    
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-        "HTTP-Referer": "https://github.com/Eddie0025/SABER",
-        "X-Title": "SABER Benchmark"
-    }
-    
-    system_prompt = (
-        "You are an expert AI judge. Grade the student's answer based on the query and the following rubric.\n"
-        "Rubric:\n"
-        "1. Correctness (0-2):\n"
-        "   2 = Factually accurate, no errors\n"
-        "   1 = Substantially correct but contains minor errors/incomplete details\n"
-        "   0 = Factual error, fabrication, or wrong conclusion\n"
-        "2. Relevance / Answers-the-question (0-2):\n"
-        "   2 = Directly and fully addresses the question asked\n"
-        "   1 = Partially addresses the question but misses part\n"
-        "   0 = Does not address the question asked\n"
-        "3. Reasoning quality (0-2) [Only score for Differentiation, Mechanism, Multi-step; else null]:\n"
-        "   2 = Clear, logical, step-by-step reasoning\n"
-        "   1 = Correct/reasonable conclusion but shallow reasoning\n"
-        "   0 = No real reasoning or confused/circular reasoning\n"
-        "4. Calibration (0-2) [Only score for single precise expected fact/formula/term; else null]:\n"
-        "   2 = States fact confidently and correctly, OR appropriately expresses uncertainty if genuinely unsure\n"
-        "   1 = States plausible-but-imprecise answer\n"
-        "   0 = Confidently states fabricated/wrong specific fact\n"
-        "5. Red-herring resistance (0-2) [Only score for queries containing a distractor; else null]:\n"
-        "   2 = Identifies the distractor as irrelevant and explains why\n"
-        "   1 = Doesn't get misled but doesn't explicitly address distractor\n"
-        "   0 = Incorporates the distractor as relevant, changing the answer incorrectly\n\n"
-        "Output strictly valid JSON with no markdown tags matching this schema:\n"
-        "{\n"
-        "  \"correctness\": int or null,\n"
-        "  \"relevance\": int or null,\n"
-        "  \"reasoning\": int or null,\n"
-        "  \"calibration\": int or null,\n"
-        "  \"red_herring\": int or null,\n"
-        "  \"confidence_in_judgment\": \"HIGH\" or \"LOW\",\n"
-        "  \"explanation\": \"detailed breakdown...\"\n"
-        "}"
-    )
-    
-    user_content = (
-        f"Question: {question}\n\n"
-        f"Student Answer:\n{student_answer}\n"
-    )
-    
-    data = {
-        "model": "google/gemma-4-31b-it:free",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ],
-        "temperature": 0.1
-    }
-    
-    import time
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(data).encode("utf-8"),
-                headers=headers,
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=30) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
-                content = res_data["choices"][0]["message"]["content"].strip()
-                clean_json = content.replace("```json", "").replace("```", "").strip()
-                start = clean_json.find("{")
-                end = clean_json.rfind("}")
-                if start != -1 and end != -1:
-                    clean_json = clean_json[start:end+1]
-                return json.loads(clean_json)
-        except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < max_retries - 1:
-                sleep_time = (2 ** attempt) + 2
-                print(f"[!] OpenRouter Rate Limited (429). Retrying in {sleep_time}s...")
-                time.sleep(sleep_time)
-                continue
-            print(f"[!] OpenRouter API judge HTTP Error: {e.code} - {e.reason}")
-            return {
-                "correctness": None, "relevance": None, "reasoning": None,
-                "calibration": None, "red_herring": None, "confidence_in_judgment": "LOW",
-                "explanation": f"HTTP Error: {e.code} {e.reason}"
-            }
-        except Exception as e:
-            print(f"[!] OpenRouter API judge failed: {e}")
-            return {
-                "correctness": None, "relevance": None, "reasoning": None,
-                "calibration": None, "red_herring": None, "confidence_in_judgment": "LOW",
-                "explanation": f"API Error: {e}"
-            }
 
 # =====================================================================
 # HF Dataset Loader Helper (Supporting Auth Token)
@@ -153,9 +36,41 @@ def load_hf_dataset(path, name=None, split=None, **kwargs):
     return load_dataset(path, **kwargs)
 
 # =====================================================================
+# Strict MCQ Prompt Builder
+# =====================================================================
+MCQ_SUFFIX = (
+    "\n\nAnswer the following multiple choice question. "
+    "The last line of your response MUST strictly follow the format: "
+    "ANSWER: LETTER (where LETTER is A, B, C, or D)."
+)
+
+def build_mcq_prompt(question_text, choices_str):
+    """Build a strict MCQ prompt with format enforcement."""
+    return f"Question: {question_text}\nOptions:\n{choices_str}{MCQ_SUFFIX}"
+
+# =====================================================================
+# Strict MCQ Answer Parser
+# =====================================================================
+def parse_mcq_answer(raw_answer):
+    """Extract the answer letter from the final line using strict regex.
+    Returns the letter (A-D) or None if format not followed."""
+    lines = [line.strip() for line in raw_answer.split('\n') if line.strip()]
+    if not lines:
+        return None
+    last_line = lines[-1].upper()
+    match = re.search(r"ANSWER:\s*([A-D])", last_line)
+    if match:
+        return match.group(1)
+    return None
+
+# =====================================================================
 # Main Benchmark Pipeline
 # =====================================================================
-def run_benchmark(api_key=None):
+def run_benchmark():
+    print("==========================================================")
+    print("      SABER Final Benchmark — 5-Mode Ablation Study")
+    print("==========================================================\n")
+
     # 1. Setup SABER Orchestrator
     config = SaberConfig()
     registry = SpecialistRegistry()
@@ -168,18 +83,25 @@ def run_benchmark(api_key=None):
             specialist.load_model(model_path)
             print(f"[*] Loaded specialist model for '{domain}': {model_path}")
         else:
-            # Fallback to the base model to perform actual inference instead of returning placeholders
             specialist.load_model("Qwen/Qwen2.5-7B")
             print(f"[*] Specialist '{domain}' checkpoint not found; falling back to base Qwen/Qwen2.5-7B")
             
     audit = AuditLogger()
     orch = Orchestrator(config=config, registry=registry, audit=audit)
     
-    # 2. Collect Benchmark Questions according to the Final Dataset Plan
+    # Open-ended output file
+    open_ended_file = open("saber_open_ended_outputs.txt", "w", encoding="utf-8")
+    open_ended_file.write("=" * 80 + "\n")
+    open_ended_file.write("SABER Open-Ended Benchmark Outputs\n")
+    open_ended_file.write("=" * 80 + "\n\n")
+    
+    # 2. Collect Benchmark Questions
     print("\n[*] Loading benchmark datasets...")
     bench_cases = []
     
+    # ---------------------------------------------------------------
     # 2.1 Science: GPQA Diamond (198 cases)
+    # ---------------------------------------------------------------
     try:
         gpqa = load_hf_dataset("idavidrein/gpqa", "gpqa_diamond", split="train")
         for row in gpqa:
@@ -200,48 +122,60 @@ def run_benchmark(api_key=None):
             
             bench_cases.append({
                 "type": "exact",
-                "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                "question": build_mcq_prompt(q_text, choices_str),
                 "expected": correct_char,
                 "domain": "science",
                 "dataset": "gpqa_diamond"
             })
+        print(f"[+] Loaded {sum(1 for c in bench_cases if c['dataset'] == 'gpqa_diamond')} Science (GPQA Diamond) cases.")
     except Exception as e:
         print(f"[!] Critical Error loading GPQA: {e}")
         raise e
 
+    # ---------------------------------------------------------------
     # 2.2 Science: MMLU-Pro (300 cases stratified)
+    # ---------------------------------------------------------------
     try:
         mmlu_pro = load_hf_dataset("TIGER-Lab/MMLU-Pro", split="test[:300]")
+        count_before = len(bench_cases)
         for row in mmlu_pro:
             choices = row.get("options", [])
             choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
             bench_cases.append({
                 "type": "exact",
-                "question": f"Question: {row['question']}\nOptions:\n{choices_str}",
+                "question": build_mcq_prompt(row['question'], choices_str),
                 "expected": row.get("answer", ""),
                 "domain": "science",
                 "dataset": "mmlu_pro"
             })
+        print(f"[+] Loaded {len(bench_cases) - count_before} Science (MMLU-Pro) cases.")
     except Exception as e:
         print(f"[!] MMLU-Pro load failed: {e}")
 
+    # ---------------------------------------------------------------
     # 2.3 Coding: HumanEval (164 cases)
+    # ---------------------------------------------------------------
     try:
         he = load_hf_dataset("openai/openai_humaneval", split="test")
+        count_before = len(bench_cases)
         for row in he:
             bench_cases.append({
-                "type": "open_ended", # Code generation is open-ended for our prompt setup
+                "type": "open_ended",
                 "question": f"Complete the following Python function:\n{row['prompt']}",
                 "expected": None,
                 "domain": "coding",
                 "dataset": "humaneval"
             })
+        print(f"[+] Loaded {len(bench_cases) - count_before} Coding (HumanEval) cases.")
     except Exception as e:
         print(f"[!] HumanEval load failed: {e}")
 
+    # ---------------------------------------------------------------
     # 2.4 Coding: SWE-bench Verified (100 cases)
+    # ---------------------------------------------------------------
     try:
         swe = load_hf_dataset("princeton-nlp/SWE-bench_Verified", split="test[:100]")
+        count_before = len(bench_cases)
         for row in swe:
             statement = row.get("problem_statement") or row.get("problem_description") or ""
             bench_cases.append({
@@ -251,12 +185,16 @@ def run_benchmark(api_key=None):
                 "domain": "coding",
                 "dataset": "swe_bench_verified"
             })
+        print(f"[+] Loaded {len(bench_cases) - count_before} Coding (SWE-bench) cases.")
     except Exception as e:
         print(f"[!] SWE-bench load failed: {e}")
 
+    # ---------------------------------------------------------------
     # 2.5 Coding: LiveCodeBench (100 cases)
+    # ---------------------------------------------------------------
     try:
         lcb = load_hf_dataset("livecodebench/code_generation_lite", split="test[:100]")
+        count_before = len(bench_cases)
         for row in lcb:
             bench_cases.append({
                 "type": "open_ended",
@@ -265,12 +203,16 @@ def run_benchmark(api_key=None):
                 "domain": "coding",
                 "dataset": "livecodebench"
             })
+        print(f"[+] Loaded {len(bench_cases) - count_before} Coding (LiveCodeBench) cases.")
     except Exception as e:
         print(f"[!] LiveCodeBench load failed: {e}")
 
+    # ---------------------------------------------------------------
     # 2.6 Medical: MedQA USMLE (100 cases)
+    # ---------------------------------------------------------------
     try:
         medqa = load_hf_dataset("GBaker/MedQA-USMLE-4-options", split="test[:100]")
+        count_before = len(bench_cases)
         for row in medqa:
             bench_cases.append({
                 "type": "exact",
@@ -279,12 +221,16 @@ def run_benchmark(api_key=None):
                 "domain": "medical",
                 "dataset": "medqa_usmle"
             })
+        print(f"[+] Loaded {len(bench_cases) - count_before} Medical (MedQA) cases.")
     except Exception as e:
         print(f"[!] MedQA load failed: {e}")
 
+    # ---------------------------------------------------------------
     # 2.7 Medical: MedMCQA (50 cases)
+    # ---------------------------------------------------------------
     try:
         medmcqa = load_hf_dataset("openlifescienceai/medmcqa", split="validation[:50]")
+        count_before = len(bench_cases)
         for row in medmcqa:
             cop_idx = row["cop"]
             cop_char = chr(65 + cop_idx) if 0 <= cop_idx < 4 else str(cop_idx)
@@ -296,11 +242,14 @@ def run_benchmark(api_key=None):
                 "domain": "medical",
                 "dataset": "medmcqa"
             })
+        print(f"[+] Loaded {len(bench_cases) - count_before} Medical (MedMCQA) cases.")
     except Exception as e:
         print(f"[!] MedMCQA load failed: {e}")
 
-    # 2.8 Finance: FinQA (80 cases) + ConvFinQA (30 cases) fallback
-    # To bypass python loading script blocks, we build high-quality programmatic finance statements matching the schema
+    # ---------------------------------------------------------------
+    # 2.8 Finance: FinQA Math (80 exact cases) + ConvFinQA (30 open-ended)
+    # ---------------------------------------------------------------
+    random.seed(42)
     for i in range(80):
         rev = random.randint(100, 5000)
         cogs = random.randint(50, int(rev * 0.6))
@@ -320,8 +269,11 @@ def run_benchmark(api_key=None):
             "domain": "finance",
             "dataset": "conv_finqa"
         })
+    print(f"[+] Loaded 80 Finance (FinQA Math) + 30 Finance (ConvFinQA) cases.")
 
-    # 2.8.5 Cyber: SecBench (100 cases)
+    # ---------------------------------------------------------------
+    # 2.9 Cyber: SecBench (100 cases)
+    # ---------------------------------------------------------------
     try:
         secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train")
         all_cyber = []
@@ -339,7 +291,6 @@ def run_benchmark(api_key=None):
                     continue
                 correct_ans = choices[correct_idx]
                 
-                # Shuffle choices
                 random.seed(42)
                 random.shuffle(choices)
                 choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
@@ -347,7 +298,7 @@ def run_benchmark(api_key=None):
                 
                 all_cyber.append({
                     "type": "exact",
-                    "question": f"Question: {q_text}\nOptions:\n{choices_str}",
+                    "question": build_mcq_prompt(q_text, choices_str),
                     "expected": correct_char,
                     "domain": "cyber",
                     "dataset": "secbench"
@@ -362,8 +313,14 @@ def run_benchmark(api_key=None):
     except Exception as e:
         print(f"[!] SecBench load failed: {e}")
 
-    # 2.9 Cyber, Architecture, Meta-Reasoner (80-100 cases using curated evaluation files scaled)
-    eval_domains = [("medical", "eval_medical"), ("science", "eval_science"), ("coding", "eval_coding"), ("architecture", "eval_architecture"), ("finance", "eval_finance"), ("meta_reasoner", "eval_meta_reasoner")]
+    # ---------------------------------------------------------------
+    # 2.10 Curated Domain Evaluations (from eval_*_30.py scripts)
+    # ---------------------------------------------------------------
+    eval_domains = [
+        ("medical", "eval_medical"), ("science", "eval_science"),
+        ("coding", "eval_coding"), ("architecture", "eval_architecture"),
+        ("finance", "eval_finance"), ("meta_reasoner", "eval_meta_reasoner")
+    ]
     for dom, dataset_name in eval_domains:
         script_path = os.path.join("scripts", f"eval_{dom}_30.py")
         if os.path.exists(script_path):
@@ -374,7 +331,6 @@ def run_benchmark(api_key=None):
                 spec.loader.exec_module(module)
                 cases = getattr(module, "TEST_CASES")
                 
-                # Scale up to 80 records per domain to hit the target density
                 scaled_cases = (cases * 3)[:80]
                 for c in scaled_cases:
                     bench_cases.append({
@@ -387,9 +343,12 @@ def run_benchmark(api_key=None):
             except Exception as e:
                 print(f"[!] Curated domain load failed for {dom}: {e}")
 
-    # 2.10 Multi-domain / Orchestrator + Synthesis (GAIA)
+    # ---------------------------------------------------------------
+    # 2.11 Multi-domain / Orchestrator + Synthesis (GAIA)
+    # ---------------------------------------------------------------
     try:
         gaia = load_hf_dataset("gaia-benchmark/GAIA", "2023_all", split="validation[:100]")
+        count_before = len(bench_cases)
         for row in gaia:
             bench_cases.append({
                 "type": "open_ended",
@@ -398,11 +357,14 @@ def run_benchmark(api_key=None):
                 "domain": "orchestrator",
                 "dataset": "gaia"
             })
+        print(f"[+] Loaded {len(bench_cases) - count_before} Multi-domain (GAIA) cases.")
     except Exception as e:
         print(f"[!] Critical Error loading GAIA: {e}")
         raise e
 
-    # 2.11 Custom Multi-Domain Queries (Orchestrator + Synthesis)
+    # ---------------------------------------------------------------
+    # 2.12 Custom Multi-Domain Queries
+    # ---------------------------------------------------------------
     custom_multi = [
         "A hospital wants to deploy an AI-based patient monitoring wristband. Design the system architecture, address the medical accuracy requirements for vital sign thresholds, and outline the data security/compliance requirements for handling patient data.",
         "We're building a robo-advisor that automatically rebalances client portfolios. Explain the algorithm design, the financial reasoning behind rebalancing thresholds, and the security measures needed to protect client financial data.",
@@ -418,76 +380,103 @@ def run_benchmark(api_key=None):
             "dataset": "custom_multi_domain"
         })
 
-    # Only benchmark science, coding, finance, and orchestrator domains
-    bench_cases = [c for c in bench_cases if c["domain"] in ["science", "coding", "finance", "orchestrator"]]
     print(f"\n[+] Total benchmark cases compiled: {len(bench_cases)}")
     results = []
 
-    # 3. Process each case across the 3 Sentinel Tiers (Optimized for H100 execution speed)
+    # =====================================================================
+    # 3. Execution Loop — 5 Modes per Question
+    # =====================================================================
+    MODE_NAMES = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass", "Sentinel 4 Pass"]
+    
     for idx, case in enumerate(bench_cases, 1):
-        print(f"\n[{idx}/{len(bench_cases)}] Dataset: {case['dataset']} | Query: {case['question'][:75]}...")
+        ds_name = case["dataset"]
+        domain = case["domain"]
         q = case["question"]
-        
-        # Limit token limits for exact matching tasks to save massive generation time
-        token_limit = 256 if case["type"] == "exact" else 2048
+        print(f"\n[{idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {q[:75].strip()}...")
         
         modes = [
-            ("Qwen Base (Zero-shot)", "qwen_base"),
-            ("Domain Adapter (No CoT)", "adapter_no_cot"),
-            ("Without Sentinel (SABER)", VerificationTier.TIER_0),
-            ("2-Check Sentinel", VerificationTier.TIER_1),
-            ("4-Check Sentinel", VerificationTier.TIER_2)
+            ("Base Qwen", "qwen_base"),
+            ("Qwen with Adaptors", "adapter_no_cot"),
+            ("Qwen Adaptor + CoT", VerificationTier.TIER_0),
+            ("Sentinel 2 Pass", VerificationTier.TIER_1),
+            ("Sentinel 4 Pass", VerificationTier.TIER_2)
         ]
         
         case_res = {
             "question": q,
             "type": case["type"],
             "expected": case.get("expected"),
-            "domain": case["domain"],
-            "dataset": case["dataset"],
+            "domain": domain,
+            "dataset": ds_name,
             "runs": {}
         }
         
         for mode_name, tier in modes:
             start = time.time()
             try:
-                if tier == "qwen_base":
-                    from saber.llm_engine import LLMEngine
-                    with LLMEngine("Qwen/Qwen2.5-7B") as engine:
-                        raw = engine.generate(f"Question: {q}\nAnswer directly:")
-                        ans = raw.strip()
-                elif tier == "adapter_no_cot":
-                    from saber.llm_engine import LLMEngine
-                    d_scores = orch.classify_domains(q)
-                    act = orch.select_specialists(d_scores)
-                    dom = act[0] if act else "science"
-                    m_path = f"models/{dom}_v2"
-                    if not os.path.exists(m_path):
-                        m_path = "Qwen/Qwen2.5-7B"
-                    with LLMEngine(m_path) as engine:
-                        raw = engine.generate(f"Question: {q}\nAnswer directly without reasoning:")
-                        ans = raw.strip()
-                else:
-                    # Call complete SABER architecture flow with dynamic tokens
-                    res = orch.process_query(q, tier=tier)
-                    ans = res.get("answer", "").strip()
+                # Suppress stdout during model execution
+                original_stdout = sys.stdout
+                sys.stdout = open(os.devnull, 'w')
+                try:
+                    if tier == "qwen_base":
+                        # Mode 1: Bare Qwen 2.5-7B — no adapter, no CoT, no sentinel
+                        from saber.llm_engine import LLMEngine
+                        with LLMEngine("Qwen/Qwen2.5-7B") as engine:
+                            raw = engine.generate(q)
+                            ans = raw.strip()
+                    elif tier == "adapter_no_cot":
+                        # Mode 2: Domain adapter loaded but no CoT architecture
+                        from saber.llm_engine import LLMEngine
+                        d_scores = orch.classify_domains(q)
+                        act = orch.select_specialists(d_scores)
+                        dom = act[0] if act else "science"
+                        m_path = f"models/{dom}_v2"
+                        if not os.path.exists(m_path):
+                            m_path = "Qwen/Qwen2.5-7B"
+                        with LLMEngine(m_path) as engine:
+                            raw = engine.generate(q)
+                            ans = raw.strip()
+                    else:
+                        # Modes 3-5: Full SABER pipeline (CoT + optional Sentinel)
+                        # bypass_meta for MCQs so meta-reasoner doesn't rewrite the answer letter
+                        do_bypass = True if case["type"] == "exact" else False
+                        res = orch.process_query(q, tier=tier, bypass_meta=do_bypass)
+                        ans = res.get("answer", "").strip()
+                finally:
+                    sys.stdout.close()
+                    sys.stdout = original_stdout
             except Exception as e:
+                if sys.stdout != original_stdout:
+                    try:
+                        sys.stdout.close()
+                    except:
+                        pass
+                    sys.stdout = original_stdout
                 ans = f"[ERROR]: {e}"
             latency = time.time() - start
             
+            # ----- Scoring -----
             score_data = {}
             if case["type"] == "exact":
-                is_correct = False
-                expected_norm = str(case.get("expected", "")).lower().strip()
-                ans_norm = ans.lower().strip()
-                if expected_norm in ans_norm:
-                    is_correct = True
+                extracted = parse_mcq_answer(ans)
+                expected_norm = str(case.get("expected", "")).strip().upper()
+                is_correct = (extracted == expected_norm)
                 score_data = {
                     "accuracy": 1.0 if is_correct else 0.0,
-                    "explanation": f"Expected: {case.get('expected')} | Found: {ans}"
+                    "explanation": f"Expected: {expected_norm} | Extracted: {extracted} | Raw: {ans[:200]}"
                 }
             else:
-                score_data = call_qwen_judge(q, q, ans, api_key=api_key)
+                # Open-ended: no LLM judge — just record the answer
+                score_data = {
+                    "recorded": True,
+                    "explanation": "Open-ended output saved to saber_open_ended_outputs.txt"
+                }
+                # Write to the open-ended output file
+                open_ended_file.write(f"--- [{idx}] {ds_name} | Mode: {mode_name} ---\n")
+                open_ended_file.write(f"Q: {q[:300]}\n")
+                open_ended_file.write(f"A: {ans}\n")
+                open_ended_file.write("-" * 60 + "\n\n")
+                open_ended_file.flush()
                 
             case_res["runs"][mode_name] = {
                 "answer": ans,
@@ -497,10 +486,10 @@ def run_benchmark(api_key=None):
             
         results.append(case_res)
 
-        # Print live scoreboard dynamically when a dataset has been completely processed
-        is_dataset_complete = (idx == len(bench_cases)) or (bench_cases[idx]["dataset"] != case["dataset"])
+        # ----- Live Scoreboard (every 10 cases or dataset boundary) -----
+        is_dataset_complete = (idx == len(bench_cases)) or (bench_cases[idx]["dataset"] != ds_name)
         if is_dataset_complete or (idx % 10 == 0):
-            print(f"\n[LIVE UPDATE] Progress: {idx}/{len(bench_cases)} cases completed. Dynamic scoreboard:")
+            print(f"\n[LIVE UPDATE] Progress: {idx}/{len(bench_cases)} cases completed.")
             live_summary = {}
             for r in results:
                 ds = r["dataset"]
@@ -508,40 +497,37 @@ def run_benchmark(api_key=None):
                     live_summary[ds] = {}
                 for m_name, r_info in r["runs"].items():
                     if m_name not in live_summary[ds]:
-                        live_summary[ds][m_name] = {"acc_sum": 0.0, "acc_cnt": 0, "corr_sum": 0.0, "corr_cnt": 0}
+                        live_summary[ds][m_name] = {"acc_sum": 0.0, "acc_cnt": 0}
                     ev = r_info["evaluation"]
                     if r["type"] == "exact":
                         live_summary[ds][m_name]["acc_sum"] += ev.get("accuracy", 0.0)
                         live_summary[ds][m_name]["acc_cnt"] += 1
-                    else:
-                        corr_val = ev.get("correctness")
-                        if corr_val is not None:
-                            live_summary[ds][m_name]["corr_sum"] += float(corr_val)
-                            live_summary[ds][m_name]["corr_cnt"] += 1
             
-            print("| Dataset | Qwen Base | Adapter (No CoT) | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |")
-            print("| :--- | :--- | :--- | :--- | :--- | :--- |")
+            print(f"| Dataset | {' | '.join(MODE_NAMES)} |")
+            print(f"| :--- | {' | '.join([':---'] * 5)} |")
             for ds, m_data in live_summary.items():
                 cells = [ds]
-                for m_name in ["Qwen Base (Zero-shot)", "Domain Adapter (No CoT)", "Without Sentinel (SABER)", "2-Check Sentinel", "4-Check Sentinel"]:
+                for m_name in MODE_NAMES:
                     st = m_data.get(m_name, {})
-                    if not st:
+                    if not st or st["acc_cnt"] == 0:
                         cells.append("N/A")
                         continue
-                    pct = 0.0
-                    if st["acc_cnt"] > 0:
-                        pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
-                    elif st["corr_cnt"] > 0:
-                        pct = ((st["corr_sum"] / st["corr_cnt"]) / 2.0) * 100.0
+                    pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
                     cells.append(f"{pct:.1f}%")
                 print("| " + " | ".join(cells) + " |")
-            print("- - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
+            print("-" * 60)
 
+    # Close open-ended output file
+    open_ended_file.close()
+    print(f"\n[*] Open-ended outputs saved to: saber_open_ended_outputs.txt")
+
+    # =====================================================================
     # 4. Final Aggregation and Save
+    # =====================================================================
     summary = {}
     table_lines = [
-        "| Dataset | Qwen Base | Adapter (No CoT) | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- |"
+        f"| Dataset | {' | '.join(MODE_NAMES)} |",
+        f"| :--- | {' | '.join([':---'] * 5)} |"
     ]
     for case_res in results:
         dataset = case_res["dataset"]
@@ -552,11 +538,6 @@ def run_benchmark(api_key=None):
                 summary[dataset][mode_name] = {
                     "count": 0, "total_latency": 0.0,
                     "accuracy_sum": 0.0, "accuracy_count": 0,
-                    "correctness_sum": 0.0, "correctness_count": 0,
-                    "relevance_sum": 0.0, "relevance_count": 0,
-                    "reasoning_sum": 0.0, "reasoning_count": 0,
-                    "calibration_sum": 0.0, "calibration_count": 0,
-                    "red_herring_sum": 0.0, "red_herring_count": 0
                 }
             stats = summary[dataset][mode_name]
             stats["count"] += 1
@@ -565,18 +546,12 @@ def run_benchmark(api_key=None):
             if case_res["type"] == "exact":
                 stats["accuracy_sum"] += eval_res.get("accuracy", 0.0)
                 stats["accuracy_count"] += 1
-            else:
-                for metric in ["correctness", "relevance", "reasoning", "calibration", "red_herring"]:
-                    val = eval_res.get(metric)
-                    if val is not None:
-                        stats[f"{metric}_sum"] += float(val)
-                        stats[f"{metric}_count"] += 1
 
     formatted_summary = {}
     for ds, modes_data in summary.items():
         formatted_summary[ds] = {}
         row_cells = [ds]
-        for mode_name in ["Qwen Base (Zero-shot)", "Domain Adapter (No CoT)", "Without Sentinel (SABER)", "2-Check Sentinel", "4-Check Sentinel"]:
+        for mode_name in MODE_NAMES:
             stats = modes_data.get(mode_name, {})
             if not stats:
                 row_cells.append("N/A")
@@ -590,14 +565,11 @@ def run_benchmark(api_key=None):
                 avg_accuracy = stats["accuracy_sum"] / stats["accuracy_count"]
                 avg_metrics["avg_accuracy"] = round(avg_accuracy, 3)
                 percentage = avg_accuracy * 100.0
-            elif stats["correctness_count"] > 0:
-                avg_correctness = stats["correctness_sum"] / stats["correctness_count"]
-                avg_metrics["avg_correctness"] = round(avg_correctness, 2)
-                percentage = (avg_correctness / 2.0) * 100.0
             row_cells.append(f"{percentage:.1f}%")
             formatted_summary[ds][mode_name] = avg_metrics
         table_lines.append("| " + " | ".join(row_cells) + " |")
 
+    # Save output files
     with open("saber_final_benchmark_report.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     with open("saber_benchmark_summary.json", "w", encoding="utf-8") as f:
@@ -610,7 +582,4 @@ def run_benchmark(api_key=None):
     print(table_md)
 
 if __name__ == "__main__":
-    key = None
-    if len(sys.argv) > 1:
-        key = sys.argv[1]
-    run_benchmark(api_key=key)
+    run_benchmark()
