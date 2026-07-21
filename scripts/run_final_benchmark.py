@@ -432,7 +432,9 @@ def run_benchmark(api_key=None):
         token_limit = 256 if case["type"] == "exact" else 2048
         
         modes = [
-            ("Without Sentinel", VerificationTier.TIER_0),
+            ("Qwen Base (Zero-shot)", "qwen_base"),
+            ("Domain Adapter (No CoT)", "adapter_no_cot"),
+            ("Without Sentinel (SABER)", VerificationTier.TIER_0),
             ("2-Check Sentinel", VerificationTier.TIER_1),
             ("4-Check Sentinel", VerificationTier.TIER_2)
         ]
@@ -449,9 +451,26 @@ def run_benchmark(api_key=None):
         for mode_name, tier in modes:
             start = time.time()
             try:
-                # Call complete SABER architecture flow with dynamic tokens
-                res = orch.process_query(q, tier=tier)
-                ans = res.get("answer", "").strip()
+                if tier == "qwen_base":
+                    from saber.llm_engine import LLMEngine
+                    with LLMEngine("Qwen/Qwen2.5-7B") as engine:
+                        raw = engine.generate(f"Question: {q}\nAnswer directly:")
+                        ans = raw.strip()
+                elif tier == "adapter_no_cot":
+                    from saber.llm_engine import LLMEngine
+                    d_scores = orch.classify_domains(q)
+                    act = orch.select_specialists(d_scores)
+                    dom = act[0] if act else "science"
+                    m_path = f"models/{dom}_v2"
+                    if not os.path.exists(m_path):
+                        m_path = "Qwen/Qwen2.5-7B"
+                    with LLMEngine(m_path) as engine:
+                        raw = engine.generate(f"Question: {q}\nAnswer directly without reasoning:")
+                        ans = raw.strip()
+                else:
+                    # Call complete SABER architecture flow with dynamic tokens
+                    res = orch.process_query(q, tier=tier)
+                    ans = res.get("answer", "").strip()
             except Exception as e:
                 ans = f"[ERROR]: {e}"
             latency = time.time() - start
@@ -500,11 +519,11 @@ def run_benchmark(api_key=None):
                             live_summary[ds][m_name]["corr_sum"] += float(corr_val)
                             live_summary[ds][m_name]["corr_cnt"] += 1
             
-            print("| Dataset | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |")
-            print("| :--- | :--- | :--- | :--- |")
+            print("| Dataset | Qwen Base | Adapter (No CoT) | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |")
+            print("| :--- | :--- | :--- | :--- | :--- | :--- |")
             for ds, m_data in live_summary.items():
                 cells = [ds]
-                for m_name in ["Without Sentinel", "2-Check Sentinel", "4-Check Sentinel"]:
+                for m_name in ["Qwen Base (Zero-shot)", "Domain Adapter (No CoT)", "Without Sentinel (SABER)", "2-Check Sentinel", "4-Check Sentinel"]:
                     st = m_data.get(m_name, {})
                     if not st:
                         cells.append("N/A")
@@ -521,8 +540,8 @@ def run_benchmark(api_key=None):
     # 4. Final Aggregation and Save
     summary = {}
     table_lines = [
-        "| Dataset | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |",
-        "| :--- | :--- | :--- | :--- |"
+        "| Dataset | Qwen Base | Adapter (No CoT) | Without Sentinel (SABER) | 2-Check Sentinel | 4-Check Sentinel |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |"
     ]
     for case_res in results:
         dataset = case_res["dataset"]
@@ -557,7 +576,7 @@ def run_benchmark(api_key=None):
     for ds, modes_data in summary.items():
         formatted_summary[ds] = {}
         row_cells = [ds]
-        for mode_name in ["Without Sentinel", "2-Check Sentinel", "4-Check Sentinel"]:
+        for mode_name in ["Qwen Base (Zero-shot)", "Domain Adapter (No CoT)", "Without Sentinel (SABER)", "2-Check Sentinel", "4-Check Sentinel"]:
             stats = modes_data.get(mode_name, {})
             if not stats:
                 row_cells.append("N/A")
