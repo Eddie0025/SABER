@@ -157,26 +157,78 @@ _DOMAIN_SYSTEM_PROMPTS: Dict[str, str] = {
 }
 
 
+def align_record_to_benchmark(text: str, label: str) -> tuple[str, str]:
+    """Helper to convert raw training prompts and labels to strict benchmark formatting."""
+    import re
+    # 1. Check if the question is an MCQ (contains A, B, C, D choices)
+    options_match = re.findall(r"(?:^|\n)\s*([A-D])\s*[\)\.\:\-\]]\s*(.*)", text)
+    
+    first_opt_idx = len(text)
+    for opt_char in ["A)", "A.", "A:", "A-", "(A)", "[A]"]:
+        idx = text.find(opt_char)
+        if idx != -1 and idx < first_opt_idx:
+            first_opt_idx = idx
+            
+    question_part = text[:first_opt_idx].strip()
+    question_part = re.sub(r"^\[(?:Science|Cyber|Medical|Finance|Coding|Architecture)\]\s*", "", question_part).strip()
+    
+    if len(options_match) >= 2:
+        options_dict = {}
+        for letter, val in options_match:
+            val_clean = val.split("\n")[0].strip()
+            options_dict[letter] = val_clean
+            
+        choices_list = []
+        for l in ["A", "B", "C", "D"]:
+            if l in options_dict:
+                choices_list.append(f"{l}: {options_dict[l]}")
+        choices_str = "\n".join(choices_list)
+        
+        new_text = (
+            f"Question: {question_part}\n"
+            f"Options:\n{choices_str}\n\n"
+            "Answer the following multiple choice question. The last line of your response MUST strictly follow the format: ANSWER: LETTER (where LETTER is A, B, C, or D)."
+        )
+        
+        correct_letter = None
+        for l, val in options_dict.items():
+            if val.lower() in label.lower() or f"{l})" in label or f"is {l}" in label:
+                correct_letter = l
+                break
+                
+        if not correct_letter:
+            letter_match = re.search(r"\b([A-D])\b", label.upper())
+            if letter_match:
+                correct_letter = letter_match.group(1)
+                
+        if correct_letter:
+            if "## Step" in label or "step" in label.lower() or "reasoning" in label.lower() or len(label) > 100:
+                new_label = f"{label}\n\nANSWER: {correct_letter}"
+            else:
+                new_label = f"ANSWER: {correct_letter}"
+        else:
+            new_label = label
+            
+        return new_text, new_label
+        
+    elif "calculate" in question_part.lower() or "what is" in question_part.lower():
+        numbers = re.findall(r"\d+", label)
+        if numbers:
+            correct_val = numbers[-1]
+            if len(label) > 50:
+                new_label = f"{label}\n\nANSWER: {correct_val}"
+            else:
+                new_label = f"ANSWER: {correct_val}"
+            return text, new_label
+            
+    return text, label
+
+
 def format_for_sft(
     records: List[Dict[str, Any]],
     domain: str,
 ) -> List[Dict[str, str]]:
-    """Format raw records into Qwen2.5 ChatML strings for SFTTrainer.
-
-    Each record is turned into a single ``text`` field containing:
-
-    .. code-block:: text
-
-        <|im_start|>system
-        {domain system prompt}<|im_end|>
-        <|im_start|>user
-        {question}<|im_end|>
-        <|im_start|>assistant
-        {answer}<|im_end|>
-
-    This teaches the model to follow instructions within its native
-    chat template, which is critical for inference-time behaviour.
-    """
+    """Format raw records into Qwen2.5 ChatML strings for SFTTrainer."""
     system_prompt = _DOMAIN_SYSTEM_PROMPTS.get(
         domain,
         "You are a helpful AI assistant. Think step by step.",
@@ -188,6 +240,9 @@ def format_for_sft(
         label = rec.get("label", "").strip()
         if not text or not label:
             continue
+
+        # Apply strict benchmark format alignment
+        text, label = align_record_to_benchmark(text, label)
 
         conversation = (
             f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
