@@ -62,12 +62,15 @@ class TrainConfig:
     epochs: int = 3
     batch_size: int = 8                     # Per-device; safe for 80 GB H100
     learning_rate: float = 2e-4
-    max_seq_length: int = 2048              # Increased for CoT reasoning chains
-    lora_r: int = 16
-    lora_alpha: int = 32
+    lora_r: int = 64
+    lora_alpha: int = 128
     lora_dropout: float = 0.05
+    use_dora: bool = True
     lora_target_modules: List[str] = field(
-        default_factory=lambda: ["q_proj", "v_proj", "k_proj", "o_proj"]
+        default_factory=lambda: [
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj"
+        ]
     )
     gradient_accumulation_steps: int = 4    # Effective batch = 8 × 4 = 32
     warmup_ratio: float = 0.03
@@ -358,13 +361,14 @@ def train(cfg: TrainConfig) -> str:
         attn_implementation=attn_impl,
     )
 
-    # 2. Apply LoRA -----------------------------------------------------
+    # 2. Apply DoRA / LoRA -----------------------------------------------
     lora_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         lora_dropout=cfg.lora_dropout,
         target_modules=cfg.lora_target_modules,
+        use_dora=cfg.use_dora,
     )
     model = get_peft_model(model, lora_config)
     model.enable_input_require_grads()     # Required for gradient checkpointing + LoRA
