@@ -230,7 +230,7 @@ class Orchestrator:
                 "ambiguity_score": ambiguity,
                 "answer": (
                     "Your query appears ambiguous.  Could you provide more "
-                    "detail or specify the domain (medical, legal, cyber, finance)?"
+                    "detail or specify the domain (science, cyber, finance, coding, architecture)?"
                 ),
                 "confidence": 0.0,
                 "flags": [],
@@ -284,7 +284,7 @@ class Orchestrator:
         if bypass_meta and len(activated) == 1:
             specialist = self.registry.get(activated[0])
             if specialist:
-                self.audit.log("bypass", query_id, {"domain": activated[0]}, "orchestrator")
+                self.audit.log("bypass", query_id, {"domain": activated[0]}, component="orchestrator")
                 
                 # 1. Run Specialist CoT directly
                 from saber.signal import Signal, SignalType
