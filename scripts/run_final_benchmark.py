@@ -239,7 +239,6 @@ def run_benchmark():
     global_idx = 0
     results = []
     
-    from saber.config import SaberConfig
     from saber.llm_engine import LLMEngine
     from saber.signal import Signal, SignalType
     from saber.sentinel import Sentinel
