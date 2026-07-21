@@ -264,6 +264,11 @@ def run_benchmark():
                 m_path = config.base_model
             specialist.load_model(m_path)
             print(f"[*] Loaded {specialist_class_name} with model: {m_path}")
+            
+            registry = SpecialistRegistry()
+            registry.register(specialist)
+            audit = AuditLogger()
+            orch = Orchestrator(config, registry, audit)
         except Exception as e:
             print(f"[!] Failed to load specialist for {domain}: {e}")
             continue
@@ -333,23 +338,13 @@ def run_benchmark():
                 original_stdout = sys.stdout
                 sys.stdout = open(os.devnull, 'w')
                 try:
-                    task_sig = Signal(
-                        signal_type=SignalType.TASK_SIGNAL,
-                        query_id=f"bench-{global_idx}",
-                        source_id="BENCHMARK",
-                        target_id=domain,
-                        payload={"objective": q}
-                    ).freeze_and_hash()
-                    out_sig = specialist.handle_signal(task_sig)
-                    ans3 = out_sig.payload.get("raw_response", "")
-                    if not ans3 and out_sig.payload.get("claims"):
-                        ans3 = out_sig.payload["claims"][0].get("statement", "")
+                    res3 = orch.process_query(q, tier=VerificationTier.TIER_0, bypass_meta=False)
+                    ans3 = res3.get("answer", "")
                 finally:
                     sys.stdout.close()
                     sys.stdout = original_stdout
             except Exception as e:
                 ans3 = f"[ERROR]: {e}"
-                out_sig = None
                 
             extracted3 = parse_mcq_answer(ans3)
             case_res["runs"]["Qwen Adaptor + CoT"] = {
@@ -362,28 +357,9 @@ def run_benchmark():
             try:
                 original_stdout = sys.stdout
                 sys.stdout = open(os.devnull, 'w')
-                ans4 = ans3
                 try:
-                    if out_sig:
-                        ver_res = sentinel.verify_interpretation(
-                            specialist_domain=domain,
-                            original_signal=out_sig,
-                            compiled_text=ans3,
-                            config=config
-                        )
-                        if ver_res.signal_type == SignalType.FLAG_SIGNAL:
-                            flag_payload = ver_res.payload
-                            flag_payload["compiled_text"] = ans3
-                            ver_sig = Signal(
-                                signal_type=SignalType.VERIFICATION_SIGNAL,
-                                query_id=f"bench-{global_idx}",
-                                source_id="BENCHMARK",
-                                target_id=domain,
-                                payload=flag_payload
-                            ).freeze_and_hash()
-                            resolved_sig = specialist.handle_signal(ver_sig)
-                            if resolved_sig.payload.get("status") == "RESOLVED":
-                                ans4 = resolved_sig.payload.get("revised_text", ans4)
+                    res4 = orch.process_query(q, tier=VerificationTier.TIER_1, bypass_meta=False)
+                    ans4 = res4.get("answer", "")
                 finally:
                     sys.stdout.close()
                     sys.stdout = original_stdout

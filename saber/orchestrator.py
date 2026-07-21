@@ -143,8 +143,7 @@ class Orchestrator:
 
     def _heuristic_classify_domains(self, query: str) -> Dict[str, float]:
         """Fallback keyword-based classifier."""
-        query_clean = query.split("Options:")[0].split("options:")[0]
-        query_lower = query_clean.lower()
+        query_lower = query.lower()
         query_words = set(re.findall(r"\w+", query_lower))
         stemmed_query_words = {self._stem(w) for w in query_words}
         scores: Dict[str, float] = {}

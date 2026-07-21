@@ -72,8 +72,11 @@ class LLMEngine:
             import json
             import os
             config_path = os.path.join(self.model_id_or_path, "adapter_config.json")
-            with open(config_path, "r") as f:
-                base_model = json.load(f)["base_model_name_or_path"]
+            try:
+                with open(config_path, "r") as f:
+                    base_model = json.load(f)["base_model_name_or_path"]
+            except Exception:
+                base_model = "Qwen/Qwen2.5-7B"
             self.tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
