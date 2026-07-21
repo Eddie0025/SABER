@@ -12,7 +12,7 @@ class TestGRPORewardFunctions(unittest.TestCase):
 
     def test_definitive_reward_format_and_outcome(self):
         prompts = ["Question: What is 2+2?\nOptions:\nA: 3\nB: 4\nC: 5\nD: 6"]
-        completions = ["REASONING:\n2+2 equals 4.\n\nANSWER: B"]
+        completions = ["REASONING:\nTo solve what is 2+2, we add the two integers 2 and 2 together step by step to obtain 4, which corresponds to option B.\n\nANSWER: B"]
         expected = ["B"]
 
         rewards = definitive_reward_function(prompts, completions, expected, domain="science")
