@@ -410,10 +410,11 @@ class Specialist:
         }
         system_prompt = sft_prompts.get(self.domain, f"You are an expert {self.domain} specialist. Correct the logic/facts based on feedback.")
         
-        model_path = f"models/{self.domain}_v2"
-        if not os.path.exists(model_path):
-            model_path = "Qwen/Qwen2.5-7B"
-            
+        # Use the base instruct model for verification rewrites since it has superior instruction-following
+        # capabilities, while the specialist adapter is fine-tuned strictly for single-turn domain reasoning.
+        # The prompt already contains the specialist's CoT reasoning draft and Sentinel feedback in plain text.
+        model_path = "Qwen/Qwen2.5-7B-Instruct"
+        
         with LLMEngine(model_path) as engine:
             revised_ans = engine.generate(prompt, system_prompt=system_prompt).strip()
             
