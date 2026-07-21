@@ -113,13 +113,11 @@ class CyberSpecialist(Specialist):
             with LLMEngine(self.meta.model_path) as engine:
                 if os.getenv("SABER_BENCHMARK_MODE") == "1":
                     system_prompt = (
-                        "You are an expert cybersecurity specialist. First, think step by step to deduce the answer. "
-                        "Second, output exactly 3 factual claims that support your reasoning. "
-                        "Finally, state the correct option letter (A, B, C, or D).\n\n"
-                        "Use this strict format:\n"
-                        "REASONING: <your step by step thought process>\n"
-                        "CLAIMS:\n1. <claim 1>\n2. <claim 2>\n3. <claim 3>\n"
-                        "ANSWER: <A, B, C, or D>"
+                        "You are a cybersecurity specialist with expertise in MITRE ATT&CK, "
+                        "incident response, threat intelligence, vulnerability analysis, "
+                        "and digital forensics. Map threats to specific techniques and "
+                        "provide structured analysis. Think through your reasoning "
+                        "step by step before providing your final answer."
                     )
                 else:
                     system_prompt = (

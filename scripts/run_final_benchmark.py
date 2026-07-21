@@ -96,6 +96,34 @@ def parse_mcq_answer(raw_answer):
     return None
 
 # =====================================================================
+# Strict Exact/Numerical Answer Parser
+# =====================================================================
+def parse_exact_answer(raw_answer):
+    """Extract exact/numerical answers from raw response."""
+    lines = [line.strip() for line in raw_answer.split('\n') if line.strip()]
+    if not lines:
+        return ""
+    
+    # Pass 1: check last line for "ANSWER: <value>"
+    last_line = lines[-1].upper()
+    match = re.search(r"ANSWER:\s*(\S+)", last_line)
+    if match:
+        return match.group(1).replace('$', '').replace('M', '').replace('%', '').strip('.,()[]')
+        
+    # Pass 2: check any line for "ANSWER: <value>"
+    for line in reversed(lines):
+        match = re.search(r"ANSWER:\s*(\S+)", line.upper())
+        if match:
+            return match.group(1).replace('$', '').replace('M', '').replace('%', '').strip('.,()[]')
+            
+    # Pass 3: Extract the last sequence of digits/numbers
+    all_numbers = re.findall(r"\d+", raw_answer)
+    if all_numbers:
+        return all_numbers[-1]
+        
+    return raw_answer.strip()
+
+# =====================================================================
 # Main Benchmark Pipeline — MCQ Only
 # =====================================================================
 def run_benchmark():
@@ -273,6 +301,8 @@ def run_benchmark():
         for idx_in_ds, case in enumerate(cases, 1):
             global_idx += 1
             q = case["question"]
+            expected_norm = str(case.get("expected", "")).strip().upper()
+            is_mcq = expected_norm in ["A", "B", "C", "D"]
             print(f"\n[{global_idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {q[:75].strip()}...")
             
             case_res = {
@@ -299,8 +329,7 @@ def run_benchmark():
             except Exception as e:
                 ans1 = f"[ERROR]: {e}"
                 
-            extracted1 = parse_mcq_answer(ans1)
-            expected_norm = str(case.get("expected", "")).strip().upper()
+            extracted1 = parse_mcq_answer(ans1) if is_mcq else parse_exact_answer(ans1)
             case_res["runs"]["Base Qwen"] = {
                 "answer": ans1, "latency": round(time.time()-start, 2),
                 "evaluation": {"accuracy": 1.0 if extracted1 == expected_norm else 0.0}
@@ -321,7 +350,7 @@ def run_benchmark():
             except Exception as e:
                 ans2 = f"[ERROR]: {e}"
                 
-            extracted2 = parse_mcq_answer(ans2)
+            extracted2 = parse_mcq_answer(ans2) if is_mcq else parse_exact_answer(ans2)
             case_res["runs"]["Qwen with Adaptors"] = {
                 "answer": ans2, "latency": round(time.time()-start, 2),
                 "evaluation": {"accuracy": 1.0 if extracted2 == expected_norm else 0.0}
@@ -351,7 +380,7 @@ def run_benchmark():
                 ans3 = f"[ERROR]: {e}"
                 out_sig = None
                 
-            extracted3 = parse_mcq_answer(ans3)
+            extracted3 = parse_mcq_answer(ans3) if is_mcq else parse_exact_answer(ans3)
             case_res["runs"]["Qwen Adaptor + CoT"] = {
                 "answer": ans3, "latency": round(time.time()-start, 2),
                 "evaluation": {"accuracy": 1.0 if extracted3 == expected_norm else 0.0}
@@ -390,7 +419,7 @@ def run_benchmark():
             except Exception as e:
                 ans4 = f"[ERROR]: {e}"
                 
-            extracted4 = parse_mcq_answer(ans4)
+            extracted4 = parse_mcq_answer(ans4) if is_mcq else parse_exact_answer(ans4)
             case_res["runs"]["Sentinel 2 Pass"] = {
                 "answer": ans4, "latency": round(time.time()-start, 2),
                 "evaluation": {"accuracy": 1.0 if extracted4 == expected_norm else 0.0}

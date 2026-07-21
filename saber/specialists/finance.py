@@ -113,13 +113,10 @@ class FinanceSpecialist(Specialist):
             with LLMEngine(self.meta.model_path) as engine:
                 if os.getenv("SABER_BENCHMARK_MODE") == "1":
                     system_prompt = (
-                        "You are an expert financial analyst. First, think step by step to solve the question. "
-                        "Second, output exactly 3 factual claims that support your reasoning. "
-                        "Finally, state the correct numerical answer.\n\n"
-                        "Use this strict format:\n"
-                        "REASONING: <your step by step thought process>\n"
-                        "CLAIMS:\n1. <claim 1>\n2. <claim 2>\n3. <claim 3>\n"
-                        "ANSWER: <numeric value>"
+                        "You are a finance and economics specialist with expertise in corporate "
+                        "finance, market trends, financial mathematics, and economic theory. "
+                        "Make educated, data-driven decisions. Think through your reasoning "
+                        "step by step before providing your final answer."
                     )
                 else:
                     system_prompt = (
