@@ -385,17 +385,30 @@ class Specialist:
         
         compiled_text = flag.get("compiled_text", "")
         flags_str = f"- [{flag.get('issue_type')}] {flag.get('reasoning')}\n  FIX: {flag.get('proposed_fix')}"
+        original_question = flag.get("question", "")
         
-        prompt = (
-            f"Your original reasoning draft:\n{compiled_text}\n\n"
-            f"A Sentinel verification process found the following errors in your logic/facts:\n{flags_str}\n\n"
-            "Your task is to recheck your reasoning and fix all identified errors. "
-            "You must then determine the correct option based on the corrected reasoning. "
-            "Output a brief justification followed by the final answer.\n\n"
-            "The LAST LINE of your response MUST be exactly: ANSWER: LETTER\n"
-            "(where LETTER is A, B, C, or D)"
-        )
-        system_prompt = f"You are the SABER {self.domain} Specialist. You must revise your multiple choice answer based on Sentinel feedback. The last line MUST be ANSWER: followed by a single letter."
+        if original_question:
+            prompt = (
+                f"Question:\n{original_question}\n\n"
+                f"Previous Attempt with Errors:\n{compiled_text}\n\n"
+                f"Sentinel Feedback:\n{flags_str}\n\n"
+                "Please rewrite the reasoning step-by-step to correct the errors, and state the final correct answer."
+            )
+        else:
+            prompt = (
+                f"Previous Attempt:\n{compiled_text}\n\n"
+                f"Sentinel Feedback:\n{flags_str}\n\n"
+                "Please rewrite the reasoning step-by-step to correct the errors, and state the final correct answer."
+            )
+            
+        # Align system prompt with SFT training system prompt to prevent model echoing
+        sft_prompts = {
+            "science": "You are a science specialist with expertise in physics, chemistry, biology, and mathematical reasoning. Show all work and explain each step clearly. Think through your reasoning step by step before providing your final answer.",
+            "cyber": "You are a cybersecurity specialist with expertise in MITRE ATT&CK, incident response, threat intelligence, vulnerability analysis, and digital forensics. Map threats to specific techniques and provide structured analysis. Think through your reasoning step by step before providing your final answer.",
+            "finance": "You are a finance and economics specialist with expertise in corporate finance, market trends, financial mathematics, and economic theory. Make educated, data-driven decisions. Think through your reasoning step by step before providing your final answer.",
+            "medical": "You are a medical specialist with deep expertise in clinical medicine, pharmacology, pathophysiology, and differential diagnosis. Analyze each case systematically. Think through your reasoning step by step before providing your final answer."
+        }
+        system_prompt = sft_prompts.get(self.domain, f"You are an expert {self.domain} specialist. Correct the logic/facts based on feedback.")
         
         model_path = f"models/{self.domain}_v2"
         if not os.path.exists(model_path):

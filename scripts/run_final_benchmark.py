@@ -423,6 +423,7 @@ def run_benchmark():
                         if ver_res.signal_type == SignalType.FLAG_SIGNAL:
                             flag_payload = ver_res.payload
                             flag_payload["compiled_text"] = ans3
+                            flag_payload["question"] = q
                             ver_sig = Signal(
                                 signal_type=SignalType.VERIFICATION_SIGNAL,
                                 query_id=f"bench-{global_idx}",
