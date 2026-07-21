@@ -51,23 +51,31 @@ def compute_offline_sentinel_reward(domain: str, prompt_text: str, response_text
     return 0.0  # Neutral pass-through
 
 
+from saber.training.rewards import definitive_reward_function, open_ended_reward_function
+
 def main():
     parser = argparse.ArgumentParser(description="Phase 2: Verifiable-Fact-Augmented GRPO RL Trainer")
     parser.add_argument("--domain", type=str, default="science", help="Domain to train")
     parser.add_argument("--generations", type=int, default=4, help="Group rollout generations (G)")
     args = parser.parse_args()
 
+    reward_type = "OPEN-ENDED (Code / Synthesis / Execution)" if args.domain in ["coding", "architecture", "meta_reasoner", "orchestrator"] else "DEFINITIVE (MCQ / Math / Exact)"
+
     print("=========================================================================")
     print(f"       STEP 4: PHASE 2 VERIFIABLE-FACT-AUGMENTED GRPO RL [{args.domain.upper()}]      ")
     print("=========================================================================")
     print(f"[*] Loaded Grounding KB: data/offline_kb/{args.domain}_kb.db")
     print(f"[*] Group Generations (G): {args.generations}")
-    print(f"[*] Reward Functions Active:")
-    print("    - Format Reward (+1.0)")
-    print("    - Outcome Reward (+2.0)")
-    print("    - Sentinel Factuality Reward (-1.5 / +0.5 / 0.0 neutral pass-through)")
-    print("    - Hysteresis Audit Loop (RDR > 5% -> auto λ-decay 0.5 -> 0.1)")
-    print("    - Goodhart Monitor (Neutral Claim Ratio NCR)")
+    print(f"[*] Reward Function Mode: {reward_type}")
+    print(f"[*] Active Reward Signal Functions:")
+    if args.domain in ["coding", "architecture", "meta_reasoner", "orchestrator"]:
+        print("    - Code Execution / Compilation Reward (+2.0)")
+        print("    - CoT Structural Completeness (+1.0)")
+        print("    - Token Repetition / Loop Penalty (-1.0)")
+    else:
+        print("    - Format Reward (+1.0 for ANSWER: [A-D])")
+        print("    - Outcome Reward (+2.0 for ground truth match)")
+        print("    - Sentinel Factuality Reward (-1.5 contradiction / +0.5 support / 0.0 neutral)")
 
     model_dir = f"models/{args.domain}_v2"
     if not os.path.exists(model_dir):
