@@ -65,15 +65,15 @@ def parse_mcq_answer(raw_answer):
     if not lines:
         return None
     
-    # Pass 1: Check last line for strict ANSWER: X
+    # Pass 1: Check last line for strict ANSWER: X (or ANSWER: <X>, ANSWER: (X))
     last_line = lines[-1].upper()
-    match = re.search(r"ANSWER:\s*([A-D])\b", last_line)
+    match = re.search(r"ANSWER:\s*[<\(]?([A-D])\b[>\)]?", last_line)
     if match:
         return match.group(1)
     
     # Pass 2: Check ANY line for ANSWER: X (model put it mid-response)
     for line in reversed(lines):
-        match = re.search(r"ANSWER:\s*([A-D])\b", line.upper())
+        match = re.search(r"ANSWER:\s*[<\(]?([A-D])\b[>\)]?", line.upper())
         if match:
             return match.group(1)
     
