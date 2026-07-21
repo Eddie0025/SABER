@@ -103,23 +103,8 @@ def run_benchmark():
     print("      SABER MCQ Benchmark — 5-Mode Ablation Study")
     print("==========================================================\n")
 
-    # 1. Setup SABER Orchestrator
+    # 1. Setup Configuration
     config = SaberConfig()
-    registry = SpecialistRegistry()
-    registry.auto_discover()
-    
-    # Configure model paths for registered specialists
-    for domain, specialist in registry.all().items():
-        model_path = f"models/{domain}_v2"
-        if os.path.exists(model_path):
-            specialist.load_model(model_path)
-            print(f"[*] Loaded specialist model for '{domain}': {model_path}")
-        else:
-            specialist.load_model("Qwen/Qwen2.5-7B")
-            print(f"[*] Specialist '{domain}' checkpoint not found; falling back to base Qwen/Qwen2.5-7B")
-            
-    audit = AuditLogger()
-    orch = Orchestrator(config=config, registry=registry, audit=audit)
     
     # 2. Collect MCQ Benchmark Questions
     print("\n[*] Loading MCQ benchmark datasets...")
@@ -241,119 +226,221 @@ def run_benchmark():
     results = []
 
     # =====================================================================
-    # 3. Execution Loop — 5 Modes per Question
+    # 3. Execution Loop — Process by Dataset
     # =====================================================================
     MODE_NAMES = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass"]
     
-    for idx, case in enumerate(bench_cases, 1):
-        ds_name = case["dataset"]
-        q = case["question"]
-        print(f"\n[{idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {q[:75].strip()}...")
+    # Group cases by dataset
+    from collections import defaultdict
+    datasets = defaultdict(list)
+    for case in bench_cases:
+        datasets[case["dataset"]].append(case)
         
-        modes = [
-            ("Base Qwen", "qwen_base"),
-            ("Qwen with Adaptors", "adapter_no_cot"),
-            ("Qwen Adaptor + CoT", VerificationTier.TIER_0),
-            ("Sentinel 2 Pass", VerificationTier.TIER_1),
-        ]
+    global_idx = 0
+    results = []
+    
+    from saber.config import SaberConfig
+    from saber.llm_engine import LLMEngine
+    from saber.signal import Signal, SignalType
+    from saber.sentinel import Sentinel
+    import importlib
+    import gc
+    
+    config = SaberConfig()
+
+    for ds_name, cases in datasets.items():
+        domain = cases[0]["domain"]
+        print(f"\n==========================================================")
+        print(f"[*] Processing Dataset: {ds_name} (Domain: {domain}) | {len(cases)} cases")
+        print(f"==========================================================\n")
         
-        case_res = {
-            "question": q,
-            "type": case["type"],
-            "expected": case.get("expected"),
-            "domain": case["domain"],
-            "dataset": ds_name,
-            "runs": {}
-        }
-        
-        for mode_name, tier in modes:
+        # 1. Load Specialist for this dataset
+        specialist_class_name = f"{domain.capitalize()}Specialist"
+        try:
+            mod = importlib.import_module(f"saber.specialists.{domain}")
+            specialist_cls = getattr(mod, specialist_class_name)
+            specialist = specialist_cls()
+            m_path = f"models/{domain}_v2"
+            if not os.path.exists(m_path):
+                m_path = config.base_model
+            specialist.load_model(m_path)
+            print(f"[*] Loaded {specialist_class_name} with model: {m_path}")
+        except Exception as e:
+            print(f"[!] Failed to load specialist for {domain}: {e}")
+            continue
+            
+        sentinel = Sentinel()
+
+        for idx_in_ds, case in enumerate(cases, 1):
+            global_idx += 1
+            q = case["question"]
+            print(f"\n[{global_idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {q[:75].strip()}...")
+            
+            case_res = {
+                "question": q,
+                "type": case["type"],
+                "expected": case.get("expected"),
+                "domain": domain,
+                "dataset": ds_name,
+                "runs": {}
+            }
+            
+            # --- Mode 1: Base Qwen ---
             start = time.time()
             try:
-                # Suppress stdout during model execution
                 original_stdout = sys.stdout
                 sys.stdout = open(os.devnull, 'w')
                 try:
-                    if tier == "qwen_base":
-                        # Mode 1: Bare Qwen 2.5-7B — no adapter, no CoT, no sentinel
-                        from saber.llm_engine import LLMEngine
-                        with LLMEngine("Qwen/Qwen2.5-7B") as engine:
-                            raw = engine.generate(q)
-                            ans = raw.strip()
-                    elif tier == "adapter_no_cot":
-                        # Mode 2: Domain adapter loaded but no CoT architecture
-                        from saber.llm_engine import LLMEngine
-                        d_scores = orch.classify_domains(q)
-                        act = orch.select_specialists(d_scores)
-                        dom = act[0] if act else "science"
-                        m_path = f"models/{dom}_v2"
-                        if not os.path.exists(m_path):
-                            m_path = "Qwen/Qwen2.5-7B"
-                        with LLMEngine(m_path) as engine:
-                            raw = engine.generate(q)
-                            ans = raw.strip()
-                    else:
-                        # Modes 3-4: Full SABER pipeline — bypass meta-reasoner for MCQs
-                        res = orch.process_query(q, tier=tier, bypass_meta=True)
-                        ans = res.get("answer", "").strip()
+                    with LLMEngine(config.base_model) as engine:
+                        raw = engine.generate(q)
+                        ans1 = raw.strip()
                 finally:
                     sys.stdout.close()
                     sys.stdout = original_stdout
             except Exception as e:
-                if sys.stdout != original_stdout:
-                    try:
-                        sys.stdout.close()
-                    except:
-                        pass
-                    sys.stdout = original_stdout
-                ans = f"[ERROR]: {e}"
-            latency = time.time() - start
-            
-            # Strict MCQ scoring
-            extracted = parse_mcq_answer(ans)
-            expected_norm = str(case.get("expected", "")).strip().upper()
-            is_correct = (extracted == expected_norm)
-            score_data = {
-                "accuracy": 1.0 if is_correct else 0.0,
-                "explanation": f"Expected: {expected_norm} | Extracted: {extracted} | Raw: {ans[:200]}"
-            }
+                ans1 = f"[ERROR]: {e}"
                 
-            case_res["runs"][mode_name] = {
-                "answer": ans,
-                "latency": round(latency, 2),
-                "evaluation": score_data
+            extracted1 = parse_mcq_answer(ans1)
+            expected_norm = str(case.get("expected", "")).strip().upper()
+            case_res["runs"]["Base Qwen"] = {
+                "answer": ans1, "latency": round(time.time()-start, 2),
+                "evaluation": {"accuracy": 1.0 if extracted1 == expected_norm else 0.0}
             }
             
-        results.append(case_res)
-
-        # ----- Live Scoreboard (every 10 cases or dataset boundary) -----
-        is_dataset_complete = (idx == len(bench_cases)) or (bench_cases[idx]["dataset"] != ds_name)
-        if is_dataset_complete or (idx % 10 == 0):
-            print(f"\n[LIVE UPDATE] Progress: {idx}/{len(bench_cases)} cases completed.")
-            live_summary = {}
-            for r in results:
-                ds = r["dataset"]
-                if ds not in live_summary:
-                    live_summary[ds] = {}
-                for m_name, r_info in r["runs"].items():
-                    if m_name not in live_summary[ds]:
-                        live_summary[ds][m_name] = {"acc_sum": 0.0, "acc_cnt": 0}
-                    ev = r_info["evaluation"]
-                    live_summary[ds][m_name]["acc_sum"] += ev.get("accuracy", 0.0)
-                    live_summary[ds][m_name]["acc_cnt"] += 1
+            # --- Mode 2: Qwen with Adaptors ---
+            start = time.time()
+            try:
+                original_stdout = sys.stdout
+                sys.stdout = open(os.devnull, 'w')
+                try:
+                    with LLMEngine(specialist.meta.model_path) as engine:
+                        raw = engine.generate(q)
+                        ans2 = raw.strip()
+                finally:
+                    sys.stdout.close()
+                    sys.stdout = original_stdout
+            except Exception as e:
+                ans2 = f"[ERROR]: {e}"
+                
+            extracted2 = parse_mcq_answer(ans2)
+            case_res["runs"]["Qwen with Adaptors"] = {
+                "answer": ans2, "latency": round(time.time()-start, 2),
+                "evaluation": {"accuracy": 1.0 if extracted2 == expected_norm else 0.0}
+            }
             
-            print(f"| Dataset | {' | '.join(MODE_NAMES)} |")
-            print(f"| :--- | {' | '.join([':---'] * 5)} |")
-            for ds, m_data in live_summary.items():
-                cells = [ds]
-                for m_name in MODE_NAMES:
-                    st = m_data.get(m_name, {})
-                    if not st or st["acc_cnt"] == 0:
-                        cells.append("N/A")
-                        continue
-                    pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
-                    cells.append(f"{pct:.1f}%")
-                print("| " + " | ".join(cells) + " |")
-            print("-" * 60)
+            # --- Mode 3: Qwen Adaptor + CoT ---
+            start = time.time()
+            try:
+                original_stdout = sys.stdout
+                sys.stdout = open(os.devnull, 'w')
+                try:
+                    task_sig = Signal(
+                        signal_type=SignalType.TASK_SIGNAL,
+                        query_id=f"bench-{global_idx}",
+                        source_id="BENCHMARK",
+                        target_id=domain,
+                        payload={"objective": q}
+                    ).freeze_and_hash()
+                    out_sig = specialist.handle_signal(task_sig)
+                    ans3 = out_sig.payload.get("raw_response", "")
+                    if not ans3 and out_sig.payload.get("claims"):
+                        ans3 = out_sig.payload["claims"][0].get("statement", "")
+                finally:
+                    sys.stdout.close()
+                    sys.stdout = original_stdout
+            except Exception as e:
+                ans3 = f"[ERROR]: {e}"
+                out_sig = None
+                
+            extracted3 = parse_mcq_answer(ans3)
+            case_res["runs"]["Qwen Adaptor + CoT"] = {
+                "answer": ans3, "latency": round(time.time()-start, 2),
+                "evaluation": {"accuracy": 1.0 if extracted3 == expected_norm else 0.0}
+            }
+            
+            # --- Mode 4: Sentinel 2 Pass ---
+            start = time.time()
+            try:
+                original_stdout = sys.stdout
+                sys.stdout = open(os.devnull, 'w')
+                ans4 = ans3
+                try:
+                    if out_sig:
+                        ver_res = sentinel.verify_interpretation(
+                            specialist_domain=domain,
+                            original_signal=out_sig,
+                            compiled_text=ans3,
+                            config=config
+                        )
+                        if ver_res.signal_type == SignalType.FLAG_SIGNAL:
+                            flag_payload = ver_res.payload
+                            flag_payload["compiled_text"] = ans3
+                            ver_sig = Signal(
+                                signal_type=SignalType.VERIFICATION_SIGNAL,
+                                query_id=f"bench-{global_idx}",
+                                source_id="BENCHMARK",
+                                target_id=domain,
+                                payload=flag_payload
+                            ).freeze_and_hash()
+                            resolved_sig = specialist.handle_signal(ver_sig)
+                            if resolved_sig.payload.get("status") == "RESOLVED":
+                                ans4 = resolved_sig.payload.get("revised_text", ans4)
+                finally:
+                    sys.stdout.close()
+                    sys.stdout = original_stdout
+            except Exception as e:
+                ans4 = f"[ERROR]: {e}"
+                
+            extracted4 = parse_mcq_answer(ans4)
+            case_res["runs"]["Sentinel 2 Pass"] = {
+                "answer": ans4, "latency": round(time.time()-start, 2),
+                "evaluation": {"accuracy": 1.0 if extracted4 == expected_norm else 0.0}
+            }
+            
+            results.append(case_res)
+
+            # ----- Live Scoreboard (every 10 cases or dataset boundary) -----
+            is_dataset_complete = (idx_in_ds == len(cases))
+            if is_dataset_complete or (idx_in_ds % 10 == 0):
+                print(f"\n[LIVE UPDATE] Progress: {global_idx}/{len(bench_cases)} cases completed.")
+                live_summary = {}
+                for r in results:
+                    ds = r["dataset"]
+                    if ds not in live_summary:
+                        live_summary[ds] = {}
+                    for m_name, r_info in r["runs"].items():
+                        if m_name not in live_summary[ds]:
+                            live_summary[ds][m_name] = {"acc_sum": 0.0, "acc_cnt": 0}
+                        ev = r_info["evaluation"]
+                        live_summary[ds][m_name]["acc_sum"] += ev.get("accuracy", 0.0)
+                        live_summary[ds][m_name]["acc_cnt"] += 1
+                
+                print(f"| Dataset | {' | '.join(MODE_NAMES)} |")
+                print(f"| :--- | {' | '.join([':---'] * 5)} |")
+                for ds, m_data in live_summary.items():
+                    cells = [ds]
+                    for m_name in MODE_NAMES:
+                        st = m_data.get(m_name, {})
+                        if not st or st["acc_cnt"] == 0:
+                            cells.append("N/A")
+                            continue
+                        pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
+                        cells.append(f"{pct:.1f}%")
+                    print("| " + " | ".join(cells) + " |")
+                print("-" * 60)
+                
+        # Offload specialist and clear VRAM cache after dataset is complete
+        specialist = None
+        import saber.llm_engine
+        if hasattr(saber.llm_engine, "_MODEL_CACHE"):
+            saber.llm_engine._MODEL_CACHE.clear()
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     # =====================================================================
     # 4. Final Aggregation and Save
