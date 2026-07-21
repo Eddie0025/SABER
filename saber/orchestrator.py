@@ -279,6 +279,9 @@ class Orchestrator:
         ver_tier = self.assign_verification_tier(tier)
 
         # --- Delegate to Meta-Reasoning Layer or Bypass for single-domain ---
+        if not activated:
+            activated = ["science"]
+            
         if bypass_meta and len(activated) == 1:
             specialist = self.registry.get(activated[0])
             if specialist:
