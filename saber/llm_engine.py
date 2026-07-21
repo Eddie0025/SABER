@@ -63,21 +63,24 @@ class LLMEngine:
         transformers.logging.set_verbosity_error()
 
         # Setup tokenizer
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_id_or_path, trust_remote_code=True
-            )
-        except Exception:
-            # Fallback for PEFT adapters with corrupted tokenizer_config
-            import json
-            import os
-            config_path = os.path.join(self.model_id_or_path, "adapter_config.json")
+        import os
+        import json
+        adapter_config_path = os.path.join(self.model_id_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
             try:
-                with open(config_path, "r") as f:
+                with open(adapter_config_path, "r") as f:
                     base_model = json.load(f)["base_model_name_or_path"]
             except Exception:
                 base_model = "Qwen/Qwen2.5-7B"
             self.tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
+        else:
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_id_or_path, trust_remote_code=True
+                )
+            except Exception:
+                self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B", trust_remote_code=True)
+        
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
