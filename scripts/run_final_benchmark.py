@@ -425,6 +425,21 @@ def run_benchmark():
                 "evaluation": {"accuracy": 1.0 if extracted4 == expected_norm else 0.0}
             }
             
+            # Debug log generation outputs
+            with open("debug_outputs.log", "a", encoding="utf-8") as f:
+                f.write(f"=== CASE {global_idx} ===\n")
+                f.write(f"Query: {q[:200]}...\n")
+                f.write(f"Expected: {expected_norm}\n")
+                f.write(f"Base Qwen: {ans1}\n")
+                f.write(f"Extracted Base: {extracted1}\n")
+                f.write(f"Adaptor: {ans2}\n")
+                f.write(f"Extracted Adaptor: {extracted2}\n")
+                f.write(f"CoT: {ans3}\n")
+                f.write(f"Extracted CoT: {extracted3}\n")
+                f.write(f"Sentinel: {ans4}\n")
+                f.write(f"Extracted Sentinel: {extracted4}\n")
+                f.write("="*40 + "\n\n")
+            
             results.append(case_res)
 
             # ----- Live Scoreboard (every 10 cases or dataset boundary) -----
