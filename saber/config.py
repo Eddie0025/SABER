@@ -19,18 +19,14 @@ class VerificationTier(IntEnum):
     """User-selectable verification depth.
 
     Tier 0 — no verification (maximum speed)
-    Tier 1 — basic verification   (2 cycles)
-    Tier 2 — enhanced verification (4 cycles)
-    Tier 3 — maximum verification  (6 cycles)
+    Tier 1 — standard verification (2 cycles)
     """
     TIER_0 = 0
     TIER_1 = 1
-    TIER_2 = 2
-    TIER_3 = 3
 
     @property
     def max_cycles(self) -> int:
-        return {0: 0, 1: 2, 2: 4, 3: 6}[self.value]
+        return {0: 0, 1: 2}[self.value]
 
 
 # Specialist activation threshold (relevance score)
@@ -69,7 +65,7 @@ class SaberConfig:
         Concurrency model: "asyncio" | "threading" | "sequential".
     """
 
-    verification_tier: VerificationTier = VerificationTier.TIER_2
+    verification_tier: VerificationTier = VerificationTier.TIER_1
     activation_threshold: float = DEFAULT_ACTIVATION_THRESHOLD
     ambiguity_threshold: float = DEFAULT_AMBIGUITY_THRESHOLD
     specialist_dirs: List[str] = field(

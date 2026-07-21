@@ -79,8 +79,9 @@ class LLMEngine:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # Define data type based on device to save memory
-        dtype = torch.float16
-        if self.device == "mps":
+        if self.device == "cuda":
+            dtype = torch.bfloat16  # H100/A100 native — faster + more stable
+        else:
             dtype = torch.float16
 
         # Check if loading a PEFT adapter

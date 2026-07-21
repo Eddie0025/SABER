@@ -64,11 +64,11 @@ def parse_mcq_answer(raw_answer):
     return None
 
 # =====================================================================
-# Main Benchmark Pipeline
+# Main Benchmark Pipeline — MCQ Only
 # =====================================================================
 def run_benchmark():
     print("==========================================================")
-    print("      SABER Final Benchmark — 5-Mode Ablation Study")
+    print("      SABER MCQ Benchmark — 5-Mode Ablation Study")
     print("==========================================================\n")
 
     # 1. Setup SABER Orchestrator
@@ -89,14 +89,8 @@ def run_benchmark():
     audit = AuditLogger()
     orch = Orchestrator(config=config, registry=registry, audit=audit)
     
-    # Open-ended output file
-    open_ended_file = open("saber_open_ended_outputs.txt", "w", encoding="utf-8")
-    open_ended_file.write("=" * 80 + "\n")
-    open_ended_file.write("SABER Open-Ended Benchmark Outputs\n")
-    open_ended_file.write("=" * 80 + "\n\n")
-    
-    # 2. Collect Benchmark Questions
-    print("\n[*] Loading benchmark datasets...")
+    # 2. Collect MCQ Benchmark Questions
+    print("\n[*] Loading MCQ benchmark datasets...")
     bench_cases = []
     
     # ---------------------------------------------------------------
@@ -153,101 +147,7 @@ def run_benchmark():
         print(f"[!] MMLU-Pro load failed: {e}")
 
     # ---------------------------------------------------------------
-    # 2.3 Coding: HumanEval (164 cases)
-    # ---------------------------------------------------------------
-    try:
-        he = load_hf_dataset("openai/openai_humaneval", split="test")
-        count_before = len(bench_cases)
-        for row in he:
-            bench_cases.append({
-                "type": "open_ended",
-                "question": f"Complete the following Python function:\n{row['prompt']}",
-                "expected": None,
-                "domain": "coding",
-                "dataset": "humaneval"
-            })
-        print(f"[+] Loaded {len(bench_cases) - count_before} Coding (HumanEval) cases.")
-    except Exception as e:
-        print(f"[!] HumanEval load failed: {e}")
-
-    # ---------------------------------------------------------------
-    # 2.4 Coding: SWE-bench Verified (100 cases)
-    # ---------------------------------------------------------------
-    try:
-        swe = load_hf_dataset("princeton-nlp/SWE-bench_Verified", split="test[:100]")
-        count_before = len(bench_cases)
-        for row in swe:
-            statement = row.get("problem_statement") or row.get("problem_description") or ""
-            bench_cases.append({
-                "type": "open_ended",
-                "question": f"Resolve the following GitHub issue:\n{statement}",
-                "expected": None,
-                "domain": "coding",
-                "dataset": "swe_bench_verified"
-            })
-        print(f"[+] Loaded {len(bench_cases) - count_before} Coding (SWE-bench) cases.")
-    except Exception as e:
-        print(f"[!] SWE-bench load failed: {e}")
-
-    # ---------------------------------------------------------------
-    # 2.5 Coding: LiveCodeBench (100 cases)
-    # ---------------------------------------------------------------
-    try:
-        lcb = load_hf_dataset("livecodebench/code_generation_lite", split="test[:100]")
-        count_before = len(bench_cases)
-        for row in lcb:
-            bench_cases.append({
-                "type": "open_ended",
-                "question": f"Write Python code for: {row['question_title']}\n{row['question_content']}",
-                "expected": None,
-                "domain": "coding",
-                "dataset": "livecodebench"
-            })
-        print(f"[+] Loaded {len(bench_cases) - count_before} Coding (LiveCodeBench) cases.")
-    except Exception as e:
-        print(f"[!] LiveCodeBench load failed: {e}")
-
-    # ---------------------------------------------------------------
-    # 2.6 Medical: MedQA USMLE (100 cases)
-    # ---------------------------------------------------------------
-    try:
-        medqa = load_hf_dataset("GBaker/MedQA-USMLE-4-options", split="test[:100]")
-        count_before = len(bench_cases)
-        for row in medqa:
-            bench_cases.append({
-                "type": "exact",
-                "question": row["question"],
-                "expected": row["answer"],
-                "domain": "medical",
-                "dataset": "medqa_usmle"
-            })
-        print(f"[+] Loaded {len(bench_cases) - count_before} Medical (MedQA) cases.")
-    except Exception as e:
-        print(f"[!] MedQA load failed: {e}")
-
-    # ---------------------------------------------------------------
-    # 2.7 Medical: MedMCQA (50 cases)
-    # ---------------------------------------------------------------
-    try:
-        medmcqa = load_hf_dataset("openlifescienceai/medmcqa", split="validation[:50]")
-        count_before = len(bench_cases)
-        for row in medmcqa:
-            cop_idx = row["cop"]
-            cop_char = chr(65 + cop_idx) if 0 <= cop_idx < 4 else str(cop_idx)
-            text = f"Question: {row['question']}\nOptions:\nA: {row['opa']}\nB: {row['opb']}\nC: {row['opc']}\nD: {row['opd']}"
-            bench_cases.append({
-                "type": "exact",
-                "question": text,
-                "expected": cop_char,
-                "domain": "medical",
-                "dataset": "medmcqa"
-            })
-        print(f"[+] Loaded {len(bench_cases) - count_before} Medical (MedMCQA) cases.")
-    except Exception as e:
-        print(f"[!] MedMCQA load failed: {e}")
-
-    # ---------------------------------------------------------------
-    # 2.8 Finance: FinQA Math (80 exact cases) + ConvFinQA (30 open-ended)
+    # 2.3 Finance: FinQA Math (80 exact cases)
     # ---------------------------------------------------------------
     random.seed(42)
     for i in range(80):
@@ -261,18 +161,10 @@ def run_benchmark():
             "domain": "finance",
             "dataset": "finqa"
         })
-    for i in range(30):
-        bench_cases.append({
-            "type": "open_ended",
-            "question": f"Explain the conversational risk metrics associated with a portfolio leveraging ${random.randint(10, 500)}M debt.",
-            "expected": None,
-            "domain": "finance",
-            "dataset": "conv_finqa"
-        })
-    print(f"[+] Loaded 80 Finance (FinQA Math) + 30 Finance (ConvFinQA) cases.")
+    print(f"[+] Loaded 80 Finance (FinQA Math) cases.")
 
     # ---------------------------------------------------------------
-    # 2.9 Cyber: SecBench (100 cases)
+    # 2.4 Cyber: SecBench (100 cases)
     # ---------------------------------------------------------------
     try:
         secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train")
@@ -313,84 +205,16 @@ def run_benchmark():
     except Exception as e:
         print(f"[!] SecBench load failed: {e}")
 
-    # ---------------------------------------------------------------
-    # 2.10 Curated Domain Evaluations (from eval_*_30.py scripts)
-    # ---------------------------------------------------------------
-    eval_domains = [
-        ("medical", "eval_medical"), ("science", "eval_science"),
-        ("coding", "eval_coding"), ("architecture", "eval_architecture"),
-        ("finance", "eval_finance"), ("meta_reasoner", "eval_meta_reasoner")
-    ]
-    for dom, dataset_name in eval_domains:
-        script_path = os.path.join("scripts", f"eval_{dom}_30.py")
-        if os.path.exists(script_path):
-            try:
-                import importlib.util
-                spec = importlib.util.spec_from_file_location("eval_script", script_path)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                cases = getattr(module, "TEST_CASES")
-                
-                scaled_cases = (cases * 3)[:80]
-                for c in scaled_cases:
-                    bench_cases.append({
-                        "type": "open_ended",
-                        "question": c["question"],
-                        "expected": None,
-                        "domain": dom,
-                        "dataset": dataset_name
-                    })
-            except Exception as e:
-                print(f"[!] Curated domain load failed for {dom}: {e}")
-
-    # ---------------------------------------------------------------
-    # 2.11 Multi-domain / Orchestrator + Synthesis (GAIA)
-    # ---------------------------------------------------------------
-    try:
-        gaia = load_hf_dataset("gaia-benchmark/GAIA", "2023_all", split="validation[:100]")
-        count_before = len(bench_cases)
-        for row in gaia:
-            bench_cases.append({
-                "type": "open_ended",
-                "question": row["Question"],
-                "expected": None,
-                "domain": "orchestrator",
-                "dataset": "gaia"
-            })
-        print(f"[+] Loaded {len(bench_cases) - count_before} Multi-domain (GAIA) cases.")
-    except Exception as e:
-        print(f"[!] Critical Error loading GAIA: {e}")
-        raise e
-
-    # ---------------------------------------------------------------
-    # 2.12 Custom Multi-Domain Queries
-    # ---------------------------------------------------------------
-    custom_multi = [
-        "A hospital wants to deploy an AI-based patient monitoring wristband. Design the system architecture, address the medical accuracy requirements for vital sign thresholds, and outline the data security/compliance requirements for handling patient data.",
-        "We're building a robo-advisor that automatically rebalances client portfolios. Explain the algorithm design, the financial reasoning behind rebalancing thresholds, and the security measures needed to protect client financial data.",
-        "A biotech startup needs a bioinformatics pipeline that processes genomic data at scale. Design the system architecture for the compute pipeline, explain the relevant biological/scientific reasoning behind the analysis steps, and address data privacy for genetic information.",
-        "Our company was hit by ransomware that also corrupted patient records in our clinical trial database. Walk through the incident response process, the implications for the affected medical data/trial integrity, and the system redesign needed to prevent recurrence.",
-        "We want to build a coding education platform that teaches algorithms and automatically grades student code submissions for correctness and efficiency. Design the system architecture, explain how the grading logic should reason about algorithmic correctness, and address the security concerns of executing untrusted student code."
-    ]
-    for q in custom_multi:
-        bench_cases.append({
-            "type": "open_ended",
-            "question": q,
-            "domain": "orchestrator",
-            "dataset": "custom_multi_domain"
-        })
-
-    print(f"\n[+] Total benchmark cases compiled: {len(bench_cases)}")
+    print(f"\n[+] Total MCQ benchmark cases: {len(bench_cases)}")
     results = []
 
     # =====================================================================
     # 3. Execution Loop — 5 Modes per Question
     # =====================================================================
-    MODE_NAMES = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass", "Sentinel 4 Pass"]
+    MODE_NAMES = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass"]
     
     for idx, case in enumerate(bench_cases, 1):
         ds_name = case["dataset"]
-        domain = case["domain"]
         q = case["question"]
         print(f"\n[{idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {q[:75].strip()}...")
         
@@ -399,14 +223,13 @@ def run_benchmark():
             ("Qwen with Adaptors", "adapter_no_cot"),
             ("Qwen Adaptor + CoT", VerificationTier.TIER_0),
             ("Sentinel 2 Pass", VerificationTier.TIER_1),
-            ("Sentinel 4 Pass", VerificationTier.TIER_2)
         ]
         
         case_res = {
             "question": q,
             "type": case["type"],
             "expected": case.get("expected"),
-            "domain": domain,
+            "domain": case["domain"],
             "dataset": ds_name,
             "runs": {}
         }
@@ -437,10 +260,8 @@ def run_benchmark():
                             raw = engine.generate(q)
                             ans = raw.strip()
                     else:
-                        # Modes 3-5: Full SABER pipeline (CoT + optional Sentinel)
-                        # bypass_meta for MCQs so meta-reasoner doesn't rewrite the answer letter
-                        do_bypass = True if case["type"] == "exact" else False
-                        res = orch.process_query(q, tier=tier, bypass_meta=do_bypass)
+                        # Modes 3-5: Full SABER pipeline — bypass meta-reasoner for MCQs
+                        res = orch.process_query(q, tier=tier, bypass_meta=True)
                         ans = res.get("answer", "").strip()
                 finally:
                     sys.stdout.close()
@@ -455,28 +276,14 @@ def run_benchmark():
                 ans = f"[ERROR]: {e}"
             latency = time.time() - start
             
-            # ----- Scoring -----
-            score_data = {}
-            if case["type"] == "exact":
-                extracted = parse_mcq_answer(ans)
-                expected_norm = str(case.get("expected", "")).strip().upper()
-                is_correct = (extracted == expected_norm)
-                score_data = {
-                    "accuracy": 1.0 if is_correct else 0.0,
-                    "explanation": f"Expected: {expected_norm} | Extracted: {extracted} | Raw: {ans[:200]}"
-                }
-            else:
-                # Open-ended: no LLM judge — just record the answer
-                score_data = {
-                    "recorded": True,
-                    "explanation": "Open-ended output saved to saber_open_ended_outputs.txt"
-                }
-                # Write to the open-ended output file
-                open_ended_file.write(f"--- [{idx}] {ds_name} | Mode: {mode_name} ---\n")
-                open_ended_file.write(f"Q: {q[:300]}\n")
-                open_ended_file.write(f"A: {ans}\n")
-                open_ended_file.write("-" * 60 + "\n\n")
-                open_ended_file.flush()
+            # Strict MCQ scoring
+            extracted = parse_mcq_answer(ans)
+            expected_norm = str(case.get("expected", "")).strip().upper()
+            is_correct = (extracted == expected_norm)
+            score_data = {
+                "accuracy": 1.0 if is_correct else 0.0,
+                "explanation": f"Expected: {expected_norm} | Extracted: {extracted} | Raw: {ans[:200]}"
+            }
                 
             case_res["runs"][mode_name] = {
                 "answer": ans,
@@ -499,9 +306,8 @@ def run_benchmark():
                     if m_name not in live_summary[ds]:
                         live_summary[ds][m_name] = {"acc_sum": 0.0, "acc_cnt": 0}
                     ev = r_info["evaluation"]
-                    if r["type"] == "exact":
-                        live_summary[ds][m_name]["acc_sum"] += ev.get("accuracy", 0.0)
-                        live_summary[ds][m_name]["acc_cnt"] += 1
+                    live_summary[ds][m_name]["acc_sum"] += ev.get("accuracy", 0.0)
+                    live_summary[ds][m_name]["acc_cnt"] += 1
             
             print(f"| Dataset | {' | '.join(MODE_NAMES)} |")
             print(f"| :--- | {' | '.join([':---'] * 5)} |")
@@ -516,10 +322,6 @@ def run_benchmark():
                     cells.append(f"{pct:.1f}%")
                 print("| " + " | ".join(cells) + " |")
             print("-" * 60)
-
-    # Close open-ended output file
-    open_ended_file.close()
-    print(f"\n[*] Open-ended outputs saved to: saber_open_ended_outputs.txt")
 
     # =====================================================================
     # 4. Final Aggregation and Save
@@ -542,10 +344,8 @@ def run_benchmark():
             stats = summary[dataset][mode_name]
             stats["count"] += 1
             stats["total_latency"] += run_info["latency"]
-            eval_res = run_info["evaluation"]
-            if case_res["type"] == "exact":
-                stats["accuracy_sum"] += eval_res.get("accuracy", 0.0)
-                stats["accuracy_count"] += 1
+            stats["accuracy_sum"] += run_info["evaluation"].get("accuracy", 0.0)
+            stats["accuracy_count"] += 1
 
     formatted_summary = {}
     for ds, modes_data in summary.items():
@@ -556,16 +356,13 @@ def run_benchmark():
             if not stats:
                 row_cells.append("N/A")
                 continue
+            avg_accuracy = stats["accuracy_sum"] / stats["accuracy_count"]
             avg_metrics = {
                 "count": stats["count"],
-                "avg_latency_sec": round(stats["total_latency"] / stats["count"], 2)
+                "avg_latency_sec": round(stats["total_latency"] / stats["count"], 2),
+                "avg_accuracy": round(avg_accuracy, 3)
             }
-            percentage = 0.0
-            if stats["accuracy_count"] > 0:
-                avg_accuracy = stats["accuracy_sum"] / stats["accuracy_count"]
-                avg_metrics["avg_accuracy"] = round(avg_accuracy, 3)
-                percentage = avg_accuracy * 100.0
-            row_cells.append(f"{percentage:.1f}%")
+            row_cells.append(f"{avg_accuracy * 100.0:.1f}%")
             formatted_summary[ds][mode_name] = avg_metrics
         table_lines.append("| " + " | ".join(row_cells) + " |")
 
@@ -578,7 +375,7 @@ def run_benchmark():
     with open("saber_benchmark_table.md", "w", encoding="utf-8") as f:
         f.write(table_md + "\n")
 
-    print("\n=== FINAL BENCHMARK SCORES TABLE ===")
+    print("\n=== FINAL MCQ BENCHMARK SCORES ===")
     print(table_md)
 
 if __name__ == "__main__":
