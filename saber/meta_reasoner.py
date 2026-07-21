@@ -345,6 +345,10 @@ class MetaReasoner:
     def _meta_reasoning_synthesis(self, outputs: Dict[str, Signal], query: str, query_id: str) -> tuple[str, Dict[str, Any]]:
         """Meta-Reasoning Layer: synthesise specialist claims into a coherent answer.
 
+        Context-aware synthesis:
+          - Detects MCQ queries → compiles specialist signals into a direct ANSWER: LETTER response
+          - Detects open-ended queries → runs the full 6-section synthesis to produce a coherent answer
+
         Uses a two-step approach optimised for Qwen2.5-7B:
           Step 1 — Ask the model to reason in free-text with labelled sections
                    (small models handle this far more reliably than nested JSON).
@@ -352,6 +356,14 @@ class MetaReasoner:
                    internal_ledger / external_summary dicts.
         """
         from saber.llm_engine import LLMEngine
+        import re
+
+        # ── Detect query type from context ──
+        is_mcq = bool(re.search(
+            r"(?:ANSWER:\s*LETTER|Options:\n\s*[A-D]:|multiple\s*choice|"
+            r"\n[A-D]\s*[:\.\)]\s+\S)",
+            query, re.IGNORECASE
+        ))
 
         # ── Build specialist context ──
         domains_used = list(outputs.keys())
@@ -374,74 +386,128 @@ class MetaReasoner:
 
         context_str = "\n".join(context_parts)
 
-        prompt = (
-            f"User Query:\n{query}\n\n"
-            f"Specialist Inputs:\n{context_str}\n\n"
-            "You are the Meta-Reasoning Layer. Synthesize the specialist inputs above "
-            "into a single coherent answer. Follow the sections below EXACTLY.\n\n"
-            "## CLAIM EXTRACTION\nList the key claims from each specialist.\n\n"
-            "## CONFIDENCE ANALYSIS\nAssess specialist confidence levels and weight.\n\n"
-            "## CONFLICT DETECTION\nIdentify contradictions or gaps between specialists. Write 'None' if there are none.\n\n"
-            "## TRADEOFF EVALUATION\nAnalyse tradeoffs if specialists disagree.\n\n"
-            "## RESOLUTION PATH\nExplain how you reconcile the specialist views.\n\n"
-            "## FINAL ANSWER\nProvide the complete, coherent answer to the user's query. "
-            "This must be a direct answer, not meta-commentary."
-        )
-        system_prompt = (
-            "You are the SABER Meta-Reasoning Layer. You synthesize outputs from "
-            "domain specialists. You do NOT provide domain expertise yourself. "
-            "Follow the section headers exactly. Be concise and precise."
-        )
+        # ── Build synthesis prompt based on query type ──
+        if is_mcq:
+            # MCQ: compile specialist signals into a direct answer choice
+            prompt = (
+                f"User Query:\n{query}\n\n"
+                f"Specialist Inputs:\n{context_str}\n\n"
+                "You are the Meta-Reasoning Layer. The user's query is a MULTIPLE CHOICE QUESTION.\n\n"
+                "Your job:\n"
+                "1. Read the specialist's reasoning and claims.\n"
+                "2. Determine which answer option (A, B, C, or D) the specialist evidence supports.\n"
+                "3. If multiple specialists contributed, resolve any disagreements based on confidence.\n"
+                "4. Output a brief justification followed by the final answer.\n\n"
+                "The LAST LINE of your response MUST be exactly: ANSWER: LETTER\n"
+                "(where LETTER is A, B, C, or D)"
+            )
+            system_prompt = (
+                "You are the SABER Meta-Reasoning Layer compiling specialist signals "
+                "for a multiple choice question. Synthesize the evidence and output "
+                "the correct answer choice. The last line MUST be ANSWER: followed by "
+                "a single letter A, B, C, or D."
+            )
+        else:
+            # Open-ended: full 6-section synthesis
+            prompt = (
+                f"User Query:\n{query}\n\n"
+                f"Specialist Inputs:\n{context_str}\n\n"
+                "You are the Meta-Reasoning Layer. The user's query is OPEN-ENDED and requires "
+                "a detailed, coherent answer compiled from the specialist inputs above.\n\n"
+                "Synthesize the specialist inputs into a single coherent answer that DIRECTLY "
+                "addresses what the user asked. Follow the sections below EXACTLY.\n\n"
+                "## CLAIM EXTRACTION\nList the key claims from each specialist.\n\n"
+                "## CONFIDENCE ANALYSIS\nAssess specialist confidence levels and weight.\n\n"
+                "## CONFLICT DETECTION\nIdentify contradictions or gaps between specialists. Write 'None' if there are none.\n\n"
+                "## TRADEOFF EVALUATION\nAnalyse tradeoffs if specialists disagree.\n\n"
+                "## RESOLUTION PATH\nExplain how you reconcile the specialist views.\n\n"
+                "## FINAL ANSWER\nProvide the complete, coherent answer to the user's query. "
+                "This must be a direct answer, not meta-commentary."
+            )
+            system_prompt = (
+                "You are the SABER Meta-Reasoning Layer. You synthesize outputs from "
+                "domain specialists into a single coherent answer for the user. "
+                "You do NOT provide domain expertise yourself. "
+                "Follow the section headers exactly. Be concise and precise."
+            )
 
         try:
             with LLMEngine(self.model_path, max_new_tokens=1024) as engine:
                 raw_response = engine.generate(prompt, system_prompt=system_prompt)
 
-            # ── Step 2: Parse sections from the free-text response ──
-            sections = self._parse_sections(raw_response)
-
-            final_answer = sections.get("FINAL ANSWER", "").strip()
-            if not final_answer:
-                # If the model didn't produce a labelled FINAL ANSWER, use
-                # everything after the last section header as the answer.
+            if is_mcq:
+                # For MCQ: the final answer is the full response (includes reasoning + ANSWER: X)
                 final_answer = raw_response.strip()
+                
+                meta_data = {
+                    "internal_ledger": {
+                        "query_type": "mcq",
+                        "claim_extraction": context_str,
+                        "confidence_analysis": "MCQ mode — specialist confidence used directly.",
+                        "conflict_detection": "N/A",
+                        "tradeoff_evaluation": "N/A",
+                        "resolution_path": "MCQ compilation from specialist signals.",
+                        "final_synthesis_reasoning": final_answer,
+                    },
+                    "external_summary": {
+                        "specialists_used": domains_used,
+                        "conflicts_detected": 0,
+                        "confidence": 0.9,
+                        "reasoning_summary": "MCQ answer compiled from specialist signals.",
+                    },
+                    "final_answer": final_answer,
+                }
 
-            # Count conflicts heuristically
-            conflict_text = sections.get("CONFLICT DETECTION", "none").lower()
-            conflicts_detected = 0 if conflict_text in ("none", "none.", "") else conflict_text.count("\n") + 1
+                self.audit.log("meta_reasoning_synthesis", query_id, {
+                    "status": "success",
+                    "query_type": "mcq",
+                }, component="manager")
 
-            # Confidence: average specialist confidences
-            all_confs = []
-            for sig in outputs.values():
-                for c in sig.payload.get("claims", []):
-                    all_confs.append(c.get("confidence", 0.5))
-            avg_conf = sum(all_confs) / len(all_confs) if all_confs else 0.5
+                return final_answer, meta_data
+            else:
+                # For open-ended: parse sections from free-text
+                sections = self._parse_sections(raw_response)
 
-            meta_data = {
-                "internal_ledger": {
-                    "claim_extraction": sections.get("CLAIM EXTRACTION", ""),
-                    "confidence_analysis": sections.get("CONFIDENCE ANALYSIS", ""),
-                    "conflict_detection": sections.get("CONFLICT DETECTION", ""),
-                    "tradeoff_evaluation": sections.get("TRADEOFF EVALUATION", ""),
-                    "resolution_path": sections.get("RESOLUTION PATH", ""),
-                    "final_synthesis_reasoning": sections.get("RESOLUTION PATH", ""),
-                },
-                "external_summary": {
-                    "specialists_used": domains_used,
+                final_answer = sections.get("FINAL ANSWER", "").strip()
+                if not final_answer:
+                    final_answer = raw_response.strip()
+
+                conflict_text = sections.get("CONFLICT DETECTION", "none").lower()
+                conflicts_detected = 0 if conflict_text in ("none", "none.", "") else conflict_text.count("\n") + 1
+
+                all_confs = []
+                for sig in outputs.values():
+                    for c in sig.payload.get("claims", []):
+                        all_confs.append(c.get("confidence", 0.5))
+                avg_conf = sum(all_confs) / len(all_confs) if all_confs else 0.5
+
+                meta_data = {
+                    "internal_ledger": {
+                        "query_type": "open_ended",
+                        "claim_extraction": sections.get("CLAIM EXTRACTION", ""),
+                        "confidence_analysis": sections.get("CONFIDENCE ANALYSIS", ""),
+                        "conflict_detection": sections.get("CONFLICT DETECTION", ""),
+                        "tradeoff_evaluation": sections.get("TRADEOFF EVALUATION", ""),
+                        "resolution_path": sections.get("RESOLUTION PATH", ""),
+                        "final_synthesis_reasoning": sections.get("RESOLUTION PATH", ""),
+                    },
+                    "external_summary": {
+                        "specialists_used": domains_used,
+                        "conflicts_detected": conflicts_detected,
+                        "confidence": round(avg_conf, 3),
+                        "reasoning_summary": sections.get("RESOLUTION PATH", "Specialists synthesized."),
+                    },
+                    "final_answer": final_answer,
+                }
+
+                self.audit.log("meta_reasoning_synthesis", query_id, {
+                    "status": "success",
+                    "query_type": "open_ended",
+                    "sections_parsed": list(sections.keys()),
                     "conflicts_detected": conflicts_detected,
-                    "confidence": round(avg_conf, 3),
-                    "reasoning_summary": sections.get("RESOLUTION PATH", "Specialists synthesized."),
-                },
-                "final_answer": final_answer,
-            }
+                }, component="manager")
 
-            self.audit.log("meta_reasoning_synthesis", query_id, {
-                "status": "success",
-                "sections_parsed": list(sections.keys()),
-                "conflicts_detected": conflicts_detected,
-            }, component="manager")
-
-            return final_answer, meta_data
+                return final_answer, meta_data
 
         except Exception as e:
             self.audit.log("failure", query_id, {

@@ -289,7 +289,8 @@ class Orchestrator:
                     model_path = "Qwen/Qwen2.5-7B"
                 from saber.llm_engine import LLMEngine
                 with LLMEngine(model_path) as engine:
-                    raw = engine.generate(f"Question: {query}\nAnswer directly:")
+                    # Pass the query as-is — it already contains the MCQ format instruction
+                    raw = engine.generate(query)
                     ans = raw.strip()
                 result = {
                     "query_id": query_id,
