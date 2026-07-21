@@ -358,10 +358,11 @@ class MetaReasoner:
         from saber.llm_engine import LLMEngine
         import re
 
-        # ── Detect query type from context ──
+        # ── Detect query type & format context ──
         is_mcq = bool(re.search(
-            r"(?:ANSWER:\s*LETTER|Options:\n\s*[A-D]:|multiple\s*choice|"
-            r"\n[A-D]\s*[:\.\)]\s+\S)",
+            r"(?:ANSWER:\s*LETTER|Options:|Option\s*[A-D]|multiple\s*choice|"
+            r"\b[A-D]\s*[:\.\)]\s+\S|\b[a-d]\)\s+\S|Which\s+of\s+the\s+following|"
+            r"Choose\s+the\s+correct\s+option)",
             query, re.IGNORECASE
         ))
 

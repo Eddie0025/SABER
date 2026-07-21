@@ -44,10 +44,10 @@ class TestOrchestrator(unittest.TestCase):
 
     def test_domain_classification(self):
         scores_science = self.orchestrator.classify_domains("Calculate velocity, mass, and kinetic energy in physics.")
-        self.assertGreater(scores_science.get("science", 0.0), 0.5)
+        self.assertGreater(scores_science.get("science", 0.0), 0.6)
 
         scores_cyber = self.orchestrator.classify_domains("Analyze malware vulnerability CVE-2023-1234 and threat intelligence.")
-        self.assertGreater(scores_cyber.get("cyber", 0.0), 0.5)
+        self.assertGreater(scores_cyber.get("cyber", 0.0), 0.6)
 
 
 if __name__ == "__main__":

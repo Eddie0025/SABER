@@ -142,19 +142,27 @@ class Orchestrator:
             return self._heuristic_classify_domains(query)
 
     def _heuristic_classify_domains(self, query: str) -> Dict[str, float]:
-        """Fallback keyword-based classifier."""
+        """Fallback keyword & domain-indicator classifier with high-precision thresholding."""
         query_lower = query.lower()
         query_words = set(re.findall(r"\w+", query_lower))
         stemmed_query_words = {self._stem(w) for w in query_words}
         scores: Dict[str, float] = {}
 
+        # Primary domain indicator triggers (guarantee high confidence activation)
+        domain_triggers = {
+            "science": {"physics", "chemistry", "mathematics", "math", "calculus", "equation", "velocity", "quantum", "molecule", "reaction", "energy", "force"},
+            "cyber": {"cve", "vulnerability", "malware", "firewall", "mitre", "attack", "exploit", "hack", "penetration", "cyber", "security", "port", "payload"},
+            "finance": {"ebitda", "revenue", "portfolio", "valuation", "sec", "10-k", "asset", "liability", "hedging", "interest", "finance", "accounting"},
+            "coding": {"python", "algorithm", "function", "array", "code", "debugging", "class", "binary", "leetcode", "complexity", "dataframe", "string"},
+            "architecture": {"kubernetes", "microservices", "kafka", "grpc", "distributed", "scaling", "latency", "load balancer", "docker", "architecture", "system design"}
+        }
+
         for domain, specialist in self.registry.all().items():
+            triggers = domain_triggers.get(domain, set())
+            primary_hits = sum(1 for tr in triggers if tr in query_lower or self._stem(tr) in stemmed_query_words)
+            
             keywords = getattr(specialist, "keywords", [])
-            capabilities = specialist.meta.capabilities
-            cap_words = []
-            for cap in capabilities:
-                cap_words.extend(cap.split("_"))
-            all_keywords = keywords + cap_words
+            all_keywords = keywords + list(triggers)
 
             hits = 0
             for kw in all_keywords:
@@ -166,7 +174,11 @@ class Orchestrator:
                     stemmed_kw = self._stem(kw_lower)
                     if kw_lower in query_words or stemmed_kw in stemmed_query_words:
                         hits += 1
-            scores[domain] = min(1.0, hits / max(len(all_keywords) * 0.12, 2.0))
+
+            if primary_hits > 0:
+                scores[domain] = min(1.0, 0.70 + (primary_hits * 0.15))
+            else:
+                scores[domain] = min(1.0, hits / max(len(all_keywords) * 0.08, 1.5))
 
         return scores
 
