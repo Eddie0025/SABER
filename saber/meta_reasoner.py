@@ -575,6 +575,7 @@ class MetaReasoner:
 
     def _apply_patches(self, compiled_text: str, flags: List[Signal]) -> str:
         from saber.llm_engine import LLMEngine
+        import re
 
         flags_desc = []
         for f in flags:
@@ -586,15 +587,30 @@ class MetaReasoner:
 
         flags_str = "\n".join(flags_desc)
 
-        prompt = (
-            f"Original Draft:\n{compiled_text}\n\n"
-            f"The following critical errors (Flags) were found during verification:\n{flags_str}\n\n"
-            "Your task is to completely rewrite the Original Draft to fix all identified errors. "
-            "Do NOT just append corrections to the end. Seamlessly integrate the facts, correct the flawed logic, "
-            "and produce a professional, accurate response. "
-            "Output ONLY the final revised text with no additional commentary."
-        )
-        system_prompt = "You are the SABER Meta-Reasoning Layer. You are an expert at revising texts based on strict verification flags."
+        # Detect if we are patching an MCQ answer
+        is_mcq = bool(re.search(r"ANSWER:\s*[A-D]", compiled_text, re.IGNORECASE))
+
+        if is_mcq:
+            prompt = (
+                f"Original Answer Draft:\n{compiled_text}\n\n"
+                f"The following critical errors (Flags) were found during verification:\n{flags_str}\n\n"
+                "Your task is to rewrite the reasoning to fix all identified errors. "
+                "You must then determine the correct option based on the corrected reasoning. "
+                "Output a brief justification followed by the final answer.\n\n"
+                "The LAST LINE of your response MUST be exactly: ANSWER: LETTER\n"
+                "(where LETTER is A, B, C, or D)"
+            )
+            system_prompt = "You are the SABER Meta-Reasoning Layer revising a multiple choice answer. The last line MUST be ANSWER: followed by a single letter."
+        else:
+            prompt = (
+                f"Original Draft:\n{compiled_text}\n\n"
+                f"The following critical errors (Flags) were found during verification:\n{flags_str}\n\n"
+                "Your task is to completely rewrite the Original Draft to fix all identified errors. "
+                "Do NOT just append corrections to the end. Seamlessly integrate the facts, correct the flawed logic, "
+                "and produce a professional, accurate response. "
+                "Output ONLY the final revised text with no additional commentary."
+            )
+            system_prompt = "You are the SABER Meta-Reasoning Layer. You are an expert at revising texts based on strict verification flags."
 
         try:
             with LLMEngine(self.model_path) as engine:
