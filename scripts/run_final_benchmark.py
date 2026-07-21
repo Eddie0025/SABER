@@ -52,15 +52,46 @@ def build_mcq_prompt(question_text, choices_str):
 # Strict MCQ Answer Parser
 # =====================================================================
 def parse_mcq_answer(raw_answer):
-    """Extract the answer letter from the final line using strict regex.
-    Returns the letter (A-D) or None if format not followed."""
+    """Extract the answer letter using a multi-pass parser.
+    
+    Priority order:
+      1. Last line: ANSWER: X (strict format)
+      2. Any line: ANSWER: X
+      3. Common patterns: 'The answer is X', 'correct answer is X'
+      4. Last line: standalone letter (A/B/C/D)
+    
+    Returns the letter (A-D) or None if nothing found."""
     lines = [line.strip() for line in raw_answer.split('\n') if line.strip()]
     if not lines:
         return None
+    
+    # Pass 1: Check last line for strict ANSWER: X
     last_line = lines[-1].upper()
-    match = re.search(r"ANSWER:\s*([A-D])", last_line)
+    match = re.search(r"ANSWER:\s*([A-D])\b", last_line)
     if match:
         return match.group(1)
+    
+    # Pass 2: Check ANY line for ANSWER: X (model put it mid-response)
+    for line in reversed(lines):
+        match = re.search(r"ANSWER:\s*([A-D])\b", line.upper())
+        if match:
+            return match.group(1)
+    
+    # Pass 3: Common natural language patterns
+    full_text = raw_answer.upper()
+    for pattern in [
+        r"THE\s+(?:CORRECT\s+)?ANSWER\s+IS\s*:?\s*\(?([A-D])\)?",
+        r"CORRECT\s+ANSWER\s*:?\s*\(?([A-D])\)?",
+        r"OPTION\s+([A-D])\s+IS\s+CORRECT",
+    ]:
+        match = re.search(pattern, full_text)
+        if match:
+            return match.group(1)
+    
+    # Pass 4: Last line is just a single letter
+    if re.fullmatch(r"[A-D]\.?", last_line):
+        return last_line[0]
+    
     return None
 
 # =====================================================================
