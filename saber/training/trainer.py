@@ -372,6 +372,8 @@ def train(cfg: TrainConfig) -> str:
     )
     model = get_peft_model(model, lora_config)
     model.enable_input_require_grads()     # Required for gradient checkpointing + LoRA
+    if hasattr(model, "gradient_checkpointing_enable"):
+        model.gradient_checkpointing_enable()
     model.print_trainable_parameters()
 
     # 3. Load & format dataset ------------------------------------------

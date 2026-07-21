@@ -51,6 +51,34 @@ def execute_sandboxed_python(code_str: str, timeout_sec: float = 2.0) -> tuple[b
     return False, "Execution failed without output"
 
 
+_KB_CACHE = {}
+
+def get_cached_passage(domain: str, guard: str) -> str:
+    """Fetch passage from in-memory cache or SQLite database."""
+    global _KB_CACHE
+    cache_key = f"{domain}::{guard}"
+    if cache_key in _KB_CACHE:
+        return _KB_CACHE[cache_key]
+
+    db_path = f"data/offline_kb/{domain}_kb.db"
+    if not os.path.exists(db_path):
+        _KB_CACHE[cache_key] = ""
+        return ""
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT support_passage FROM passage_kb WHERE query_guard = ? LIMIT 1", (guard,))
+        row = cursor.fetchone()
+        conn.close()
+        res = row[0] if row and row[0] else ""
+    except Exception:
+        res = ""
+
+    _KB_CACHE[cache_key] = res
+    return res
+
+
 # ---------------------------------------------------------------------------
 # 1. HARDENED DEFINITIVE REWARD FUNCTION (MCQ / Math / Exact Fact)
 # ---------------------------------------------------------------------------
@@ -109,25 +137,18 @@ def definitive_reward_function(
                 except Exception:
                     pass
 
-        # 3. Sentinel Factuality Reward (Offline KB)
-        if os.path.exists(db_path):
-            clean_q = " ".join(prompt.lower().split())
-            numerics = re.findall(r'\b\d+(?:\.\d+)?%?\b|cve-\d+-\d+', clean_q)
-            guard = f"[{'_'.join(numerics)}]::{clean_q}"
+        # 3. Sentinel Factuality Reward (In-Memory Cached Offline KB)
+        clean_q = " ".join(prompt.lower().split())
+        numerics = re.findall(r'\b\d+(?:\.\d+)?%?\b|cve-\d+-\d+', clean_q)
+        guard = f"[{'_'.join(numerics)}]::{clean_q}"
+        passage = get_cached_passage(domain, guard)
 
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT support_passage FROM passage_kb WHERE query_guard = ? LIMIT 1", (guard,))
-            row = cursor.fetchone()
-            conn.close()
-
-            if row and row[0]:
-                passage = row[0].lower()
-                resp_lower = comp_clean.lower()
-                if "not" in passage and "not" not in resp_lower:
-                    reward -= 1.5  # Direct contradiction penalty
-                elif any(fact in resp_lower for fact in passage.split()[:5] if len(fact) > 5):
-                    reward += 0.5  # Grounded support bonus
+        if passage:
+            resp_lower = comp_clean.lower()
+            if "not" in passage and "not" not in resp_lower:
+                reward -= 1.5  # Direct contradiction penalty
+            elif any(fact in resp_lower for fact in passage.split()[:5] if len(fact) > 5):
+                reward += 0.5  # Grounded support bonus
 
         # 4. Repetition Penalty
         if comp_len > 10:
