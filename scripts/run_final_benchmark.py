@@ -292,8 +292,8 @@ def run_benchmark():
                             raw = engine.generate(q)
                             ans = raw.strip()
                     else:
-                        # Modes 3-4: Full SABER pipeline (CoT + Sentinel + Context-Aware Meta-Reasoner)
-                        res = orch.process_query(q, tier=tier, bypass_meta=False)
+                        # Modes 3-4: Full SABER pipeline — bypass meta-reasoner for MCQs
+                        res = orch.process_query(q, tier=tier, bypass_meta=True)
                         ans = res.get("answer", "").strip()
                 finally:
                     sys.stdout.close()
