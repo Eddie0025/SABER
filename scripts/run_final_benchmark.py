@@ -51,7 +51,7 @@ def build_mcq_prompt(question_text, choices_str):
 # =====================================================================
 # Strict MCQ Answer Parser
 # =====================================================================
-def parse_mcq_answer(raw_answer):
+def parse_mcq_answer(raw_answer, prompt=None):
     """Extract the answer letter using a multi-pass parser.
     
     Priority order:
@@ -59,6 +59,7 @@ def parse_mcq_answer(raw_answer):
       2. Any line: ANSWER: X
       3. Common patterns: 'The answer is X', 'correct answer is X'
       4. Last line: standalone letter (A/B/C/D)
+      5. Literal Option Value Matching (if prompt is provided)
     
     Returns the letter (A-D) or None if nothing found."""
     lines = [line.strip() for line in raw_answer.split('\n') if line.strip()]
@@ -92,6 +93,25 @@ def parse_mcq_answer(raw_answer):
     # Pass 4: Last line is just a single letter
     if re.fullmatch(r"[A-D]\.?", last_line):
         return last_line[0]
+        
+    # Pass 5: Literal Option Value Matching (e.g. model outputs raw option text)
+    if prompt:
+        options = {}
+        matches = re.findall(r"\n\s*([A-D])\s*[:\.\)]\s*(.*)", prompt)
+        for letter, val in matches:
+            # Strip suffixes or instructions from option value
+            val_clean = val.split("\n")[0].strip().lower().strip('.,()[]"\' ')
+            if val_clean:
+                options[letter] = val_clean
+                
+        last_line_clean = lines[-1].lower()
+        if "conclusion:" in last_line_clean:
+            last_line_clean = last_line_clean.split("conclusion:")[-1].strip()
+        last_line_clean = last_line_clean.strip('.,()[]"\' ')
+        
+        for letter, val in options.items():
+            if val == last_line_clean:
+                return letter
     
     return None
 
@@ -329,7 +349,7 @@ def run_benchmark():
             except Exception as e:
                 ans1 = f"[ERROR]: {e}"
                 
-            extracted1 = parse_mcq_answer(ans1) if is_mcq else parse_exact_answer(ans1)
+            extracted1 = parse_mcq_answer(ans1, q) if is_mcq else parse_exact_answer(ans1)
             case_res["runs"]["Base Qwen"] = {
                 "answer": ans1, "latency": round(time.time()-start, 2),
                 "evaluation": {"accuracy": 1.0 if extracted1 == expected_norm else 0.0}
@@ -350,7 +370,7 @@ def run_benchmark():
             except Exception as e:
                 ans2 = f"[ERROR]: {e}"
                 
-            extracted2 = parse_mcq_answer(ans2) if is_mcq else parse_exact_answer(ans2)
+            extracted2 = parse_mcq_answer(ans2, q) if is_mcq else parse_exact_answer(ans2)
             case_res["runs"]["Qwen with Adaptors"] = {
                 "answer": ans2, "latency": round(time.time()-start, 2),
                 "evaluation": {"accuracy": 1.0 if extracted2 == expected_norm else 0.0}
@@ -380,7 +400,7 @@ def run_benchmark():
                 ans3 = f"[ERROR]: {e}"
                 out_sig = None
                 
-            extracted3 = parse_mcq_answer(ans3) if is_mcq else parse_exact_answer(ans3)
+            extracted3 = parse_mcq_answer(ans3, q) if is_mcq else parse_exact_answer(ans3)
             case_res["runs"]["Qwen Adaptor + CoT"] = {
                 "answer": ans3, "latency": round(time.time()-start, 2),
                 "evaluation": {"accuracy": 1.0 if extracted3 == expected_norm else 0.0}
@@ -419,7 +439,7 @@ def run_benchmark():
             except Exception as e:
                 ans4 = f"[ERROR]: {e}"
                 
-            extracted4 = parse_mcq_answer(ans4) if is_mcq else parse_exact_answer(ans4)
+            extracted4 = parse_mcq_answer(ans4, q) if is_mcq else parse_exact_answer(ans4)
             case_res["runs"]["Sentinel 2 Pass"] = {
                 "answer": ans4, "latency": round(time.time()-start, 2),
                 "evaluation": {"accuracy": 1.0 if extracted4 == expected_norm else 0.0}
