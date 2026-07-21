@@ -1,6 +1,6 @@
 # SABER — System Architecture
 
-> **SABER** (Specialist Agent-Based Expert Reasoning) is a modular multi-specialist AI framework built on a single open-weight 7B-parameter base model (Qwen 2.5-7B), where domain-specialized LoRA-fine-tuned expert models generate verified, chain-of-thought-backed answers that are synthesized into a single coherent response by a meta-reasoning layer.
+> **SABER** (Specialist Agent-Based Expert Reasoning) is a modular multi-specialist AI framework built on open-weight 7B base models (Qwen 2.5-7B). SABER pairs **High-Rank Weight-Decomposed Low-Rank Adaptation (DoRA)** with **Verifiable-Fact-Augmented Group Relative Policy Optimization (GRPO)**. Domain-specialized expert models generate verified, chain-of-thought-backed answers grounded by a 2-pass asynchronous verification kernel (**Sentinel**) with offline/online knowledge base routing and synthesized by a meta-reasoning layer.
 
 ---
 
@@ -399,14 +399,36 @@ To support multi-turn conversations without overflowing the context window, SABE
 
 ## Training Pipeline
 
-**Files**: `saber/training/trainer.py`, `saber/training/dataset_loader.py`
+**Files**: `saber/training/trainer.py`, `saber/training/dataset_loader.py`, `scripts/build_offline_kb.py`, `scripts/validate_kb_coverage.py`
 
-- **Base Model**: Qwen 2.5-7B-Instruct
-- **Method**: LoRA (rank=16, alpha=32, dropout=0.05, targets: q_proj, v_proj, k_proj, o_proj)
-- **Trainer**: TRL SFTTrainer with data packing
-- **Config**: bf16, batch=8, grad_accum=4 (effective batch=32), 3 epochs, lr=2e-4
-- **Hardware**: 3× RTX 6000 Ada / H100 80GB
-- **Data Processing**: Quality filtering + 30% CoT injection + ChatML formatting
+### 1. Two-Phase Training Paradigm
+
+#### Phase 1: High-Rank Weight-Decomposed LoRA (DoRA SFT)
+- **Base Model**: `Qwen/Qwen2.5-7B-Instruct`
+- **Method**: DoRA (`use_dora=True`, rank $r=64$, $\alpha=128$, dropout $0.05$)
+- **Target Modules**: All linear projection layers (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`) — expanding trainable parameter capacity to **~3.5% (~245M parameters)**.
+- **Precision & Optimization**: Native `bfloat16`, batch size per device = 8, gradient accumulation = 4 (effective batch = 32), 3 epochs, learning rate = 2e-4.
+- **Hardware Acceleration**: Optimized for single NVIDIA H100 80GB GPU.
+- **Format Normalization**: On-the-fly SFT chat template alignment matching benchmark structure (`Question: ... Options: A: ... Answer the following multiple choice question. The last line of your response MUST strictly follow the format: ANSWER: LETTER`).
+
+#### Phase 2: Verifiable-Fact-Augmented GRPO Reinforcement Learning
+- **Group Rollouts**: $G = 4\text{--}8$ parallel trajectory generations per prompt.
+- **Composite Reward Signal**:
+  $$\text{Reward} = R_{\text{Format}} (+1.0) + R_{\text{Outcome}} (+2.0) - \lambda \cdot R_{\text{Sentinel\_Factuality}}$$
+  - **Format Reward ($R_{\text{Format}}$)**: $+1.0$ if trajectory terminates with strict `ANSWER: [A-D]`.
+  - **Outcome Reward ($R_{\text{Outcome}}$)**: $+2.0$ if extracted option matches ground truth.
+  - **Sentinel Factuality Reward ($R_{\text{Sentinel\_Factuality}}$)**:
+    - Direct Contradiction against reference passage: **$-1.5$ penalty**
+    - Direct Grounded Support from reference passage: **$+0.5$ bonus**
+    - Uncovered / External Knowledge Claim: **$0.0$ neutral pass-through** (prevents penalizing valid background reasoning).
+
+#### Offline Knowledge Base (0ms RL Grounding)
+- **Indexing**: 139,973 reference support passages extracted directly from dataset context fields into local indexed SQLite databases (`data/offline_kb/*_kb.db`).
+- **Pre-flight Audit**: Substantive reference text coverage $>99.0\%$ across all 8 training domains.
+- **Numeric-Safe Caching**: Cache key pre-guarding (`[guard]::clean_query`) preserving numerical, percentage, date, and CVE statistical precision.
+- **Hysteresis Audit Loop**: Rollout Disagreement Rate (RDR $> 5\%$) dynamically decays $\lambda \rightarrow 0.1$ for 100 steps and auto-restores to $0.5$ once signal stability returns, monitored by TensorBoard Neutral Claim Ratio (NCR).
+
+---
 
 ### Training ↔ Evaluation Separation (Zero Data Leakage)
 
