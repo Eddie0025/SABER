@@ -78,11 +78,12 @@ def parse_mcq_answer(raw_answer):
             return match.group(1)
     
     # Pass 3: Common natural language patterns
+    # The letter must NOT be followed by another letter (prevents "answer is A complex..." false positive)
     full_text = raw_answer.upper()
     for pattern in [
-        r"THE\s+(?:CORRECT\s+)?ANSWER\s+IS\s*:?\s*\(?([A-D])\)?",
-        r"CORRECT\s+ANSWER\s*:?\s*\(?([A-D])\)?",
-        r"OPTION\s+([A-D])\s+IS\s+CORRECT",
+        r"THE\s+(?:CORRECT\s+)?ANSWER\s+IS\s*:?\s*\(?([A-D])\)?(?![A-Za-z])",
+        r"CORRECT\s+ANSWER\s*:?\s*\(?([A-D])\)?(?![A-Za-z])",
+        r"OPTION\s+([A-D])(?![A-Za-z])\s+IS\s+CORRECT",
     ]:
         match = re.search(pattern, full_text)
         if match:
@@ -291,8 +292,8 @@ def run_benchmark():
                             raw = engine.generate(q)
                             ans = raw.strip()
                     else:
-                        # Modes 3-5: Full SABER pipeline — bypass meta-reasoner for MCQs
-                        res = orch.process_query(q, tier=tier, bypass_meta=True)
+                        # Modes 3-4: Full SABER pipeline (CoT + Sentinel + Context-Aware Meta-Reasoner)
+                        res = orch.process_query(q, tier=tier, bypass_meta=False)
                         ans = res.get("answer", "").strip()
                 finally:
                     sys.stdout.close()
