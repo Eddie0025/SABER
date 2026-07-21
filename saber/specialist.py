@@ -367,15 +367,52 @@ class Specialist:
         return claims
 
     def _handle_verification(self, verification_signal: Signal) -> Signal:
-        """Check mode: Verify the Meta-Reasoning Layer's compiled text."""
-        # Default verification returns GREEN_CHIT
-        # Override this or use SENTINEL's LLM engine to perform strict verification
+        """Check mode: The Sentinel has flagged an issue. The Specialist must recheck its reasoning."""
+        flag = verification_signal.payload
+        if "issue_type" not in flag:
+            # Not a flag, just a generic verification signal
+            return Signal(
+                signal_type=SignalType.VERIFICATION_SIGNAL,
+                query_id=verification_signal.query_id,
+                source_id=self.meta.specialist_id,
+                target_id=verification_signal.source_id,
+                payload={"status": "GREEN_CHIT"}
+            ).freeze_and_hash()
+
+        # Sentinel raised a flag, rewrite using the specialist's model
+        from saber.llm_engine import LLMEngine
+        import os
+        
+        compiled_text = flag.get("compiled_text", "")
+        flags_str = f"- [{flag.get('issue_type')}] {flag.get('reasoning')}\n  FIX: {flag.get('proposed_fix')}"
+        
+        prompt = (
+            f"Your original reasoning draft:\n{compiled_text}\n\n"
+            f"A Sentinel verification process found the following errors in your logic/facts:\n{flags_str}\n\n"
+            "Your task is to recheck your reasoning and fix all identified errors. "
+            "You must then determine the correct option based on the corrected reasoning. "
+            "Output a brief justification followed by the final answer.\n\n"
+            "The LAST LINE of your response MUST be exactly: ANSWER: LETTER\n"
+            "(where LETTER is A, B, C, or D)"
+        )
+        system_prompt = f"You are the SABER {self.domain} Specialist. You must revise your multiple choice answer based on Sentinel feedback. The last line MUST be ANSWER: followed by a single letter."
+        
+        model_path = f"models/{self.domain}_v2"
+        if not os.path.exists(model_path):
+            model_path = "Qwen/Qwen2.5-7B"
+            
+        with LLMEngine(model_path) as engine:
+            revised_ans = engine.generate(prompt, system_prompt=system_prompt).strip()
+            
         return Signal(
             signal_type=SignalType.VERIFICATION_SIGNAL,
             query_id=verification_signal.query_id,
             source_id=self.meta.specialist_id,
             target_id=verification_signal.source_id,
-            payload={"status": "GREEN_CHIT"}
+            payload={
+                "status": "RESOLVED",
+                "revised_text": revised_ans
+            }
         ).freeze_and_hash()
 
     # ------------------------------------------------------------------

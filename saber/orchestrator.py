@@ -313,24 +313,22 @@ class Orchestrator:
                         config=self.config
                     )
                     if ver_res.signal_type == SignalType.FLAG_SIGNAL:
-                        # Sentinel flagged an error. Since Meta-Reasoner is bypassed, 
-                        # Orchestrator handles a simple rewrite directly using its model.
-                        from saber.llm_engine import LLMEngine
-                        import os
-                        flags_str = f"- [{ver_res.payload.get('issue_type')}] {ver_res.payload.get('reasoning')}\n  FIX: {ver_res.payload.get('proposed_fix')}"
-                        prompt = (
-                            f"Original Answer Draft:\n{ans}\n\n"
-                            f"The following critical errors (Flags) were found during verification:\n{flags_str}\n\n"
-                            "Your task is to rewrite the reasoning to fix all identified errors. "
-                            "You must then determine the correct option based on the corrected reasoning. "
-                            "Output a brief justification followed by the final answer.\n\n"
-                            "The LAST LINE of your response MUST be exactly: ANSWER: LETTER\n"
-                            "(where LETTER is A, B, C, or D)"
-                        )
-                        system_prompt = "You are revising a multiple choice answer. The last line MUST be ANSWER: followed by a single letter."
+                        # Sentinel flagged an error. Route the flag back to the specialist to recheck its reasoning.
+                        # We pass the compiled text inside the payload so the specialist knows what to rewrite.
+                        flag_payload = ver_res.payload
+                        flag_payload["compiled_text"] = ans
                         
-                        with LLMEngine(self.model_path) as engine:
-                            ans = engine.generate(prompt, system_prompt=system_prompt).strip()
+                        ver_sig = Signal(
+                            signal_type=SignalType.VERIFICATION_SIGNAL,
+                            query_id=query_id,
+                            source_id="ORCHESTRATOR",
+                            target_id=activated[0],
+                            payload=flag_payload
+                        ).freeze_and_hash()
+                        
+                        resolved_sig = specialist.handle_signal(ver_sig)
+                        if resolved_sig.payload.get("status") == "RESOLVED":
+                            ans = resolved_sig.payload.get("revised_text", ans)
 
                 result = {
                     "query_id": query_id,
