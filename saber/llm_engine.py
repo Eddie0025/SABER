@@ -71,7 +71,7 @@ class LLMEngine:
                 with open(adapter_config_path, "r") as f:
                     base_model = json.load(f)["base_model_name_or_path"]
             except Exception:
-                base_model = "Qwen/Qwen2.5-7B"
+                base_model = "Qwen/Qwen2.5-7B-Instruct"
             self.tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
         else:
             try:
@@ -79,7 +79,7 @@ class LLMEngine:
                     self.model_id_or_path, trust_remote_code=True
                 )
             except Exception:
-                self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B", trust_remote_code=True)
+                self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)
         
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -100,7 +100,7 @@ class LLMEngine:
                 with open(adapter_config_path, "r") as f:
                     base_model_name = json.load(f)["base_model_name_or_path"]
             except Exception:
-                base_model_name = "Qwen/Qwen2.5-7B"
+                base_model_name = "Qwen/Qwen2.5-7B-Instruct"
 
             # Load the base model first
             base_model = AutoModelForCausalLM.from_pretrained(
