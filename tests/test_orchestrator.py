@@ -49,6 +49,17 @@ class TestOrchestrator(unittest.TestCase):
         scores_cyber = self.orchestrator.classify_domains("Analyze malware vulnerability CVE-2023-1234 and threat intelligence.")
         self.assertGreater(scores_cyber.get("cyber", 0.0), 0.6)
 
+    def test_polysemous_virus_disambiguation(self):
+        # Computer virus -> cyber domain
+        scores_cyber_virus = self.orchestrator._heuristic_classify_domains("How does a computer virus spread over network ports?")
+        self.assertEqual(scores_cyber_virus.get("cyber"), 1.0)
+        self.assertEqual(scores_cyber_virus.get("science"), 0.0)
+
+        # Biological virus -> science domain
+        scores_bio_virus = self.orchestrator._heuristic_classify_domains("How does an RNA virus replicate inside a host cell capsid?")
+        self.assertEqual(scores_bio_virus.get("science"), 1.0)
+        self.assertEqual(scores_bio_virus.get("cyber"), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

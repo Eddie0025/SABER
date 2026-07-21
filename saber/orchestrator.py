@@ -107,20 +107,24 @@ class Orchestrator:
     def classify_domains(self, query: str) -> Dict[str, float]:
         """Return a relevance score for each registered specialist domain.
 
-        Uses Qwen-7B semantically to classify the query into active domains.
-        Limits generation to 32 tokens for sub-100ms classification latency.
-        Falls back to keyword heuristics if the model fails.
+        Uses Few-Shot Semantic Contextual Classification to resolve polysemous terms
+        (e.g., distinguishing 'computer virus' [cyber] vs 'biological virus' [science]).
         """
         from saber.llm_engine import LLMEngine
         import json
 
         domains = list(self.registry.all().keys())
         prompt = (
-            f"You are the routing orchestrator for a multi-specialist AI system.\n"
-            f"Given the user query, identify which of the following specialist domains it belongs to:\n"
-            f"Available domains: {json.dumps(domains)}\n\n"
-            f"Query: \"{query}\"\n\n"
-            f"Output strictly a JSON list containing the activated domains (e.g. [\"science\"] or [\"medical\", \"cyber\"]) with no other text, explanation, or conversational intro."
+            f"You are the routing orchestrator for SABER, a multi-specialist AI system.\n"
+            f"Available Specialist Domains: {json.dumps(domains)}\n\n"
+            f"FEW-SHOT ROUTING EXAMPLES:\n"
+            f"Query: \"How does a computer virus spread over SMB ports?\" -> [\"cyber\"]\n"
+            f"Query: \"How does an RNA virus replicate inside a host cell?\" -> [\"science\"]\n"
+            f"Query: \"Calculate the EBITDA and net revenue of a firm.\" -> [\"finance\"]\n"
+            f"Query: \"Write a python script to implement a binary tree.\" -> [\"coding\"]\n"
+            f"Query: \"Design a microservices architecture using Kubernetes.\" -> [\"architecture\"]\n\n"
+            f"User Query: \"{query}\"\n\n"
+            f"Output strictly a JSON list containing the activated domains (e.g. [\"science\"]) with no explanations."
         )
 
         try:
@@ -142,15 +146,28 @@ class Orchestrator:
             return self._heuristic_classify_domains(query)
 
     def _heuristic_classify_domains(self, query: str) -> Dict[str, float]:
-        """Fallback keyword & domain-indicator classifier with high-precision thresholding."""
+        """Fallback semantic context classifier with polysemous term disambiguation."""
         query_lower = query.lower()
         query_words = set(re.findall(r"\w+", query_lower))
         stemmed_query_words = {self._stem(w) for w in query_words}
-        scores: Dict[str, float] = {}
+        scores: Dict[str, float] = {d: 0.0 for d in self.registry.all().keys()}
 
-        # Primary domain indicator triggers (guarantee high confidence activation)
+        # ── 1. Polysemous Contextual Disambiguation Rules ──
+        if "virus" in query_lower:
+            cyber_context = {"computer", "network", "smb", "payload", "port", "malware", "system", "file", "exe", "trojan", "worm", "attack"}
+            science_context = {"cell", "rna", "dna", "protein", "capsid", "host", "biology", "organism", "pathogen", "infection", "bacterial"}
+            
+            if any(w in query_lower for w in cyber_context):
+                scores["cyber"] = 1.0
+            elif any(w in query_lower for w in science_context):
+                scores["science"] = 1.0
+            else:
+                # Default to cyber for generic computer context unless biological terms are present
+                scores["cyber"] = 0.80
+
+        # ── 2. Primary Domain Indicator Triggers ──
         domain_triggers = {
-            "science": {"physics", "chemistry", "mathematics", "math", "calculus", "equation", "velocity", "quantum", "molecule", "reaction", "energy", "force"},
+            "science": {"physics", "chemistry", "mathematics", "math", "calculus", "equation", "velocity", "quantum", "molecule", "reaction", "energy", "force", "biology"},
             "cyber": {"cve", "vulnerability", "malware", "firewall", "mitre", "attack", "exploit", "hack", "penetration", "cyber", "security", "port", "payload"},
             "finance": {"ebitda", "revenue", "portfolio", "valuation", "sec", "10-k", "asset", "liability", "hedging", "interest", "finance", "accounting"},
             "coding": {"python", "algorithm", "function", "array", "code", "debugging", "class", "binary", "leetcode", "complexity", "dataframe", "string"},
@@ -158,6 +175,9 @@ class Orchestrator:
         }
 
         for domain, specialist in self.registry.all().items():
+            if scores[domain] > 0:
+                continue
+
             triggers = domain_triggers.get(domain, set())
             primary_hits = sum(1 for tr in triggers if tr in query_lower or self._stem(tr) in stemmed_query_words)
             
