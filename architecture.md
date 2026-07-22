@@ -7,32 +7,68 @@
 ## End-to-End Pipeline
 
 ```
-                                USER MESSAGE
-                                     │
-                                     ▼
-          ┌─────────────────────────────────────────────────────┐
-          │  RESIDENT BASE MODEL (bare Qwen2.5-7B-Instruct)     │
-          │  - Single resident 7B base model in VRAM            │
-          └──────────────────────────┬──────────────────────────┘
-                                     │
-                 2-TIERED INTENT GATE (is_casual_chat)
-                 - Tier 1: Pattern Match & Dictionary (<1ms)
-                 - Tier 2: 7B LLM Semantic Intent Gate (<15ms)
-                                     │
-                  ┌──────────────────┴──────────────────┐
-                  │ CASUAL_CHAT                         │ DOMAIN_QUERY
-                  ▼                                     ▼
-      [ Bare 7B Native Output ]           ┌───────────────────────────────────┐
-      - Instant warm response (<30ms)     │ 1. Plug Orchestrator DoRA Adapter │
-      - Zero adapter loading overhead     │    -> Dissect & route to domains  │
-                                          │ 2. Hot-Swap Specialist Adapter    │
-                                          │    -> Deep CoT Reasoning & KB     │
-                                          │ 3. Sentinel Grounding & Synthesis │
-                                          └─────────────────┬─────────────────┘
+                                USER QUERY / MESSAGE
+                                         │
+                                         ▼
+            ┌──────────────────────────────────────────────────────────┐
+            │       RESIDENT BASE MODEL (bare Qwen2.5-7B-Instruct)     │
+            │       - Single resident 7B base model in VRAM            │
+            └────────────────────────────┬─────────────────────────────┘
+                                         │
+                   2-TIERED INTENT GATE (is_casual_chat)
+                   - Tier 1: Pattern & Phrase Match (<1ms)
+                   - Tier 2: 7B LLM Semantic Intent Gate (<15ms)
+                                         │
+                      ┌──────────────────┴──────────────────┐
+                      │ CASUAL_CHAT                         │ DOMAIN_QUERY
+                      ▼                                     ▼
+        ┌───────────────────────────┐         ┌───────────────────────────┐
+        │  BARE 7B NATIVE CHAT      │         │  ORCHESTRATOR DORA        │
+        │  - Instant warm response  │         │  ADAPTER                  │
+        │    (<30ms latency)        │         │  - Dissects query into    │
+        │  - Zero adapter loading   │         │    sub-task signals       │
+        └───────────────────────────┘         └─────────────┬─────────────┘
+                                                            │ TASK_SIGNALs
+                                                            ▼
+                                              ┌───────────────────────────┐
+                                              │  SPECIALIST EXECUTION     │
+                                              │  - Hot-swaps DoRA adapter │
+                                              │    (Science, Cyber, Fin,  │
+                                              │     Coding, Architecture) │
+                                              │  - Generates CoT Claims   │
+                                              └─────────────┬─────────────┘
+                                                            │ COT_SIGNALs
+                                                            ▼
+                                              ┌───────────────────────────┐
+                                              │  SENTINEL VERIFIER KERNEL │
+                                              │  1. Fast SQLite KB (<5ms) │
+                                              │  2. Web Search + Auto-    │
+                                              │     Cache Write to KB     │
+                                              │  3. Returns GREEN_CHIT or │
+                                              │     FLAG_SIGNAL (Rewrite) │
+                                              └─────────────┬─────────────┘
+                                                            │ Verified Claims
+                                                            ▼
+                                              ┌───────────────────────────┐
+                                              │  META-REASONING LAYER     │
+                                              │  - Context-Aware Struct   │
+                                              │    (MCQ / Code / Synthesis)│
+                                              └─────────────┬─────────────┘
+                                                            │ Synthesized Output
+                                                            ▼
+                                              ┌───────────────────────────┐
+                                              │  THREAD-SAFE AUDIT LEDGER │
+                                              │  - Logs query_id, signals │
+                                              │    flags & confidence     │
+                                              └─────────────┬─────────────┘
                                                             │
                                                             ▼
-                                                     FINAL RESPONSE
-                                              (With Dynamic Safety Footer)
+                                              ┌───────────────────────────┐
+                                              │  RESPONSE OUTPUT          │
+                                              │  Appends Sentinel Footer: │
+                                              │  ⚡ Online Web Grounded /  │
+                                              │  🔒 Offline Local KB      │
+                                              └───────────────────────────┘
 ```
 
 ---
