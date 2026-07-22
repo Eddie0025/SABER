@@ -9,72 +9,52 @@
 ```
 User Query
     │
-    ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  ORCHESTRATOR (Qwen 2.5-7B Base + Orchestrator DoRA Adapter)     │
-│                                                                  │
-│  1. Ambiguity Detection & Completeness Check                     │
-│  2. Few-Shot Semantic Intent Classification                      │
-│  3. Specialist Selection & Task Decomposition                    │
-│  4. Verification Tier Assignment                                 │
-│                                                                  │
-│  Once routing is finalized:                                      │
-│  ──► Sends original query + specialist list to Meta-Reasoner     │
-│  ──► Dispatches domain-specific sub-tasks to Specialists         │
-└───────┬──────────────────────────────────┬───────────────────────┘
-        │ query + spec list                │ TASK_SIGNALs
-        ▼                                  ▼
-┌─────────────────────┐  ┌─────────────────────────────────────────┐
-│ META-REASONER       │  │ SPECIALIST EXECUTION                     │
-│ (reads & holds)     │  │ (Qwen 2.5-7B Base + Specialist Adapter)  │
-│                     │  │ - Science, Cyber, Finance, Coding, Arch  │
-│                     │  │ - Generates Claims + CoT Chains          │
-└─────────────────────┘  └─────────────┬───────────────────────────┘
-                                       │ COT_SIGNALs
-                                       ▼
-                         ┌─────────────────────────────────────────┐
-                         │ SENTINEL VERIFICATION KERNEL            │
-                         │ 1. Fast Local SQLite KB Lookup (<5ms)   │
-                         │ 2. Live Web Search + Auto-Cache Write   │
-                         │ 3. Returns GREEN_CHIT or FLAG_SIGNAL   │
-                         │    (If flagged: Specialist Rewrites)    │
-                         └─────────────┬───────────────────────────┘
-                                       │ Verified Claims & Trajectories
-                                       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  META-REASONING SYNTHESIS LAYER                                  │
-│  - Formats answer based on query context:                        │
-│    • MCQ Questions ──► CoT Reasoning + ANSWER: <LETTER>          │
-│    • Coding Tasks  ──► Executable ```python code block            │
-│    • Open-Ended    ──► Structured 6-Section Synthesis          │
-│  - Computes confidence-weighted synthesis & resolves conflicts   │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │ Synthesized Answer
-                       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  DECISION LEDGER (Thread-Safe Audit Log)                         │
-│  - Logs query_id, full specialist claims, Sentinel flags,        │
-│    verification cycles, and resolution path.                     │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  RESPONSE OUTPUT                                                 │
-│  Appends Dynamic Verification Safety Footer:                     │
-│  • Online:  ⚡ Verified by SABER Sentinel (Online Web Grounded)  │
-│  • Offline: 🔒 Verified by SABER Sentinel (Offline Local KB)     │
-└──────────────────────────────────────────────────────────────────┘
+    ├────────────────────────────────────────────────┐
+    │ (Instant <30ms Status Ping)                    │ (Async Pipeline Dispatch)
+    ▼                                                ▼
+┌──────────────────────────────┐   ┌──────────────────────────────────────────────────┐
+│  CHATBOT (Qwen 2.5-0.5B CPU) │   │  ORCHESTRATOR (Qwen 2.5-7B Base + DoRA Adapter)  │
+│  - Instant Status Ping       │   │  1. Ambiguity & Completeness Check               │
+│    ("Analyzing query...")    │   │  2. Few-Shot Intent Classification               │
+│  - Handles Simple Greetings  │   │  3. Specialist Selection & Task Decomposition    │
+└──────────────┬───────────────┘   └─────────────────────────┬────────────────────────┘
+               │                                             │ TASK_SIGNALs
+               ▼                                             ▼
+       User Sees Instant                            ┌─────────────────────────────────┐
+       Visual Feedback                              │ SPECIALIST EXECUTION            │
+       (<30ms latency)                              │ (Qwen 2.5-7B + Specialist DoRA) │
+                                                    └────────────────┬────────────────┘
+                                                                     │ COT_SIGNALs
+                                                                     ▼
+                                                    ┌─────────────────────────────────┐
+                                                    │ SENTINEL VERIFICATION KERNEL    │
+                                                    │ 1. Local SQLite KB (<5ms)       │
+                                                    │ 2. Live Web + Auto-Cache Write  │
+                                                    └────────────────┬────────────────┘
+                                                                     │ Verified Claims
+                                                                     ▼
+                                                    ┌─────────────────────────────────┐
+                                                    │ META-REASONING SYNTHESIS        │
+                                                    │ Synthesizes Final Response      │
+                                                    └────────────────┬────────────────┘
+                                                                     │
+                                                                     ▼
+                                                            Final Response
+                                                    (Replaces status ping in UI)
 ```
 
 ---
 
 ## Component Details
 
-### 1. Orchestrator
+### 0. Instant UX Status Chatbot (Qwen 2.5-0.5B CPU)
 
-**File**: `saber/orchestrator.py`
+**Model**: `Qwen/Qwen2.5-0.5B` (~300MB RAM)
 
-The entry point. Uses `Qwen2.5-7B-Instruct` base model loaded with the **Orchestrator DoRA Adapter (`models/orchestrator_v2`)** for Few-Shot Semantic Intent Classification and Ambiguity Detection.
+A lightweight CPU model running at the UI interface layer to eliminate user impatience:
+- **Instant Greetings**: Directly answers simple non-domain messages ("hi", "thanks", "hello") in **<30ms**.
+- **Instant Status Ping**: When a complex reasoning query is dispatched, it immediately prints a lightweight status message (*"Analyzing query and dispatching domain specialists..."*).
+- **Replaced Transparently**: When the 7B SABER backend completes verified synthesis, the UI replaces the temporary status message with the final response.
 
 | Step | What It Does |
 |------|-------------|
