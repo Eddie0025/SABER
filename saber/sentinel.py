@@ -135,6 +135,35 @@ class Sentinel:
             except Exception as e:
                 return f"Search lookup failed: {e}"
 
+        def save_to_local_kb(domain: str, query_guard: str, question_text: str, support_passage: str):
+            """Auto-expand local SQLite KB by saving live verified web snippets."""
+            import sqlite3
+            kb_dir = "data/offline_kb"
+            os.makedirs(kb_dir, exist_ok=True)
+            db_path = os.path.join(kb_dir, f"{domain}_kb.db")
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS passage_kb (
+                        id TEXT PRIMARY KEY,
+                        query_guard TEXT,
+                        question_text TEXT,
+                        support_passage TEXT,
+                        label_text TEXT
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_guard ON passage_kb(query_guard)")
+                q_id = f"auto_{hash(query_guard)}"
+                cursor.execute(
+                    "INSERT OR REPLACE INTO passage_kb (id, query_guard, question_text, support_passage, label_text) VALUES (?, ?, ?, ?, ?)",
+                    (q_id, query_guard, question_text, support_passage, "auto_cached")
+                )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+
         # Extract claims from the original OUTPUT_SIGNAL payload
         claims_data = original_signal.payload.get("claims", [])
         claims_str = json.dumps(claims_data, indent=2)

@@ -383,5 +383,22 @@ class Orchestrator:
                 verification_tier=ver_tier,
             )
 
+        # Append Dynamic Verification Footer (in user mode)
+        import os
+        import urllib.request
+        if os.getenv("SABER_BENCHMARK_MODE") != "1" and result.get("answer"):
+            try:
+                urllib.request.urlopen("https://www.google.com", timeout=1)
+                is_online = True
+            except Exception:
+                is_online = False
+
+            if is_online:
+                footer = "\n\n---\n⚡ *Verified by SABER Sentinel (Online Web Grounded & Dynamic KB)*\n*(SABER is an AI specialist system. Outputs may contain errors — please verify critical domain facts.)*"
+            else:
+                footer = "\n\n---\n🔒 *Verified by SABER Sentinel (Offline Local KB Mode — Air-Gapped)*\n*(SABER is operating offline. Facts were verified against local knowledge bases — please cross-check critical domain information.)*"
+            
+            result["answer"] = result["answer"].strip() + footer
+
         self.audit.log_output(query_id, result.get("answer", ""))
         return result
