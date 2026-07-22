@@ -1,64 +1,62 @@
 # SABER — System Architecture
 
-> **SABER** (Specialist Agent-Based Expert Reasoning) is a modular multi-specialist AI framework built on open-weight 7B base models (Qwen 2.5-7B). SABER pairs **High-Rank Weight-Decomposed Low-Rank Adaptation (DoRA)** with **Verifiable-Fact-Augmented Group Relative Policy Optimization (GRPO)**. Domain-specialized expert models generate verified, chain-of-thought-backed answers grounded by a 2-pass asynchronous verification kernel (**Sentinel**) with offline/online knowledge base routing and synthesized by a meta-reasoning layer.
+> **SABER** (Specialist Agent-Based Expert Reasoning) is a modular multi-specialist AI framework built on a single resident open-weight 7B base model (`Qwen2.5-7B-Instruct`). SABER pairs **High-Rank Weight-Decomposed Low-Rank Adaptation (DoRA Phase 1)** with **Verifiable-Fact-Augmented Group Relative Policy Optimization (GRPO Phase 2)**. Domain-specialized expert models generate verified, chain-of-thought-backed answers grounded by a 2-pass asynchronous verification kernel (**Sentinel**) with offline/online knowledge base routing and synthesized by a meta-reasoning layer.
 
 ---
 
 ## End-to-End Pipeline
 
 ```
-User Query
-    │
-    ├────────────────────────────────────────────────┐
-    │ (Instant <30ms Status Ping)                    │ (Async Pipeline Dispatch)
-    ▼                                                ▼
-┌──────────────────────────────┐   ┌──────────────────────────────────────────────────┐
-│  CHATBOT (Qwen 2.5-0.5B CPU) │   │  ORCHESTRATOR (Qwen 2.5-7B Base + DoRA Adapter)  │
-│  - Instant Status Ping       │   │  1. Ambiguity & Completeness Check               │
-│    ("Analyzing query...")    │   │  2. Few-Shot Intent Classification               │
-│  - Handles Simple Greetings  │   │  3. Specialist Selection & Task Decomposition    │
-└──────────────┬───────────────┘   └─────────────────────────┬────────────────────────┘
-               │                                             │ TASK_SIGNALs
-               ▼                                             ▼
-       User Sees Instant                            ┌─────────────────────────────────┐
-       Visual Feedback                              │ SPECIALIST EXECUTION            │
-       (<30ms latency)                              │ (Qwen 2.5-7B + Specialist DoRA) │
-                                                    └────────────────┬────────────────┘
-                                                                     │ COT_SIGNALs
-                                                                     ▼
-                                                    ┌─────────────────────────────────┐
-                                                    │ SENTINEL VERIFICATION KERNEL    │
-                                                    │ 1. Local SQLite KB (<5ms)       │
-                                                    │ 2. Live Web + Auto-Cache Write  │
-                                                    └────────────────┬────────────────┘
-                                                                     │ Verified Claims
-                                                                     ▼
-                                                    ┌─────────────────────────────────┐
-                                                    │ META-REASONING SYNTHESIS        │
-                                                    │ Synthesizes Final Response      │
-                                                    └────────────────┬────────────────┘
-                                                                     │
-                                                                     ▼
-                                                            Final Response
-                                                    (Replaces status ping in UI)
+                                USER MESSAGE
+                                     │
+                                     ▼
+          ┌─────────────────────────────────────────────────────┐
+          │  RESIDENT BASE MODEL (bare Qwen2.5-7B-Instruct)     │
+          │  - Single resident 7B base model in VRAM            │
+          └──────────────────────────┬──────────────────────────┘
+                                     │
+                 2-TIERED INTENT GATE (is_casual_chat)
+                 - Tier 1: Pattern Match & Dictionary (<1ms)
+                 - Tier 2: 7B LLM Semantic Intent Gate (<15ms)
+                                     │
+                  ┌──────────────────┴──────────────────┐
+                  │ CASUAL_CHAT                         │ DOMAIN_QUERY
+                  ▼                                     ▼
+      [ Bare 7B Native Output ]           ┌───────────────────────────────────┐
+      - Instant warm response (<30ms)     │ 1. Plug Orchestrator DoRA Adapter │
+      - Zero adapter loading overhead     │    -> Dissect & route to domains  │
+                                          │ 2. Hot-Swap Specialist Adapter    │
+                                          │    -> Deep CoT Reasoning & KB     │
+                                          │ 3. Sentinel Grounding & Synthesis │
+                                          └─────────────────┬─────────────────┘
+                                                            │
+                                                            ▼
+                                                     FINAL RESPONSE
+                                              (With Dynamic Safety Footer)
 ```
 
 ---
 
 ## Component Details
 
-### 0. Instant UX Status Chatbot (Qwen 2.5-0.5B CPU)
+### 1. 2-Tiered Intent Gate & Orchestrator
 
-**Model**: `Qwen/Qwen2.5-0.5B` (~300MB RAM)
+**File**: `saber/orchestrator.py`
 
-A lightweight CPU model running at the UI interface layer to eliminate user impatience:
-- **Instant Greetings**: Directly answers simple non-domain messages ("hi", "thanks", "hello") in **<30ms**.
-- **Instant Status Ping**: When a complex reasoning query is dispatched, it immediately prints a lightweight status message (*"Analyzing query and dispatching domain specialists..."*).
-- **Replaced Transparently**: When the 7B SABER backend completes verified synthesis, the UI replaces the temporary status message with the final response.
+The entry point. Operates via **Base-First Dynamic Adapter Insertion**:
+
+1. **2-Tiered Intent Gate (`is_casual_chat`)**:
+   - **Tier 1 (Fast Direct Pattern Match <1ms)**: Normalized alphanumeric check over greetings, slang, pleasantries (`hi`, `hello`, `thanks!`, `good morning`, `who made you`).
+   - **Tier 2 (7B LLM Semantic Intent Gate <15ms)**: 4-token prompt gate evaluating semantic intent for unstructured conversational inputs.
+   - **Casual Chat Fast-Path**: Responds natively using the bare 7B base model in **<30ms** with zero adapter loading overhead.
+
+2. **Orchestrator DoRA Adapter (`models/orchestrator_v2`)**:
+   - When a `DOMAIN_QUERY` is identified, the Orchestrator DoRA adapter is dynamically plugged onto the resident 7B base model to perform **Few-Shot Semantic Intent Routing** and **Ambiguity Detection**.
 
 | Step | What It Does |
 |------|-------------|
-| **Ambiguity Detection** | Scores query ambiguity (0–1) based on word count, pronoun density, and domain keyword coverage. Queries ≥ 0.70 are rejected with a clarification request. |
+| **Casual Chat Gating** | Intercepts greetings and small talk, generating warm native answers instantly without loading adapters. |
+| **Ambiguity Detection** | Scores query ambiguity (0–1). Queries ≥ 0.70 are rejected with a clarification request. |
 | **Semantic Intent Classification** | Uses few-shot semantic prompt routing to dissect complex or polysemous queries (e.g. computer virus -> cyber vs biological virus -> science). |
 | **Specialist Selection** | Activates specialists whose domain relevance score ≥ 0.50 (or top-1 domain in benchmark mode). |
 | **Task Decomposition** | Splits multi-domain queries into domain-specific `TASK_SIGNAL` payloads for each activated specialist. |
@@ -172,6 +170,7 @@ Every signal is cryptographically signed with a SHA-256 `integrity_hash` over it
 
 Thread-safe, append-only JSON-Lines audit log (`logs/audit.jsonl`). Records every query's full lifecycle:
 - Query reception & ambiguity score
+- Casual chat gating status
 - Specialist selection & task signals
 - Signal integrity check results
 - Sentinel verification flags & proposed fixes
