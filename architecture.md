@@ -253,31 +253,27 @@ The cleaned CoT chain is exported into the COT_SIGNAL and travels with the claim
 
 **File**: `saber/sentinel.py`
 
-The independent verification authority. **Critically uses the unbiased base model** (not the fine-tuned LoRA adapter) to prevent self-checking bias.
+The independent verification authority. Operates via **External-Evidence Grounding** (not internal LLM memory) to completely eliminate self-checking bias.
 
-**Two levels of verification on each specialist's output:**
+**Tiered Hybrid Verification Architecture:**
 
-#### Level 1: Signal Integrity (Cryptographic)
-- Recomputes SHA-256 hash over the Signal payload.
-- Compares against `integrity_hash` set when the Signal was created.
-- Mismatch → immediate `FLAG_SIGNAL` with severity `CRITICAL` (tampering or corruption).
+#### 1. Fast Local SQLite KB Lookup (< 5ms)
+- Checks local SQLite Knowledge Base (`data/offline_kb/*_kb.db`) using **Numeric-Safe Cache Guarding** (`[numeric_guards]::clean_query`) to preserve exact dates, percentages, and CVE identifiers.
+- Hits in-memory `_KB_CACHE` in RAM for 0ms lookup overhead during RL training and offline execution.
 
-#### Level 2: Semantic Verification (LLM + Web Grounding)
-- **Verification Batching**: Instead of verifying claims one by one, Sentinel batches all claims from a specialist into a single verification prompt (e.g., "Verify these 8 claims") to drastically reduce LLM call overhead. Latency remains an explicit tradeoff for high-tier checks, but batching prevents it from scaling linearly.
-- **Online mode**: Queries the Chrome Search API for factual verification of claims. Search results are injected as "ground truth" into the verification prompt.
-- **Offline mode**: Falls back to logical consistency checks only.
-- **Targeted verification routing**: Different aspects get checked by different reviewers:
-  - Task alignment → `task_relevance` check (Did the specialist actually answer the specific sub-task in the TASK_SIGNAL, or did it go on a factually correct tangent?)
-  - Cyber content → `technical_accuracy` by cyber, `logical_reasoning` by science
-  - Science content → `factual_accuracy` + `mathematical_reasoning` by science
-- Runs the configured number of verification cycles (tier-dependent).
-- Each cycle: if all checks return `CONFIRMED` → `GREEN_CHIT`. If errors found → `FLAG_SIGNAL` with structured JSON (issue_type, severity, evidence, reasoning, proposed_fix).
-- **Self-Correcting Rewrites**: When Sentinel flags an answer, it explicitly provides the correct grounded fact from the web in the `FLAG_SIGNAL` (via `proposed_fix`). The specialist simply rewrites its answer to integrate the provided correction, practically eliminating the risk of infinite rewrite loops.
+#### 2. Live Web Grounding & Dynamic Auto-Caching
+- If a novel claim or recent fact is missing from the local KB, Sentinel queries live web search (Online Mode).
+- **Dynamic Auto-Cache Write**: Clean verified web search snippets are **automatically written to the local SQLite KB** (`save_to_local_kb`). All future lookups for this fact become **instant 0ms local KB hits**!
+
+#### 3. Dynamic Response Safety Footer
+Every response appends a context-aware safety footer for UI/UX transparency:
+- **Online Mode**: `⚡ Verified by SABER Sentinel (Online Web Grounded & Dynamic KB)`
+- **Offline Mode**: `🔒 Verified by SABER Sentinel (Offline Local KB Mode — Air-Gapped)`
 
 #### CoT Step-Level Verification
 - Checks that the first step is `IDENTIFY` and last step is `CONCLUDE`.
 - Detects sharp confidence drops (>0.3 between consecutive steps).
-- Verifies each step logically follows from the previous steps (LLM check).
+- Verifies each step logically follows from the previous steps.
 
 ### 5. Meta-Reasoning Layer
 
@@ -402,26 +398,22 @@ To support multi-turn conversations without overflowing the context window, SABE
 
 #### Phase 1: High-Rank Weight-Decomposed LoRA (DoRA SFT)
 - **Base Model**: `Qwen/Qwen2.5-7B-Instruct`
-- **Method**: DoRA (`use_dora=True`, rank $r=64$, $\alpha=128$, dropout $0.05$)
-- **Target Modules**: All linear projection layers (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`) — expanding trainable parameter capacity to **~3.5% (~245M parameters)**.
-- **Precision & Optimization**: Native `bfloat16`, batch size per device = 8, gradient accumulation = 4 (effective batch = 32), 3 epochs, learning rate = 2e-4.
+- **Method**: DoRA (`use_dora=True`, rank $r=128$, $\alpha=256$, dropout $0.05$)
+- **Target Modules**: All 7 linear projection layers (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`) — expanding trainable parameter capacity to **~500M parameters (~7.2% of model)**.
+- **Precision & Optimization**: Native `bfloat16`, batch size per device = 8, gradient accumulation = 4 (effective batch = 32), 4 epochs, learning rate = 2e-4, PyTorch gradient checkpointing enabled.
 - **Hardware Acceleration**: Optimized for single NVIDIA H100 80GB GPU.
-- **Format Normalization**: On-the-fly SFT chat template alignment matching benchmark structure (`Question: ... Options: A: ... Answer the following multiple choice question. The last line of your response MUST strictly follow the format: ANSWER: LETTER`).
+- **Dataset Scale**: **260,000 pristine CoT records** across 5 specialized domains + 2 core orchestrating systems (~13.5 hours total H100 training run).
 
 #### Phase 2: Verifiable-Fact-Augmented GRPO Reinforcement Learning
-- **Group Rollouts**: $G = 4\text{--}8$ parallel trajectory generations per prompt.
+- **Group Rollouts**: $G = 8$ parallel trajectory generations per prompt.
 - **Composite Reward Signal**:
   $$\text{Reward} = R_{\text{Format}} (+1.0) + R_{\text{Outcome}} (+2.0) - \lambda \cdot R_{\text{Sentinel\_Factuality}}$$
-  - **Format Reward ($R_{\text{Format}}$)**: $+1.0$ if trajectory terminates with strict `ANSWER: [A-D]`.
-  - **Outcome Reward ($R_{\text{Outcome}}$)**: $+2.0$ if extracted option matches ground truth.
-  - **Sentinel Factuality Reward ($R_{\text{Sentinel\_Factuality}}$)**:
-    - Direct Contradiction against reference passage: **$-1.5$ penalty**
-    - Direct Grounded Support from reference passage: **$+0.5$ bonus**
-    - Uncovered / External Knowledge Claim: **$0.0$ neutral pass-through** (prevents penalizing valid background reasoning).
+  - **Definitive Tasks (Science, Cyber, Finance)**: Format (+1.0 for ANSWER: [A-D]), Outcome (+2.0 for ground truth match), Sentinel Factuality (-1.5 contradiction / +0.5 support / 0.0 neutral).
+  - **Open-Ended Tasks (Coding, Architecture, Meta, Orchestrator)**: Sandboxed Code Execution (+2.0), CoT Completeness (+1.0), Token Repetition Penalty (-1.5).
 
-#### Offline Knowledge Base (0ms RL Grounding)
-- **Indexing**: 139,973 reference support passages extracted directly from dataset context fields into local indexed SQLite databases (`data/offline_kb/*_kb.db`).
-- **Pre-flight Audit**: Substantive reference text coverage $>99.0\%$ across all 8 training domains.
+#### Tiered Hybrid Knowledge Base (0ms RL & Consumer Grounding)
+- **Indexing**: 139,973+ reference support passages compiled into local indexed SQLite databases (`data/offline_kb/*_kb.db`).
+- **Dynamic Auto-Caching**: Un-cached live web snippets are automatically written back to SQLite KB for instant 0ms future hits.
 - **Numeric-Safe Caching**: Cache key pre-guarding (`[guard]::clean_query`) preserving numerical, percentage, date, and CVE statistical precision.
 - **Hysteresis Audit Loop**: Rollout Disagreement Rate (RDR $> 5\%$) dynamically decays $\lambda \rightarrow 0.1$ for 100 steps and auto-restores to $0.5$ once signal stability returns, monitored by TensorBoard Neutral Claim Ratio (NCR).
 
