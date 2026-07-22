@@ -149,8 +149,34 @@ class CoTMaintainer:
     def get_all_chains(self) -> List[CoTChain]:
         return self._completed_chains
         
+    def export_rich_synthesis_narrative(self) -> str:
+        """Format the CoT chain into a rich, structured, evidence-grounded narrative
+        specifically designed for Meta-Reasoner compilation of long open-ended explanations.
+        """
+        if not self._current_chain or not self._current_chain.steps:
+            return ""
+
+        narrative_parts = [f"=== Reasoning Chain for [{self._current_chain.domain.upper()}] ==="]
+        for s in self._current_chain.steps:
+            refs = f" (Evidence: {', '.join(s.evidence_refs)})" if s.evidence_refs else ""
+            deps = f" [Builds on Step {', '.join(map(str, s.depends_on))}]" if s.depends_on else ""
+            narrative_parts.append(
+                f"• Step {s.step_number} [{s.action}] (Confidence: {s.confidence:.2f}){deps}:\n"
+                f"  {s.content}{refs}"
+            )
+
+        if self._current_chain.final_conclusion:
+            narrative_parts.append(
+                f"• Final Specialist Conclusion (Confidence: {self._current_chain.chain_confidence:.2f}):\n"
+                f"  {self._current_chain.final_conclusion}"
+            )
+
+        return "\n\n".join(narrative_parts)
+
     def export_for_signal(self) -> Dict[str, Any]:
         """Export current chain as a dictionary payload for signals."""
         if not self._current_chain:
             return {}
-        return self._current_chain.model_dump()
+        payload = self._current_chain.model_dump()
+        payload["rich_narrative"] = self.export_rich_synthesis_narrative()
+        return payload
