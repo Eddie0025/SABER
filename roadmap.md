@@ -192,13 +192,13 @@ Statistics
 Examples:
 
 ```text
-Hospital Ransomware
+Smart Contract Exploit
 
-Medical + Cyber
+Finance + Cyber
 
-Autonomous Vehicle Failure
+Scientific Compute Infrastructure
 
-Engineering + Safety + AI
+Architecture + Science + Code
 ```
 
 ### Required Fields
@@ -404,7 +404,7 @@ Avoid irrelevant reviews.
 Instead of:
 
 ```text
-Medical Reviews Cyber
+Finance Reviews Cyber
 ```
 
 Use:
@@ -490,8 +490,8 @@ Run:
 ```text
 Cyber-v1
 Science-v1
-Medical-v2
 Finance-v1
+Architecture-v1
 ```
 
 across:
@@ -550,7 +550,7 @@ Begin coding Phase 2 immediately afterward.
 Do NOT start Phase 3 until:
 - Cyber-v1 benchmarked
 - Science-v1 finished
-- Medical-v2 finished
+- Architecture-v1 finished
 
 At that point run the first full SABER benchmark campaign.
 ```

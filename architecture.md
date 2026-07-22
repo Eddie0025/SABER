@@ -73,6 +73,27 @@
 
 ---
 
+## Project File Map
+
+### Root Files
+
+| File | Purpose |
+|------|---------|
+| `architecture.md` | This document — master system architecture reference. |
+| `implementation_plan.md` | Detailed training & benchmark plan with dataset breakdown. |
+| `roadmap.md` | Feature & milestone roadmap. |
+| `README.md` | Project overview & quickstart. |
+| `requirements.txt` | Python dependencies. |
+| `run.sh` | Main SABER execution entrypoint script. |
+| `run_pod.sh` | RunPod GPU cloud execution script. |
+| `run_training_pipeline.sh` | Sequential training pipeline launcher. |
+| `run_evaluations.py` | Unified benchmark evaluation runner. |
+| `chat.py` | Interactive CLI chat interface. |
+| `merge_adapters.py` | Merges trained DoRA adapters into base model weights. |
+| `apply_patches.sh` | Applies incremental code patches. |
+
+---
+
 ## Component Details
 
 ### 1. 2-Tiered Intent Gate & Orchestrator
@@ -116,47 +137,76 @@ Each specialist produces structured claims (`Claim`) and a step-by-step reasonin
 
 ---
 
-### 3. CoT Maintainer
+### 3. LLM Engine (Dynamic Model Swapping)
 
-**File**: `saber/cot_maintainer.py`
+**File**: `saber/llm_engine.py`
 
-Maintains the explicit Chain-of-Thought reasoning state for each specialist run:
-1. `IDENTIFY` — Problem formulation and goal definition.
-2. `ANALYZE` — Domain-specific analysis and intermediate step computation.
-3. `VERIFY` — Internal sanity checking of logical steps.
-4. `CONCLUDE` — Final answer formulation.
+Context-managed dynamic model swapping engine. Ensures only **ONE model is loaded into VRAM** at any time:
+- Loads base model or PEFT adapter via `with LLMEngine(model_path) as engine:`.
+- Automatic VRAM cleanup on exit (`torch.cuda.empty_cache()`).
+- Optional weight caching via `SABER_KEEP_MODELS_LOADED=1` env var.
+- Supports single-turn (`generate`), multi-turn (`generate_with_history`), and session-based (`generate_from_session`) generation.
 
 ---
 
-### 4. Sentinel Verification Kernel
+### 4. CoT Maintainer
+
+**File**: `saber/cot_maintainer.py`
+
+Bidirectional working memory module maintaining explicit Chain-of-Thought reasoning state:
+1. `IDENTIFY` — Problem formulation and goal definition.
+2. `ANALYZE` — Domain-specific analysis and intermediate step computation.
+3. `HYPOTHESIZE` — Hypothesis generation.
+4. `EVIDENCE` — Evidence gathering and citation.
+5. `EVALUATE` — Internal sanity checking of logical steps.
+6. `CONCLUDE` — Final answer formulation.
+
+**Key methods**:
+- `export_rich_synthesis_narrative()` — Formats CoT chain into rich, evidence-grounded narrative with dependency links, designed for Meta-Reasoner compilation of long open-ended explanations.
+- `export_for_signal()` — Exports chain as dictionary payload including `rich_narrative` for signal transport.
+- `cleanup()` — Deduplicates redundant steps, detects reasoning loops, merges consecutive same-action steps.
+
+---
+
+### 5. Sentinel Verification Kernel
 
 **File**: `saber/sentinel.py`
 
-The independent verification authority. Operates via **External-Evidence Grounding** (not internal LLM memory) to completely eliminate self-checking bias.
+The independent verification authority. Operates via **External-Evidence Grounding** (not internal LLM memory) to completely eliminate self-checking bias. **Sentinel is NOT an adapter** — it is a pure Python verification kernel with zero adapter loading overhead.
 
 **Tiered Hybrid Verification Architecture:**
 
 #### 1. Fast Local SQLite KB Lookup (< 5ms)
 - Checks local SQLite Knowledge Base (`data/offline_kb/*_kb.db`) using **Numeric-Safe Cache Guarding** (`[numeric_guards]::clean_query`) to preserve exact dates, percentages, and CVE identifiers.
-- Hits in-memory `_KB_CACHE` in RAM for 0ms lookup overhead during RL training and offline execution.
+- Hits in-memory `_SEARCH_CACHE` in RAM for 0ms lookup overhead during RL training and offline execution.
 
 #### 2. Live Web Grounding & Dynamic Auto-Caching
-- If a novel claim or recent fact is missing from the local KB, Sentinel queries live web search (Online Mode).
-- **Dynamic Auto-Cache Write**: Clean verified web search snippets are **automatically written to the local SQLite KB** (`save_to_local_kb`). All future lookups for this fact become **instant 0ms local KB hits**!
+- If a novel claim or recent fact is missing from the local KB, Sentinel queries live web search via DuckDuckGo (Online Mode).
+- **Dynamic Auto-Cache Write**: Clean verified web search snippets are **automatically written to the local SQLite KB** (`save_to_local_kb`). All future lookups for this fact become **instant 0ms local KB hits**.
+- **Consecutive Search Circuit Breaker**: Identical queries are bypassed after 2 consecutive hits to prevent autoregressive search loops.
 
-#### 3. Dynamic Response Safety Footer
+#### 3. Claim Extraction & Query Formulation
+- Extracts structured `Claim` statements from `Signal.payload["claims"]`.
+- Skips generic noise claims (`"The correct answer is B"`).
+- Truncates to 120 chars for search efficiency.
+- Falls back to `compiled_text` when claims list is empty.
+
+#### 4. Dynamic Response Safety Footer
 Every response appends a context-aware safety footer for UI/UX transparency:
 - **Online Mode**: `⚡ Verified by SABER Sentinel (Online Web Grounded & Dynamic KB)`
 - **Offline Mode**: `🔒 Verified by SABER Sentinel (Offline Local KB Mode — Air-Gapped)`
 
-#### CoT Step-Level Verification
+#### 5. CoT Step-Level Verification (`verify_cot_chain`)
 - Checks that the first step is `IDENTIFY` and last step is `CONCLUDE`.
 - Detects sharp confidence drops (>0.3 between consecutive steps).
-- Verifies each step logically follows from the previous steps.
+- Verifies each step logically follows from the previous steps via LLM semantic check.
+
+#### 6. Fail-Open Availability
+- If LLM crashes (GPU OOM, timeout), Sentinel returns `GREEN_CHIT` gracefully — the pipeline never crashes.
 
 ---
 
-### 5. Meta-Reasoning Layer
+### 6. Meta-Reasoning Layer
 
 **File**: `saber/meta_reasoner.py`
 
@@ -181,26 +231,28 @@ Once every activated specialist has sent its verified claims + CoT chain, the Me
 
 ---
 
-### 6. Signal Schema
+### 7. Signal Schema
 
 **File**: `saber/signal.py`
 
-Strict, strongly-typed JSON-serializable dataclass defining all inter-component communication:
+Strict, strongly-typed JSON-serializable Pydantic dataclass defining all inter-component communication:
 
 - `QUERY_SIGNAL`: User query entering the system.
 - `TASK_SIGNAL`: Orchestrator sub-task dispatched to a specialist.
 - `CONFIRMATION_SIGNAL`: Specialist confirming task receipt.
 - `COT_SIGNAL`: Specialist submitting reasoning chain + claims.
-- `VERIFICATION_SIGNAL`: Meta-Reasoner requesting Sentinel check.
+- `VERIFICATION_SIGNAL`: Sentinel returning GREEN_CHIT confirmation.
 - `FLAG_SIGNAL`: Sentinel raising an error/contradiction with correction.
-- `COMPILATION_SIGNAL`: Verified outputs delivered to Meta-Reasoner.
 - `OUTPUT_SIGNAL`: Final synthesized response.
+- `PATCH_SIGNAL`: Incremental code/config patches.
+- `HEALTH_SIGNAL`: System health checks.
+- `AUDIT_SIGNAL`: Audit trail events.
 
-Every signal is cryptographically signed with a SHA-256 `integrity_hash` over its payload.
+Every signal is cryptographically signed with a SHA-256 `integrity_hash` over its payload via `freeze_and_hash()`.
 
 ---
 
-### 7. Decision Ledger & Audit Trail
+### 8. Decision Ledger & Audit Trail
 
 **File**: `saber/audit.py`
 
@@ -215,9 +267,45 @@ Thread-safe, append-only JSON-Lines audit log (`logs/audit.jsonl`). Records ever
 
 ---
 
+### 9. Supporting Modules
+
+| File | Purpose |
+|------|---------|
+| `saber/config.py` | Central configuration (model paths, domains, thresholds, benchmark mode). |
+| `saber/registry.py` | Specialist registry for dynamic adapter discovery and loading. |
+| `saber/context.py` | Session memory manager for multi-turn conversation history. |
+| `saber/chat_history.py` | Persistent chat history storage. |
+| `saber/claim_graph.py` | Claim dependency graph for tracking inter-claim relationships. |
+| `saber/flag.py` | Flag data structures for Sentinel error reporting. |
+| `saber/errors.py` | Custom exception classes. |
+| `saber/metrics.py` | Performance metrics collection (latency, token counts). |
+| `saber/benchmark.py` | Benchmark evaluation harness for automated scoring. |
+
+---
+
+### 10. Evaluation Suite
+
+**Directory**: `saber/evaluation/`
+
+| File | Purpose |
+|------|---------|
+| `saber/evaluation/code_eval.py` | Sandboxed Python code execution evaluator (Pass@1 with 2s timeout). |
+| `saber/evaluation/harness.py` | Evaluation harness adapter for standard benchmark formats. |
+| `saber/evaluation/multi_judge.py` | Multi-judge LLM-as-a-Judge evaluator (5-dimensional rubric scoring). |
+
+---
+
+### 11. API Server
+
+**File**: `saber/api/main.py`
+
+FastAPI-based REST API server exposing SABER endpoints for programmatic access.
+
+---
+
 ## Training Pipeline & Benchmark Evaluation
 
-**Files**: `saber/training/trainer.py`, `saber/training/dataset_loader.py`, `scripts/build_offline_kb.py`, `scripts/validate_kb_coverage.py`
+**Files**: `saber/training/trainer.py`, `saber/training/dataset_loader.py`, `saber/training/rewards.py`
 
 ### 1. Two-Phase Training Paradigm
 
@@ -230,11 +318,14 @@ Thread-safe, append-only JSON-Lines audit log (`logs/audit.jsonl`). Records ever
 - **Dataset Scale**: **260,000 pristine CoT records** across 5 specialized domains + 2 core orchestrating systems (~13.5 hours total H100 training run).
 
 #### Phase 2: Verifiable-Fact-Augmented GRPO Reinforcement Learning
+- **Reward Functions** (`saber/training/rewards.py`):
+  - Anti-lazy token guard (<20 tokens penalized with -1.0).
+  - 3-gram repetition penalty (-1.5 for uniqueness <60%).
+  - Sandboxed Python execution (2s timeout).
+  - Relative float matching ($10^{-3}$).
 - **Group Rollouts**: $G = 8$ parallel trajectory generations per prompt.
 - **Composite Reward Signal**:
   $$\text{Reward} = R_{\text{Format}} (+1.0) + R_{\text{Outcome}} (+2.0) - \lambda \cdot R_{\text{Sentinel\_Factuality}}$$
-  - **Definitive Tasks (Science, Cyber, Finance)**: Format (+1.0 for ANSWER: [A-D]), Outcome (+2.0 for ground truth match), Sentinel Factuality (-1.5 contradiction / +0.5 support / 0.0 neutral).
-  - **Open-Ended Tasks (Coding, Architecture, Meta, Orchestrator)**: Sandboxed Code Execution (+2.0), CoT Completeness (+1.0), Token Repetition Penalty (-1.5).
 
 #### Tiered Hybrid Knowledge Base (0ms RL & Consumer Grounding)
 - **Indexing**: 139,973+ reference support passages compiled into local indexed SQLite databases (`data/offline_kb/*_kb.db`).
@@ -244,52 +335,73 @@ Thread-safe, append-only JSON-Lines audit log (`logs/audit.jsonl`). Records ever
 
 ---
 
-### 2. Dual-Tier Benchmark Hierarchy (Frontier vs. Mid-Tier)
+### 2. Pipeline Scripts
 
-To benchmark SABER comprehensively against both frontier closed models (GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro) and open-source base models (Qwen2.5-7B, Llama-3.1-8B), evaluation is conducted across a two-tier difficulty spectrum:
+| Script | Purpose |
+|--------|---------|
+| `scripts/1_build_datasets.py` | Downloads & builds the 260,000 CoT dataset corpus. |
+| `scripts/2_build_kb.py` | Builds & audits offline SQLite KBs (139k+ passages). |
+| `scripts/3_train_dora.py` | Phase 1 DoRA SFT training. |
+| `scripts/4_train_grpo.py` | Phase 2 GRPO RL training. |
+| `scripts/5_run_benchmark.py` | Unified 5-mode benchmark evaluation. |
+| `scripts/build_offline_kb.py` | Standalone offline KB builder. |
+| `scripts/validate_kb_coverage.py` | KB coverage validation & gap analysis. |
+| `scripts/run_final_benchmark.py` | Final comprehensive benchmark runner. |
 
-| Domain Area | Mid-Tier Baseline Benchmarks (Fast Iterative Testing) | Top-Tier Frontier Benchmarks (High Difficulty Ceiling) | Target Frontier Score |
+---
+
+### 3. Dual-Tier Benchmark Hierarchy (Frontier vs. Mid-Tier)
+
+| Domain Area | Mid-Tier Baseline Benchmarks | Top-Tier Frontier Benchmarks | Target |
 |---|---|---|---|
-| **Science** | **SciQ / ScienceQA** (13.6k college/HS QA) | **GPQA Diamond** (198 PhD-level "Google-proof" questions) | $> 65.0\%$ Accuracy |
-| **Cybersecurity** | **CyberMetric-800** (800 security QA) | **SecBench / SecQA-Hard** (100 multi-stage vuln exploits) | $> 82.0\%$ Accuracy |
-| **Coding** | **HumanEval** (164 Python) / **MBPP** (974 basic) | **SWE-bench Verified** (500 real GitHub repo issues) | $> 78.0\%$ Pass@1 |
-| **Finance** | **Finance-Alpaca** (20k vocabulary QA) | **FinQA / ConvFinQA** (SEC 10-K math reasoning) | $> 75.0\%$ Accuracy |
-| **Architecture** | **SystemDesign-Basic** (100 core patterns) | **ArchBench-Hard** (50 trade-off microservices specs) | $> 80.0\%$ Quality |
+| **Science** | **SciQ / ScienceQA** (13.6k) | **GPQA Diamond** (198 PhD-level) | $> 65.0\%$ |
+| **Cybersecurity** | **CyberMetric-800** (800) | **SecBench / SecQA-Hard** (100) | $> 82.0\%$ |
+| **Coding** | **HumanEval** (164) / **MBPP** (974) | **SWE-bench Verified** (500) | $> 78.0\%$ |
+| **Finance** | **Finance-Alpaca** (20k) | **FinQA / ConvFinQA** (SEC 10-K) | $> 75.0\%$ |
+| **Architecture** | **SystemDesign-Basic** (100) | **ArchBench-Hard** (50) | $> 80.0\%$ |
 
 ---
 
-### 3. Multi-Domain Evaluation Strategy
+### 4. Multi-Domain Evaluation Strategy
 
-Multi-domain prompts require **cross-specialist coordination** (activating 2 or more domain specialists simultaneously, followed by Meta-Reasoner synthesis). SABER evaluates multi-domain intelligence using 4 core cross-domain intersections:
+1. **Finance + Coding (Quant Financial Engineering)**
+2. **Cybersecurity + System Architecture (Zero-Trust Infrastructure)**
+3. **Science + Coding (Scientific Computation)**
+4. **Finance + Cybersecurity (Smart Contract Audit)**
 
-1. **Finance + Coding (Quant Financial Engineering)**:
-   - *Example*: *"Write a Python script to compute Black-Scholes option pricing with greeks and handle zero volatility edge cases."*
-2. **Cybersecurity + System Architecture (Zero-Trust Infrastructure)**:
-   - *Example*: *"Design a zero-trust Kubernetes microservices architecture to mitigate CVE-2023-24380 with network policies."*
-3. **Science + Coding (Scientific Computation)**:
-   - *Example*: *"Implement a Runge-Kutta 4th Order numerical integrator in Python to model a damped harmonic oscillator."*
-4. **Finance + Cybersecurity (Smart Contract Audit)**:
-   - *Example*: *"Audit an Automated Market Maker (AMM) contract for reentrancy vulnerabilities and calculate impermanent loss."*
+Multi-domain training data uses a **Hybrid Sourcing Strategy**: ~40% existing multi-task corpora (FinQA, CyberSecEval, SWE-bench) + ~60% self-synthesized cross-domain compositions with Sentinel-verified ground truth.
 
 ---
 
-### 4. Automated Open-Ended Evaluation Methodology
+### 5. Automated Open-Ended Evaluation Methodology
 
-Open-ended answers (code blocks, architectural designs, trade-off analyses) are evaluated without human graders using a 3-mode automated protocol:
+#### Mode A: Sandboxed Code Execution (`saber/evaluation/code_eval.py`)
+- **Metric**: **Pass@1 Rate** via isolated `multiprocessing.Process` with 2.0s timeout.
 
-#### Mode A: Sandboxed Code Execution (Coding & Math)
-- Extracts executable code blocks (```python) and executes them inside an isolated `multiprocessing.Process` with a 2.0s hard timeout.
-- **Metric**: **Pass@1 Rate** (Binary 1.0 for passing unit test suite; 0.0 for syntax errors, timeouts, or assertion failures).
-
-#### Mode B: Rubric-Based LLM-as-a-Judge (Open-Ended Synthesis)
-- Uses a strong judge model (`GPT-4o` or `Claude 3.5 Sonnet`) evaluating outputs on a strict **5-Dimensional 25-Point Rubric**:
-  1. *Factual Accuracy* (1-5): Are the technical facts correct?
-  2. *Completeness* (1-5): Does the response answer all sub-parts of the prompt?
-  3. *Structural Coherence* (1-5): Is the answer logically formatted?
-  4. *Domain Depth* (1-5): Does the response contain expert-level detail without AI fluff?
-  5. *Cross-Domain Accord* (1-5): Do multi-specialist contributions agree cleanly without contradiction?
+#### Mode B: Rubric-Based LLM-as-a-Judge (`saber/evaluation/multi_judge.py`)
+- **5-Dimensional 25-Point Rubric**: Factual Accuracy, Completeness, Structural Coherence, Domain Depth, Cross-Domain Accord.
 - **Metric**: **Quality Score ($S \in [0.0, 1.0]$)**.
 
-#### Mode C: Sentinel Contradiction Rate (Grounding Integrity)
-- Passes open-ended answers through Sentinel to check against offline ground-truth SQLite passages or DuckDuckGo web snippets.
+#### Mode C: Sentinel Contradiction Rate
 - **Metric**: **Grounding Accuracy Rate (%)** and **Contradiction Rate (%)**.
+
+---
+
+## Test Suite
+
+| Test File | Coverage |
+|-----------|----------|
+| `tests/test_signal.py` | Signal creation, SHA-256 hashing, integrity verification. |
+| `tests/test_llm_engine.py` | LLM engine context management, device detection. |
+| `tests/test_specialist.py` | Specialist task execution, claim generation. |
+| `tests/test_sentinel.py` | Signal integrity, verification routing matrix. |
+| `tests/test_sentinel_stress.py` | Cryptographic tampering, SQLite auto-caching, FLAG generation. |
+| `tests/test_sentinel_search_extraction.py` | Numeric/CVE guard extraction, keyphrase extraction, KB retrieval. |
+| `tests/test_sentinel_e2e_extraction.py` | End-to-end claim extraction, GREEN_CHIT/FLAG routing, CoT step checks, LLM crash fail-open. |
+| `tests/test_cot_maintainer.py` | CoT chain creation, step management, cleanup dedup. |
+| `tests/test_orchestrator.py` | Casual chat gating, polysemous disambiguation, domain routing. |
+| `tests/test_rewards.py` | GRPO reward functions, anti-lazy guards, repetition penalties. |
+| `tests/test_pipeline_flow.py` | Full end-to-end pipeline integration flow. |
+| `tests/test_live_simulation.py` | Live multi-domain simulation test. |
+
+**Current Status**: All tests passing 100%.
