@@ -215,7 +215,7 @@ Thread-safe, append-only JSON-Lines audit log (`logs/audit.jsonl`). Records ever
 
 ---
 
-## Training Pipeline
+## Training Pipeline & Benchmark Evaluation
 
 **Files**: `saber/training/trainer.py`, `saber/training/dataset_loader.py`, `scripts/build_offline_kb.py`, `scripts/validate_kb_coverage.py`
 
@@ -244,11 +244,52 @@ Thread-safe, append-only JSON-Lines audit log (`logs/audit.jsonl`). Records ever
 
 ---
 
-### Training ↔ Evaluation Separation (Zero Data Leakage)
+### 2. Dual-Tier Benchmark Hierarchy (Frontier vs. Mid-Tier)
 
-| Domain | Trained On | Evaluated On | Overlap |
-|--------|-----------|-------------|---------|
-| Science | ScienceQA, SciQ, CAMEL-AI | **GPQA Diamond** (198 cases) | None |
-| Cyber | MITRE STIX, CyberQA, Synthetic ATT&CK | **SecBench** (100 cases) | None |
-| Coding | APPS, CodeContests, LeetCode | **HumanEval** (164 cases) | None |
-| Finance | Finance-Alpaca, ConvFinQA, Finance-Instruct | **FinQA Math** (80 cases) | None |
+To benchmark SABER comprehensively against both frontier closed models (GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro) and open-source base models (Qwen2.5-7B, Llama-3.1-8B), evaluation is conducted across a two-tier difficulty spectrum:
+
+| Domain Area | Mid-Tier Baseline Benchmarks (Fast Iterative Testing) | Top-Tier Frontier Benchmarks (High Difficulty Ceiling) | Target Frontier Score |
+|---|---|---|---|
+| **Science** | **SciQ / ScienceQA** (13.6k college/HS QA) | **GPQA Diamond** (198 PhD-level "Google-proof" questions) | $> 65.0\%$ Accuracy |
+| **Cybersecurity** | **CyberMetric-800** (800 security QA) | **SecBench / SecQA-Hard** (100 multi-stage vuln exploits) | $> 82.0\%$ Accuracy |
+| **Coding** | **HumanEval** (164 Python) / **MBPP** (974 basic) | **SWE-bench Verified** (500 real GitHub repo issues) | $> 78.0\%$ Pass@1 |
+| **Finance** | **Finance-Alpaca** (20k vocabulary QA) | **FinQA / ConvFinQA** (SEC 10-K math reasoning) | $> 75.0\%$ Accuracy |
+| **Architecture** | **SystemDesign-Basic** (100 core patterns) | **ArchBench-Hard** (50 trade-off microservices specs) | $> 80.0\%$ Quality |
+
+---
+
+### 3. Multi-Domain Evaluation Strategy
+
+Multi-domain prompts require **cross-specialist coordination** (activating 2 or more domain specialists simultaneously, followed by Meta-Reasoner synthesis). SABER evaluates multi-domain intelligence using 4 core cross-domain intersections:
+
+1. **Finance + Coding (Quant Financial Engineering)**:
+   - *Example*: *"Write a Python script to compute Black-Scholes option pricing with greeks and handle zero volatility edge cases."*
+2. **Cybersecurity + System Architecture (Zero-Trust Infrastructure)**:
+   - *Example*: *"Design a zero-trust Kubernetes microservices architecture to mitigate CVE-2023-24380 with network policies."*
+3. **Science + Coding (Scientific Computation)**:
+   - *Example*: *"Implement a Runge-Kutta 4th Order numerical integrator in Python to model a damped harmonic oscillator."*
+4. **Finance + Cybersecurity (Smart Contract Audit)**:
+   - *Example*: *"Audit an Automated Market Maker (AMM) contract for reentrancy vulnerabilities and calculate impermanent loss."*
+
+---
+
+### 4. Automated Open-Ended Evaluation Methodology
+
+Open-ended answers (code blocks, architectural designs, trade-off analyses) are evaluated without human graders using a 3-mode automated protocol:
+
+#### Mode A: Sandboxed Code Execution (Coding & Math)
+- Extracts executable code blocks (```python) and executes them inside an isolated `multiprocessing.Process` with a 2.0s hard timeout.
+- **Metric**: **Pass@1 Rate** (Binary 1.0 for passing unit test suite; 0.0 for syntax errors, timeouts, or assertion failures).
+
+#### Mode B: Rubric-Based LLM-as-a-Judge (Open-Ended Synthesis)
+- Uses a strong judge model (`GPT-4o` or `Claude 3.5 Sonnet`) evaluating outputs on a strict **5-Dimensional 25-Point Rubric**:
+  1. *Factual Accuracy* (1-5): Are the technical facts correct?
+  2. *Completeness* (1-5): Does the response answer all sub-parts of the prompt?
+  3. *Structural Coherence* (1-5): Is the answer logically formatted?
+  4. *Domain Depth* (1-5): Does the response contain expert-level detail without AI fluff?
+  5. *Cross-Domain Accord* (1-5): Do multi-specialist contributions agree cleanly without contradiction?
+- **Metric**: **Quality Score ($S \in [0.0, 1.0]$)**.
+
+#### Mode C: Sentinel Contradiction Rate (Grounding Integrity)
+- Passes open-ended answers through Sentinel to check against offline ground-truth SQLite passages or DuckDuckGo web snippets.
+- **Metric**: **Grounding Accuracy Rate (%)** and **Contradiction Rate (%)**.
