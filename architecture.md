@@ -175,8 +175,8 @@ The Meta-Reasoner reads these, holds them quietly, and waits. It does nothing un
 Once every activated specialist has sent its verified claims + CoT chain, the Meta-Reasoner checks them all off against its expected list and begins synthesis. Because it already knows the original query, it can ensure the final answer directly addresses what the user asked — not just what the specialists chose to talk about.
 
 **Format-Aware Response Structuring**:
-- **MCQ Tasks**: CoT reasoning trace + `ANSWER: <LETTER>`
-- **Coding Tasks**: Executable ```python code block
+- **MCQ Tasks**: CoT reasoning trace + `ANSWER: <LETTER>`.
+- **Coding Tasks**: Executable ```python code block.
 - **Open-Ended Tasks**: Structured 6-section synthesis (`CLAIM EXTRACTION`, `CONFIDENCE ANALYSIS`, `CONFLICT DETECTION`, `TRADEOFF EVALUATION`, `RESOLUTION PATH`, `FINAL ANSWER`).
 
 ---
@@ -250,5 +250,5 @@ Thread-safe, append-only JSON-Lines audit log (`logs/audit.jsonl`). Records ever
 |--------|-----------|-------------|---------|
 | Science | ScienceQA, SciQ, CAMEL-AI | **GPQA Diamond** (198 cases) | None |
 | Cyber | MITRE STIX, CyberQA, Synthetic ATT&CK | **SecBench** (100 cases) | None |
-| Coding | APPS, CodeContests, LeetCode, CodeFeedback | **HumanEval** (164 cases) | None |
+| Coding | APPS, CodeContests, LeetCode | **HumanEval** (164 cases) | None |
 | Finance | Finance-Alpaca, ConvFinQA, Finance-Instruct | **FinQA Math** (80 cases) | None |
