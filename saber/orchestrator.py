@@ -233,6 +233,49 @@ class Orchestrator:
         """Return the verification tier to use for this query."""
         return tier if tier is not None else self.config.verification_tier
 
+    def is_casual_chat(self, query: str) -> bool:
+        """2-Tiered Intent Gate to catch greetings, slang, and pleasantries.
+        
+        Tier 1: Fast Direct Pattern Match (<1ms)
+        Tier 2: LLM Semantic Intent Gate (<15ms)
+        """
+        import re
+        q_clean = query.strip().lower()
+        q_alpha = re.sub(r"[^\w\s]", "", q_clean).strip()
+        
+        # --- Tier 1: Fast Direct Pattern & Phrase Match ---
+        casual_exact = {
+            "hi", "hello", "hey", "howdy", "yo", "greetings", "good morning", "good afternoon",
+            "good evening", "good night", "thanks", "thank you", "bye", "goodbye", "see ya",
+            "who are you", "what are you", "who created you", "who made you", "what can you do",
+            "how are you", "whats up", "what's up", "are you there", "are you awake", "cool", "awesome"
+        }
+        if q_alpha in casual_exact or any(q_alpha.startswith(prefix) for prefix in ["hi", "hello", "hey", "yo", "thanks"]):
+            # If it contains any technical action or math/code verb, pass to domain routing
+            domain_verbs = {"calculate", "solve", "write", "code", "explain", "analyze", "cve", "ebitda", "python", "kubernetes", "equation"}
+            if not any(verb in q_alpha for verb in domain_verbs):
+                return True
+
+        # --- Tier 2: 7B Base LLM Semantic Intent Gate ---
+        from saber.llm_engine import LLMEngine
+        prompt = (
+            f"You are the intent gate for SABER AI.\n"
+            f"Categorize the user input into exactly one tag:\n"
+            f"- CASUAL_CHAT (greetings, pleasantries, small talk, 'hi', 'who are you', 'thanks')\n"
+            f"- DOMAIN_QUERY (technical questions, calculations, code, science, cyber, finance, architecture)\n\n"
+            f"User input: \"{query}\"\n\n"
+            f"Output strictly one word (CASUAL_CHAT or DOMAIN_QUERY):"
+        )
+        try:
+            with LLMEngine(self.config.base_model, max_new_tokens=4) as engine:
+                output = engine.generate(prompt).strip().upper()
+                if "CASUAL_CHAT" in output:
+                    return True
+        except Exception:
+            pass
+
+        return False
+
     # ------------------------------------------------------------------
     # 5. Full Pipeline
     # ------------------------------------------------------------------
@@ -252,6 +295,29 @@ class Orchestrator:
         """
         query_id = str(uuid.uuid4())
         self.audit.log_query(query_id, query)
+
+        # --- Casual Chat & Greeting Fast Path (Bare 7B Base Model) ---
+        if self.is_casual_chat(query):
+            from saber.llm_engine import LLMEngine
+            chat_prompt = f"User: {query}\n\nYou are SABER, an advanced multi-specialist AI reasoning system. Respond warmly and concisely:"
+            try:
+                with LLMEngine(self.config.base_model, max_new_tokens=64) as engine:
+                    ans = engine.generate(chat_prompt).strip()
+            except Exception:
+                ans = "Hello! How can I assist you with science, cyber, finance, coding, or architecture today?"
+            
+            result = {
+                "query_id": query_id,
+                "status": "casual_chat",
+                "answer": ans,
+                "confidence": 1.0,
+                "flags": [],
+                "domains_activated": [],
+                "verification_tier": 0,
+                "verification_cycles": 0,
+            }
+            self.audit.log_output(query_id, ans)
+            return result
 
         # --- Ambiguity check ---
         ambiguity = self.detect_ambiguity(query)

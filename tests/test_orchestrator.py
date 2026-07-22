@@ -60,6 +60,12 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(scores_bio_virus.get("science"), 1.0)
         self.assertEqual(scores_bio_virus.get("cyber"), 0.0)
 
+    def test_casual_chat_gating(self):
+        self.assertTrue(self.orchestrator.is_casual_chat("hi"))
+        self.assertTrue(self.orchestrator.is_casual_chat("good morning"))
+        self.assertTrue(self.orchestrator.is_casual_chat("thanks!"))
+        self.assertFalse(self.orchestrator.is_casual_chat("calculate kinetic energy in physics"))
+
 
 if __name__ == "__main__":
     unittest.main()
