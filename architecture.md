@@ -7,60 +7,51 @@
 ## End-to-End Pipeline
 
 ```
-User Query
-    │
-    ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  ORCHESTRATOR (bare Qwen 2.5-7B)                                 │
-│  The base 7B model — no LoRA adapter. Uses its general LLM       │
-│  capabilities for all pre-routing checks.                        │
-│                                                                  │
-│  1. Ambiguity Detection                                         │
-│  2. Query Completeness Check (asks follow-ups if info missing)  │
-│  3. Few-Shot Domain Classification with confidence gate          │
-│  4. Specialist Selection + Task Decomposition                   │
-│     (OR Generalist Fallback for out-of-domain queries)          │
-│  5. Verification Tier Assignment                                │
-│                                                                  │
-│  Once routing is finalized, three things happen simultaneously:  │
-│  ──► Sends simple routing ping to 0.5B Chatbot                  │
-│  ──► Sends original query + specialist list to Meta-Reasoner    │
-│  ──► Dispatches domain-specific sub-tasks to specialists        │
-└───────┬──────────────────┬───────────────────────┬───────────────┘
+                                  USER QUERY
+                                      │
+                                      ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│  ORCHESTRATOR (7B Base + Orchestrator DoRA Adapter)                      │
+│  File: saber/orchestrator.py                                              │
+│                                                                           │
+│  1. Ambiguity Detection & Query Completeness Check                       │
+│  2. Few-Shot Semantic Intent Classification & Domain Selection           │
+│  3. Verification Tier Assignment (Tier 0: Fast / Tier 1: Grounded)       │
+│  4. Task Decomposition & Signal Dispatch                                  │
+└───────┬──────────────────┬───────────────────────┬────────────────────────┘
         │                  │                       │
         │ simple ping      │ query + spec list     │ TASK_SIGNALs
         ▼                  ▼                       ▼
 ┌─────────────────┐  ┌─────────────────────┐  ┌───────────────────────────┐
 │ CHATBOT (0.5B)  │  │ META-REASONER       │  │ SPECIALIST EXECUTION      │
-│ Runs on CPU     │  │ (reads & holds)     │  │ (sequential)              │
-│                 │  │                     │  │                           │
-│                 │  │                     │  │ 6. FLAG → rewrite         │
-│                 │  │                     │  │ 7. GREEN_CHIT → pass      │
+│ Runs on CPU     │  │ (reads & holds)     │  │ saber/specialist.py       │
+│ (User Interface │  │ saber/meta_reasoner.py│  │                           │
+│ Keep-Occupied)  │  │                     │  │ Hot-swaps DoRA adapters   │
+│                 │  │ Holds query context │  │ Science / Cyber / Finance /│
+│                 │  │ until verified      │  │ Coding / Architecture     │
+│                 │  │ outputs arrive      │  │ Builds CoT chains         │
 └─────────────────┘  └─────────────────────┘  └─────────────┬─────────────┘
                                                             │
-                              verified outputs arrive       │
-                              one by one as specialists     │
-                              complete                      │
+                                             COT_SIGNALs    │ (claims + CoT)
+                                                            ▼
+                                              ┌───────────────────────────┐
+                                              │ SENTINEL VERIFICATION     │
+                                              │ KERNEL                    │
+                                              │ saber/sentinel.py         │
+                                              │                           │
+                                              │ Tiered Hybrid KB Lookup   │
+                                              │ (Local SQLite <5ms / Web) │
+                                              │                           │
+                                              │ FLAG ──► Specialist       │
+                                              │          Rewrite          │
+                                              │ GREEN_CHIT ──► Verified   │
+                                              └─────────────┬─────────────┘
                                                             │
+                                            Verified Signals│ (GREEN_CHIT /
+                                                            │  RESOLVED)
+                                                            ▼
                      ┌──────────────────────────────────────┘
                      ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  META-REASONING LAYER (activates once ALL outputs received)      │
-│  (Has CoT Maintainer plugged in for synthesis reasoning)         │
-│                                                                  │
-│  Already has: Original query (read at start)                     │
-│  Now receives: All specialist claims + CoT chains                │
-│                                                                  │
-│  1. CLAIM EXTRACTION — list key claims from each specialist      │
-│  2. CONFIDENCE ANALYSIS — weight specialist confidence levels    │
-│  3. CONFLICT DETECTION — identify contradictions between specs   │
-│  4. TRADEOFF EVALUATION — analyse disagreements                  │
-│  5. RESOLUTION PATH — reconcile conflicting views                │
-│  6. FINAL ANSWER — produce one coherent, detailed answer         │
-│                                                                  │
-│  Uses the original query to ensure the final answer directly     │
-│  addresses what the user actually asked.                          │
-└──────────────────────┬───────────────────────────────────────────┘
                        │ final synthesized answer
                        ▼
 ┌──────────────────────────────────────────────────────────────────┐
@@ -94,7 +85,7 @@ Once pinged, the chatbot generates a **generic boilerplate status message** to k
 
 This model does NOT participate in any reasoning, routing, or verification.
 
-### 1. Orchestrator (bare Qwen 2.5-7B)
+### 1. Orchestrator (Qwen 2.5-7B + Orchestrator DoRA Adapter)
 
 **File**: `saber/orchestrator.py`
 
