@@ -87,6 +87,10 @@ class TrainConfig:
     dpo_mode: bool = False
 
 
+# Aliases for backward/script compatibility
+TrainerConfig = TrainConfig
+
+
 # ---------------------------------------------------------------------------
 # Dataset helpers
 # ---------------------------------------------------------------------------
@@ -709,6 +713,8 @@ def train(cfg: TrainConfig) -> str:
 
     return cfg.output_dir
 
+
+run_training = train
 
 # ---------------------------------------------------------------------------
 # Domain defaults (all five specialists)
