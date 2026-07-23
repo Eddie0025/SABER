@@ -1801,6 +1801,19 @@ def audit_specialist_overlap():
         print("[+] SUCCESS: Zero overlap between Coding and Architecture.")
 
 
+def build_all_processed_datasets():
+    """Build all processed datasets across all 7 active domains."""
+    os.makedirs("data/processed", exist_ok=True)
+    fetch_cyber()
+    fetch_science()
+    fetch_coding()
+    fetch_architecture()
+    fetch_finance()
+    fetch_orchestrator()
+    fetch_meta_reasoner()
+    audit_specialist_overlap()
+
+
 if __name__ == "__main__":
     import sys
     import os
@@ -1829,17 +1842,7 @@ if __name__ == "__main__":
         print("[dataset_loader] Extraction complete! Ready for training.")
         sys.exit(0)
 
-    os.makedirs("data/processed", exist_ok=True)
-    fetch_cyber()
-    # fetch_science()  # Already trained
-    # fetch_coding()   # Not training coding from scratch in this run
-    fetch_architecture()
-    # fetch_finance()  # Already trained
-    # fetch_orchestrator() # Not training orchestrator from scratch in this run
-    fetch_meta_reasoner()  # Training meta_reasoner from scratch with new 12k dataset
-    
-    # Step 4: Overlap Audit
-    audit_specialist_overlap()
+    build_all_processed_datasets()
     
     print("[dataset_loader] Generating dataset_manifest.json...")
     manifest = {}
