@@ -742,7 +742,7 @@ def fetch_science():
     # 4. Hendrycks MATH (STEM Reasoning)
     try:
         print("[dataset_loader] [4/8] Downloading Hendrycks MATH...")
-        ds_math_h = load_dataset("competition_math", split="train[:5000]")
+        ds_math_h = load_dataset("hendrycks/competition_math", "algebra", split="train[:5000]")
         added = 0
         for item in ds_math_h:
             question = item.get("problem", "")
@@ -762,7 +762,7 @@ def fetch_science():
     # 5. ARC-Challenge
     try:
         print("[dataset_loader] [5/8] Downloading ARC-Challenge...")
-        ds_arc = load_dataset("ai2_arc", "ARC-Challenge", split="train[:3000]")
+        ds_arc = load_dataset("allenai/ai2_arc", "ARC-Challenge", split="train[:3000]")
         added = 0
         for item in ds_arc:
             question = item.get("question", "")
@@ -870,32 +870,25 @@ def fetch_coding():
     except Exception as e:
         print(f"[dataset_loader] Error downloading Python Syntax: {e}")
 
-    # 2. APPS (Competition Level Algorithmic)
+    # 2. Python Code Instructions (Algorithmic / Competition)
     try:
-        print("[dataset_loader] [2/5] Downloading APPS (Competition Level)...")
-        ds_apps = load_dataset("codeparrot/apps", split="train[:20000]", trust_remote_code=True)
+        print("[dataset_loader] [2/5] Downloading Python Code Instructions...")
+        ds_apps = load_dataset("iamtarun/python_code_instructions_18k_alphaca", split="train[:10000]")
         added = 0
         for item in ds_apps:
-            if item.get("difficulty") == "competition":
-                question = item.get("question", "")
-                solutions = item.get("solutions", "[]")
-                try:
-                    sols = json.loads(solutions)
-                    if sols and len(sols) > 0:
-                        records.append({
-                            "id": f"code_{uuid.uuid4().hex[:8]}",
-                            "text": f"Solve this competitive programming problem:\n{question}",
-                            "label": f"```python\n{sols[0]}\n```",
-                            "domain": "coding"
-                        })
-                        added += 1
-                except:
-                    pass
-                if added >= 8000:
-                    break
-        print(f"[dataset_loader]   APPS Competition: {added} records")
+            instruction = item.get("instruction", "") or item.get("prompt", "")
+            output = item.get("output", "") or item.get("completion", "")
+            if instruction and output and len(output) >= 30:
+                records.append({
+                    "id": f"code_{uuid.uuid4().hex[:8]}",
+                    "text": instruction,
+                    "label": output,
+                    "domain": "coding"
+                })
+                added += 1
+        print(f"[dataset_loader]   Python Instructions: {added} records")
     except Exception as e:
-        print(f"[dataset_loader] Error downloading APPS: {e}")
+        print(f"[dataset_loader] Error downloading Python Code Instructions: {e}")
 
     # 3. CodeContests (DeepMind)
     try:
@@ -1209,8 +1202,8 @@ def fetch_architecture():
         ds6 = load_dataset("epinnock/software-architecture-instructions", split="train")
         added = 0
         for item in ds6:
-            inp = item.get("instruction", "") or item.get("input", "") or item.get("question", "")
-            out = item.get("output", "") or item.get("response", "") or item.get("answer", "")
+            inp = item.get("instruction", "") or item.get("input", "") or item.get("question", "") or item.get("prompt", "")
+            out = item.get("output", "") or item.get("response", "") or item.get("answer", "") or item.get("completion", "")
 
             if not inp or not out or len(out) < 200:
                 continue
