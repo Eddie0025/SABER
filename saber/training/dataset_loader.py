@@ -742,7 +742,7 @@ def fetch_science():
     # 4. Hendrycks MATH (STEM Reasoning)
     try:
         print("[dataset_loader] [4/8] Downloading Hendrycks MATH...")
-        ds_math_h = load_dataset("hendrycks/competition_math", "algebra", split="train[:5000]")
+        ds_math_h = load_dataset("lighteval/MATH", "algebra", split="train[:5000]")
         added = 0
         for item in ds_math_h:
             question = item.get("problem", "")
@@ -873,7 +873,7 @@ def fetch_coding():
     # 2. Python Code Instructions (Algorithmic / Competition)
     try:
         print("[dataset_loader] [2/5] Downloading Python Code Instructions...")
-        ds_apps = load_dataset("iamtarun/python_code_instructions_18k_alphaca", split="train[:10000]")
+        ds_apps = load_dataset("iamtarun/python_code_instructions_18k_alpaca", split="train[:10000]")
         added = 0
         for item in ds_apps:
             instruction = item.get("instruction", "") or item.get("prompt", "")
@@ -1205,7 +1205,7 @@ def fetch_architecture():
             inp = item.get("instruction", "") or item.get("input", "") or item.get("question", "") or item.get("prompt", "")
             out = item.get("output", "") or item.get("response", "") or item.get("answer", "") or item.get("completion", "")
 
-            if not inp or not out or len(out) < 200:
+            if not inp or not out or len(out) < 50:
                 continue
 
             rec_hash = hashlib.md5((inp + out).encode()).hexdigest()
