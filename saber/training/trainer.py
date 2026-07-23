@@ -82,6 +82,7 @@ class TrainConfig:
     seed: int = 42
     packing: bool = True
     gpu_id: int = 0                         # Which GPU to target
+    max_seq_length: int = 2048
     patch_mode: bool = False
     dpo_mode: bool = False
 
