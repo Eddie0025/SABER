@@ -25,7 +25,7 @@ echo ""
 # ------------------------------------------------------------------
 echo "[+] Step 0b: Purging old data and models for active domains..."
 rm -rf data/processed/dataset_manifest.json
-rm -rf models/science_v2 models/finance_v2 models/meta_reasoner_v2 models/architecture_v2 models/orchestrator_v2 models/coding_v2 models/cyber_v2
+rm -rf models/finance_v2 models/meta_reasoner_v2 models/architecture_v2 models/orchestrator_v2 models/coding_v2 models/cyber_v2
 echo "[+] Purge complete."
 echo ""
 
@@ -42,7 +42,7 @@ mkdir -p logs
 echo ""
 echo "[+] Step 3: Launching sequential model training (Batch Size: 8)..."
 # Sequential run optimized for 7B models on 80GB VRAM H100 GPU
-for domain in meta_reasoner science finance coding architecture cyber orchestrator
+for domain in meta_reasoner finance coding architecture cyber orchestrator
 do
     echo "----------------------------------------------------------"
     echo ">> Training domain: $domain"

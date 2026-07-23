@@ -158,58 +158,7 @@ def run_benchmark():
     print("\n[*] Loading MCQ benchmark datasets...")
     bench_cases = []
     
-    # ---------------------------------------------------------------
-    # 2.1 Science: GPQA Diamond (198 cases)
-    # ---------------------------------------------------------------
-    try:
-        gpqa = load_hf_dataset("idavidrein/gpqa", "gpqa_diamond", split="train")
-        for row in gpqa:
-            corr = row.get("correct_answer") or row.get("Correct Answer")
-            inc1 = row.get("incorrect_answer1") or row.get("Incorrect Answer 1")
-            inc2 = row.get("incorrect_answer2") or row.get("Incorrect Answer 2")
-            inc3 = row.get("incorrect_answer3") or row.get("Incorrect Answer 3")
-            q_text = row.get("question") or row.get("Question")
-            
-            if not corr or not q_text:
-                continue
-                
-            choices = [corr, inc1, inc2, inc3]
-            random.seed(42)
-            random.shuffle(choices)
-            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-            correct_char = chr(65 + choices.index(corr))
-            
-            bench_cases.append({
-                "type": "exact",
-                "question": build_mcq_prompt(q_text, choices_str),
-                "expected": correct_char,
-                "domain": "science",
-                "dataset": "gpqa_diamond"
-            })
-        print(f"[+] Loaded {sum(1 for c in bench_cases if c['dataset'] == 'gpqa_diamond')} Science (GPQA Diamond) cases.")
-    except Exception as e:
-        print(f"[!] Critical Error loading GPQA: {e}")
-        raise e
 
-    # ---------------------------------------------------------------
-    # 2.2 Science: MMLU-Pro (300 cases stratified)
-    # ---------------------------------------------------------------
-    try:
-        mmlu_pro = load_hf_dataset("TIGER-Lab/MMLU-Pro", split="test[:300]")
-        count_before = len(bench_cases)
-        for row in mmlu_pro:
-            choices = row.get("options", [])
-            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-            bench_cases.append({
-                "type": "exact",
-                "question": build_mcq_prompt(row['question'], choices_str),
-                "expected": row.get("answer", ""),
-                "domain": "science",
-                "dataset": "mmlu_pro"
-            })
-        print(f"[+] Loaded {len(bench_cases) - count_before} Science (MMLU-Pro) cases.")
-    except Exception as e:
-        print(f"[!] MMLU-Pro load failed: {e}")
 
     # ---------------------------------------------------------------
     # 2.3 Finance: FinQA Math (80 exact cases)

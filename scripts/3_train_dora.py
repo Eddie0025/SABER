@@ -4,7 +4,7 @@
 Step 3: Phase 1 High-Rank Weight-Decomposed LoRA (DoRA SFT) Trainer.
 Runs DoRA (r=64, alpha=128, use_dora=True, all linear modules) for specialist models.
 Usage:
-    python3 scripts/3_train_dora.py --domain science --epochs 3
+    python3 scripts/3_train_dora.py --domain cyber --epochs 3
 """
 
 import argparse
@@ -16,7 +16,7 @@ from saber.training.trainer import TrainerConfig, run_training
 
 def main():
     parser = argparse.ArgumentParser(description="Phase 1: DoRA SFT Trainer")
-    parser.add_argument("--domain", type=str, default="science", help="Domain to train (science, cyber, finance, medical, coding, architecture, meta_reasoner, orchestrator)")
+    parser.add_argument("--domain", type=str, default="cyber", help="Domain to train (cyber, finance, coding, architecture, meta_reasoner, orchestrator)")
     parser.add_argument("--epochs", type=int, default=3, help="Number of SFT training epochs")
     parser.add_argument("--batch_size", type=int, default=16, help="Per-device batch size")
     parser.add_argument("--lr", type=float, default=2e-4, help="Learning rate")

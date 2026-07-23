@@ -108,7 +108,7 @@ class Orchestrator:
         """Return a relevance score for each registered specialist domain.
 
         Uses Few-Shot Semantic Contextual Classification to resolve polysemous terms
-        (e.g., distinguishing 'computer virus' [cyber] vs 'biological virus' [science]).
+        (e.g., distinguishing 'computer virus' [cyber] vs 'financial virus' [finance]).
         """
         from saber.llm_engine import LLMEngine
         import json
@@ -119,12 +119,12 @@ class Orchestrator:
             f"Available Specialist Domains: {json.dumps(domains)}\n\n"
             f"FEW-SHOT ROUTING EXAMPLES:\n"
             f"Query: \"How does a computer virus spread over SMB ports?\" -> [\"cyber\"]\n"
-            f"Query: \"How does an RNA virus replicate inside a host cell?\" -> [\"science\"]\n"
+            f"Query: \"How does a polymorphic malware replicate?\" -> [\"cyber\"]\n"
             f"Query: \"Calculate the EBITDA and net revenue of a firm.\" -> [\"finance\"]\n"
             f"Query: \"Write a python script to implement a binary tree.\" -> [\"coding\"]\n"
             f"Query: \"Design a microservices architecture using Kubernetes.\" -> [\"architecture\"]\n\n"
             f"User Query: \"{query}\"\n\n"
-            f"Output strictly a JSON list containing the activated domains (e.g. [\"science\"]) with no explanations."
+            f"Output strictly a JSON list containing the activated domains (e.g. [\"cyber\"]) with no explanations."
         )
 
         try:
@@ -155,19 +155,15 @@ class Orchestrator:
         # ── 1. Polysemous Contextual Disambiguation Rules ──
         if "virus" in query_lower:
             cyber_context = {"computer", "network", "smb", "payload", "port", "malware", "system", "file", "exe", "trojan", "worm", "attack"}
-            science_context = {"cell", "rna", "dna", "protein", "capsid", "host", "biology", "organism", "pathogen", "infection", "bacterial"}
             
             if any(w in query_lower for w in cyber_context):
                 scores["cyber"] = 1.0
-            elif any(w in query_lower for w in science_context):
-                scores["science"] = 1.0
             else:
                 # Default to cyber for generic computer context unless biological terms are present
                 scores["cyber"] = 0.80
 
         # ── 2. Primary Domain Indicator Triggers ──
         domain_triggers = {
-            "science": {"physics", "chemistry", "mathematics", "math", "calculus", "equation", "velocity", "quantum", "molecule", "reaction", "energy", "force", "biology"},
             "cyber": {"cve", "vulnerability", "malware", "firewall", "mitre", "attack", "exploit", "hack", "penetration", "cyber", "security", "port", "payload"},
             "finance": {"ebitda", "revenue", "portfolio", "valuation", "sec", "10-k", "asset", "liability", "hedging", "interest", "finance", "accounting"},
             "coding": {"python", "algorithm", "function", "array", "code", "debugging", "class", "binary", "leetcode", "complexity", "dataframe", "string"},
@@ -262,7 +258,7 @@ class Orchestrator:
             f"You are the intent gate for SABER AI.\n"
             f"Categorize the user input into exactly one tag:\n"
             f"- CASUAL_CHAT (greetings, pleasantries, small talk, 'hi', 'who are you', 'thanks')\n"
-            f"- DOMAIN_QUERY (technical questions, calculations, code, science, cyber, finance, architecture)\n\n"
+            f"- DOMAIN_QUERY (technical questions, calculations, code, cyber, finance, architecture)\n\n"
             f"User input: \"{query}\"\n\n"
             f"Output strictly one word (CASUAL_CHAT or DOMAIN_QUERY):"
         )
@@ -304,7 +300,7 @@ class Orchestrator:
                 with LLMEngine(self.config.base_model, max_new_tokens=64) as engine:
                     ans = engine.generate(chat_prompt).strip()
             except Exception:
-                ans = "Hello! How can I assist you with science, cyber, finance, coding, or architecture today?"
+                ans = "Hello! How can I assist you with cyber, finance, coding, or architecture today?"
             
             result = {
                 "query_id": query_id,
@@ -328,7 +324,7 @@ class Orchestrator:
                 "ambiguity_score": ambiguity,
                 "answer": (
                     "Your query appears ambiguous.  Could you provide more "
-                    "detail or specify the domain (science, cyber, finance, coding, architecture)?"
+                    "detail or specify the domain (cyber, finance, coding, architecture)?"
                 ),
                 "confidence": 0.0,
                 "flags": [],
@@ -377,7 +373,7 @@ class Orchestrator:
 
         # --- Delegate to Meta-Reasoning Layer or Bypass for single-domain ---
         if not activated:
-            activated = ["science"]
+            activated = ["cyber"]
             
         if bypass_meta and len(activated) == 1:
             specialist = self.registry.get(activated[0])

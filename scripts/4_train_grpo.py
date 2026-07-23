@@ -7,7 +7,7 @@ Applies Group Relative Policy Optimization (GRPO) using 3-part rewards:
   - Outcome Reward (+2.0 for correct ground-truth option)
   - Sentinel Factuality Reward (-1.5 contradiction / +0.5 support / 0.0 neutral pass-through)
 Usage:
-    python3 scripts/4_train_grpo.py --domain science --generations 4
+    python3 scripts/4_train_grpo.py --domain cyber --generations 4
 """
 
 import argparse
@@ -55,7 +55,7 @@ from saber.training.rewards import definitive_reward_function, open_ended_reward
 
 def main():
     parser = argparse.ArgumentParser(description="Phase 2: Verifiable-Fact-Augmented GRPO RL Trainer")
-    parser.add_argument("--domain", type=str, default="science", help="Domain to train")
+    parser.add_argument("--domain", type=str, default="cyber", help="Domain to train")
     parser.add_argument("--generations", type=int, default=4, help="Group rollout generations (G)")
     args = parser.parse_args()
 

@@ -16,7 +16,7 @@ class TestSentinelKernel(unittest.TestCase):
             signal_type=SignalType.TASK_SIGNAL,
             query_id="query-sentinel-01",
             source_id="ORCHESTRATOR",
-            target_id="science",
+            target_id="cyber",
             payload={"objective": "Test objective"}
         ).freeze_and_hash()
 
@@ -27,10 +27,9 @@ class TestSentinelKernel(unittest.TestCase):
     def test_verification_routing(self):
         route_cyber = Sentinel.get_verification_route("cyber")
         self.assertEqual(route_cyber.get("technical_accuracy"), "cyber")
-        self.assertEqual(route_cyber.get("logical_reasoning"), "science")
+        self.assertEqual(route_cyber.get("logical_reasoning"), "meta_reasoner")
 
-        route_science = Sentinel.get_verification_route("science")
-        self.assertEqual(route_science.get("factual_accuracy"), "science")
+
 
 
 if __name__ == "__main__":

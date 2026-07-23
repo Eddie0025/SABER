@@ -6,7 +6,7 @@
 # Models are ordered largest-to-smallest so the heaviest training
 # runs first while the GPU is at peak thermal efficiency.
 #
-# Order:  Meta-Reasoner → Science → Finance → Coding
+# Order:  Meta-Reasoner → Finance → Coding
 #         → Architecture → Cyber → Orchestrator
 #
 # Hardware:  1× H100 SXM (80 GB VRAM)  —  JarvisLabs EU1
@@ -94,7 +94,6 @@ train_model() {
 # Ordered by total training steps (largest → smallest):
 #   Medical:       5,193 steps  (~53K records, 3 epochs)
 #   Meta-Reasoner: 3,168 steps  (~4.8K records @ 1414 tok avg, 4 epochs)
-#   Science:       1,965 steps  (~23K records, 3 epochs)
 #   Finance:       1,698 steps  (~14K records, 3 epochs)
 #   Coding:        1,668 steps  (~21K records, 3 epochs)
 #   Architecture:  1,284 steps  (~9.5K records, 3 epochs)
@@ -123,7 +122,6 @@ echo "  ALL 8 MODELS TRAINED SUCCESSFULLY!"
 echo "============================================================"
 echo "  Medical:       models/medical_v2/"
 echo "  Meta-Reasoner: models/meta_reasoner_v2/"
-echo "  Science:       models/science_v2/"
 echo "  Finance:       models/finance_v2/"
 echo "  Coding:        models/coding_v2/"
 echo "  Architecture:  models/architecture_v2/"
@@ -136,7 +134,6 @@ echo ""
 echo "  Training logs saved to:"
 echo "    logs/train_medical.log"
 echo "    logs/train_meta_reasoner.log"
-echo "    logs/train_science.log"
 echo "    logs/train_finance.log"
 echo "    logs/train_coding.log"
 echo "    logs/train_architecture.log"

@@ -60,9 +60,9 @@ class TestSentinelSearchExtractionAccuracy(unittest.TestCase):
         self.assertIn("cve-2023-24380", numerics1)
         self.assertTrue(guard1.startswith("[cve-2023-24380]::"))
 
-        # Query 2: Physics calculation
-        query_science = "Calculate kinetic energy of a 10.5kg mass moving at 4m/s."
-        clean_q2 = " ".join(query_science.lower().split())
+        # Query 2: Finance calculation
+        query_finance = "Calculate gross profit if revenue is 10.5M and COGS is 4M."
+        clean_q2 = " ".join(query_finance.lower().split())
         numerics2 = re.findall(r'\b\d+(?:\.\d+)?%?\b|cve-\d+-\d+', clean_q2)
         guard2 = f"[{'_'.join(numerics2)}]::{clean_q2}"
 
@@ -84,9 +84,9 @@ class TestSentinelSearchExtractionAccuracy(unittest.TestCase):
 
     def test_offline_kb_exact_retrieval_and_fact_matching(self):
         """Test that extracted queries retrieve the exact ground-truth passage from SQLite."""
-        domain = "science_extract_test"
-        query_guard = "[10_5_125]::calculate kinetic energy of 10kg at 5m/s"
-        support_passage = "Kinetic Energy formula is KE = 0.5 * m * v^2. For m=10 and v=5, KE equals 125 Joules."
+        domain = "finance_extract_test"
+        query_guard = "[10_5_125]::calculate gross profit of 10 rev and 5 cogs"
+        support_passage = "Gross Profit is Rev - COGS. For rev=10 and cogs=5, GP equals 5."
         
         self._create_mock_sqlite_kb(domain, [
             ("rec_001", query_guard, "Calculate KE", support_passage, "ground_truth")

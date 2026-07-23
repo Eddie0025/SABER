@@ -55,10 +55,10 @@ class TrainConfig:
     Qwen2.5-7B-Instruct base model + LoRA.
     """
 
-    domain: str = "science"
-    data_path: str = "data/processed/science.jsonl"
+    domain: str = "cyber"
+    data_path: str = "data/processed/cyber.jsonl"
     base_model: str = "Qwen/Qwen2.5-7B-Instruct"
-    output_dir: str = "models/science_v2"
+    output_dir: str = "models/cyber_v2"
     epochs: int = 3
     batch_size: int = 16                    # Per-device; 80 GB H100 native
     learning_rate: float = 2e-4
@@ -119,12 +119,6 @@ _DOMAIN_SYSTEM_PROMPTS: Dict[str, str] = {
         "and digital forensics. Map threats to specific techniques and "
         "provide structured analysis. Think through your reasoning "
         "step by step before providing your final answer."
-    ),
-    "science": (
-        "You are a science specialist with expertise in physics, chemistry, "
-        "biology, and mathematical reasoning. Show all work and explain "
-        "each step clearly. Think through your reasoning step by step "
-        "before providing your final answer."
     ),
     "coding": (
         "You are a coding specialist with expertise in Python, algorithms, "
@@ -731,12 +725,6 @@ _DOMAIN_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "data_path": "data/processed/cyber.jsonl",
         "base_model": "Qwen/Qwen2.5-7B-Instruct",
         "output_dir": "models/cyber_v2",
-        "epochs": 3,
-    },
-    "science": {
-        "data_path": "data/processed/science.jsonl",
-        "base_model": "Qwen/Qwen2.5-7B-Instruct",
-        "output_dir": "models/science_v2",
         "epochs": 3,
     },
     "coding": {

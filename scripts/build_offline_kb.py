@@ -75,7 +75,7 @@ def build_domain_kb(domain: str):
 
 
 def main():
-    domains = ["science", "cyber", "finance", "coding", "architecture", "meta_reasoner", "orchestrator"]
+    domains = ["cyber", "finance", "coding", "architecture", "meta_reasoner", "orchestrator"]
     for d in domains:
         build_domain_kb(d)
 

@@ -17,7 +17,7 @@ set -e
 SECONDS=0
 mkdir -p logs models data/offline_kb data/processed
 
-DOMAINS=("science" "cyber" "finance" "coding" "architecture" "orchestrator" "meta_reasoner")
+DOMAINS=("cyber" "finance" "coding" "architecture" "orchestrator" "meta_reasoner")
 
 echo "========================================================================="
 echo "   SABER FULL END-TO-END AUTOMATED PIPELINE (SFT → GRPO → EVAL)"
@@ -34,7 +34,7 @@ if [ ! -f "data/processed/dataset_manifest.json" ]; then
     PYTHONPATH=. python3 scripts/1_build_datasets.py
 fi
 
-if [ ! -f "data/offline_kb/science_kb.db" ]; then
+if [ ! -f "data/offline_kb/cyber_kb.db" ]; then
     echo "[!] Knowledge bases missing. Building SQLite KBs..."
     PYTHONPATH=. python3 scripts/2_build_kb.py
 fi

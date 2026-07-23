@@ -16,6 +16,11 @@ import os
 import threading
 from typing import Dict, List, Optional
 
+from .specialists.cybersecurity import CyberSpecialist
+from .specialists.finance import FinanceSpecialist
+from .specialists.coding import CodingSpecialist
+from .specialists.architecture import ArchitectureSpecialist
+
 from saber.specialist import HealthStatus, Specialist, SpecialistLoader, SpecialistMeta
 
 
@@ -66,10 +71,13 @@ class SpecialistRegistry:
 
         Returns the number of specialists registered.
         """
-        specialists = SpecialistLoader.discover(package_name)
-        for s in specialists:
-            self.register(s)
-        return len(specialists)
+        self._specialists = {
+            "cyber": CyberSpecialist(),
+            "finance": FinanceSpecialist(),
+            "coding": CodingSpecialist(),
+            "architecture": ArchitectureSpecialist()
+        }
+        return len(self._specialists)
 
     # ------------------------------------------------------------------
     # Lookup

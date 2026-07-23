@@ -623,9 +623,6 @@ def fetch_cyber():
     _jsonl_write(records, "data/processed/cyber.jsonl")
 
 
-# ---------------------------------------------------------------------------
-# SCIENCE: ScienceQA + SciQ + Hendrycks MATH + ARC-Challenge + CAMEL-AI (physics/chemistry/biology)
-# ---------------------------------------------------------------------------
 
 def _extract_camel_ai(dataset_name: str, subject: str, max_records: int = 2000) -> list:
     """Extract Q&A pairs from CAMEL-AI dialogue datasets."""
@@ -658,168 +655,7 @@ def _extract_camel_ai(dataset_name: str, subject: str, max_records: int = 2000) 
     return records
 
 
-def fetch_science():
-    print("[dataset_loader] === SCIENCE DATASET (v2 — Expanded) ===")
-    records = []
 
-    # 2. ScienceQA — multi-subject science with explanations
-    try:
-        print("[dataset_loader] [2/8] Downloading ScienceQA...")
-        ds_sci = load_dataset("lmms-lab/ScienceQA", "ScienceQA-FULL", split="validation[:5000]")
-        added = 0
-        for item in ds_sci:
-            question = item.get("question", "")
-            choices = item.get("choices", [])
-            answer_idx = item.get("answer", -1)
-            lecture = item.get("lecture", "")
-            solution = item.get("solution", "")
-            if not question or not choices or answer_idx < 0 or answer_idx >= len(choices):
-                continue
-            if not solution or len(solution) < 20:
-                continue
-            choice_letters = ["A", "B", "C", "D", "E", "F"]
-            choices_text = "\n".join(
-                f"{choice_letters[i]}) {c}" for i, c in enumerate(choices) if i < len(choice_letters)
-            )
-            full_question = f"{question}\n{choices_text}"
-            correct_letter = choice_letters[answer_idx] if answer_idx < len(choice_letters) else "?"
-            correct_text = choices[answer_idx]
-            full_answer = f"The correct answer is {correct_letter}) {correct_text}.\n\n"
-            if lecture:
-                full_answer += f"Background: {lecture}\n\n"
-            full_answer += f"Solution: {solution}"
-            records.append({
-                "id": f"sci_{uuid.uuid4().hex[:8]}",
-                "text": full_question,
-                "label": full_answer,
-                "domain": "science"
-            })
-            added += 1
-        print(f"[dataset_loader]   ScienceQA: {added} records")
-    except Exception as e:
-        print(f"[dataset_loader] Error downloading ScienceQA: {e}")
-
-    # 3. SciQ — Science exam questions with support paragraphs
-    try:
-        print("[dataset_loader] [3/8] Downloading SciQ (allenai)...")
-        ds_sciq = load_dataset("allenai/sciq", split="train[:5000]")
-        added = 0
-        for item in ds_sciq:
-            question = item.get("question", "")
-            correct = item.get("correct_answer", "")
-            support = item.get("support", "")
-            d1 = item.get("distractor1", "")
-            d2 = item.get("distractor2", "")
-            d3 = item.get("distractor3", "")
-            if not question or not correct:
-                continue
-            if d1 and d2 and d3:
-                import random
-                options = [correct, d1, d2, d3]
-                random.shuffle(options)
-                correct_idx = options.index(correct)
-                choice_letters = ["A", "B", "C", "D"]
-                choices_text = "\n".join(f"{choice_letters[i]}) {opt}" for i, opt in enumerate(options))
-                full_question = f"[Science] {question}\n{choices_text}"
-                full_answer = f"The correct answer is {choice_letters[correct_idx]}) {correct}."
-            else:
-                full_question = f"[Science] {question}"
-                full_answer = correct
-            if support and len(support) > 20:
-                full_answer += f"\n\nExplanation: {support}"
-            if len(full_answer) >= 30:
-                records.append({
-                    "id": f"sci_{uuid.uuid4().hex[:8]}",
-                    "text": full_question,
-                    "label": full_answer,
-                    "domain": "science"
-                })
-                added += 1
-        print(f"[dataset_loader]   SciQ: {added} records")
-    except Exception as e:
-        print(f"[dataset_loader] Error downloading SciQ: {e}")
-
-    # 4. Hendrycks MATH (STEM Reasoning)
-    try:
-        print("[dataset_loader] [4/8] Downloading Hendrycks MATH...")
-        ds_math_h = load_dataset("lighteval/MATH", "algebra", split="train[:5000]")
-        added = 0
-        for item in ds_math_h:
-            question = item.get("problem", "")
-            solution = item.get("solution", "")
-            if question and solution:
-                records.append({
-                    "id": f"sci_{uuid.uuid4().hex[:8]}",
-                    "text": f"[Advanced Math] {question}",
-                    "label": solution,
-                    "domain": "science"
-                })
-                added += 1
-        print(f"[dataset_loader]   MATH: {added} records")
-    except Exception as e:
-        print(f"[dataset_loader] Error downloading Hendrycks MATH: {e}")
-
-    # 5. ARC-Challenge
-    try:
-        print("[dataset_loader] [5/8] Downloading ARC-Challenge...")
-        ds_arc = load_dataset("allenai/ai2_arc", "ARC-Challenge", split="train[:3000]")
-        added = 0
-        for item in ds_arc:
-            question = item.get("question", "")
-            choices = item.get("choices", {})
-            answer_key = item.get("answerKey", "")
-            if question and choices and answer_key:
-                labels = choices.get("label", [])
-                texts = choices.get("text", [])
-                choices_text = "\n".join(f"{l}) {t}" for l, t in zip(labels, texts))
-                full_question = f"[Science] {question}\n{choices_text}"
-                correct_idx = labels.index(answer_key) if answer_key in labels else -1
-                if correct_idx >= 0:
-                    full_answer = f"The correct answer is {answer_key}) {texts[correct_idx]}."
-                    records.append({
-                        "id": f"sci_{uuid.uuid4().hex[:8]}",
-                        "text": full_question,
-                        "label": full_answer,
-                        "domain": "science"
-                    })
-                    added += 1
-        print(f"[dataset_loader]   ARC-Challenge: {added} records")
-    except Exception as e:
-        print(f"[dataset_loader] Error downloading ARC-Challenge: {e}")
-
-    # 6. TIGER-Lab MathInstruct (Physics filtered)
-    try:
-        print("[dataset_loader] [6/8] Downloading MathInstruct (Physics subset)...")
-        ds_math = load_dataset("TIGER-Lab/MathInstruct", split="train[:15000]")
-        added = 0
-        for item in ds_math:
-            question = item.get("instruction", "")
-            ans = item.get("output", "")
-            if question and ans and any(kw in question.lower() for kw in ["velocity", "friction", "gravity", "acceleration", "mass", "joule", "newton"]):
-                records.append({
-                    "id": f"sci_{uuid.uuid4().hex[:8]}",
-                    "text": f"Solve the following mathematical physics problem step-by-step:\n{question}",
-                    "label": ans,
-                    "domain": "science"
-                })
-                added += 1
-        print(f"[dataset_loader]   MathInstruct (Physics): {added} records")
-    except Exception as e:
-        print(f"[dataset_loader] Error downloading MathInstruct: {e}")
-
-    # 7. CAMEL-AI Sciences
-    print("[dataset_loader] [7/8] Downloading CAMEL-AI Physics...")
-    physics_recs = _extract_camel_ai("camel-ai/physics", "Physics", 8000)
-    records.extend(physics_recs)
-    print(f"[dataset_loader]   CAMEL-AI Physics: {len(physics_recs)} records")
-
-    print("[dataset_loader] [8/8] Downloading CAMEL-AI Chemistry/Biology...")
-    records.extend(_extract_camel_ai("camel-ai/chemistry", "Chemistry", 5000))
-    records.extend(_extract_camel_ai("camel-ai/biology", "Biology", 5000))
-
-    records = _quality_filter(records, min_label_len=50)
-    records = _convert_to_cot(records, fraction=0.30)
-    _jsonl_write(records, "data/processed/science.jsonl")
 
 
 # ---------------------------------------------------------------------------
@@ -1388,7 +1224,7 @@ def fetch_orchestrator():
         print(f"[dataset_loader] Error downloading natural-instructions: {e}")
 
     # Synthetic Multi-Domain
-    domains = ["cyber", "science", "coding", "architecture", "finance"]
+    domains = ["cyber", "coding", "architecture", "finance"]
     import itertools
     pairs = list(itertools.combinations(domains, 2))
     added_synth = 0
@@ -1798,7 +1634,6 @@ def build_all_processed_datasets():
     """Build all processed datasets across all 7 active domains."""
     os.makedirs("data/processed", exist_ok=True)
     fetch_cyber()
-    fetch_science()
     fetch_coding()
     fetch_architecture()
     fetch_finance()
