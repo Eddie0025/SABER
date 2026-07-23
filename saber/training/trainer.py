@@ -72,7 +72,7 @@ class TrainConfig:
             "gate_proj", "up_proj", "down_proj"
         ]
     )
-    gradient_accumulation_steps: int = 4    # Effective batch = 8 × 4 = 32
+    gradient_accumulation_steps: int = 2    # Effective batch = 8 × 2 = 16 (2x faster weight updates)
     warmup_ratio: float = 0.03
     fp16: bool = False
     bf16: bool = True                       # H100 has native bf16 support
