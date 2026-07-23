@@ -60,7 +60,8 @@ class TrainConfig:
     base_model: str = "Qwen/Qwen2.5-7B-Instruct"
     output_dir: str = "models/cyber_v2"
     epochs: int = 3
-    batch_size: int = 16                    # Per-device; 80 GB H100 native
+    batch_size: int = 8                     # Per-device; reduced to 8 + grad_accum 2 for zero-OOM safety
+    gradient_accumulation_steps: int = 2
     learning_rate: float = 2e-4
     lora_r: int = 64
     lora_alpha: int = 128
