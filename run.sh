@@ -21,11 +21,11 @@ echo "[+] Dependencies installed."
 echo ""
 
 # ------------------------------------------------------------------
-# Step 0b: Purge existing datasets and models to retrain from scratch
+# Step 0b: Purge existing models if retraining from scratch
 # ------------------------------------------------------------------
-echo "[+] Step 0b: Purging old data and models for: medical, architecture, orchestrator, coding, cyber..."
-rm -rf data/processed/medical.jsonl data/processed/dataset_manifest.json
-rm -rf models/medical_v2 models/architecture_v2 models/orchestrator_v2 models/coding_v2 models/cyber_v2
+echo "[+] Step 0b: Purging old data and models for active domains..."
+rm -rf data/processed/dataset_manifest.json
+rm -rf models/science_v2 models/finance_v2 models/meta_reasoner_v2 models/architecture_v2 models/orchestrator_v2 models/coding_v2 models/cyber_v2
 echo "[+] Purge complete."
 echo ""
 
@@ -35,9 +35,6 @@ echo ""
 echo "[+] Step 1: Downloading & preparing CoT datasets..."
 PYTHONPATH=. python3 -m saber.training.dataset_loader
 
-echo "[+] Step 1b: Downloading & preparing clean Medical CoT reasoning dataset..."
-PYTHONPATH=. python3 scripts/prep_medical_data.py
-
 echo ""
 echo "[+] Step 2: Creating log directory..."
 mkdir -p logs
@@ -45,7 +42,7 @@ mkdir -p logs
 echo ""
 echo "[+] Step 3: Launching sequential model training (Batch Size: 8)..."
 # Sequential run optimized for 7B models on 80GB VRAM H100 GPU
-for domain in medical architecture orchestrator coding cyber
+for domain in meta_reasoner science finance coding architecture cyber orchestrator
 do
     echo "----------------------------------------------------------"
     echo ">> Training domain: $domain"

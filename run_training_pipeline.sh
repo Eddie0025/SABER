@@ -6,7 +6,7 @@
 # Models are ordered largest-to-smallest so the heaviest training
 # runs first while the GPU is at peak thermal efficiency.
 #
-# Order:  Medical → Meta-Reasoner → Science → Finance → Coding
+# Order:  Meta-Reasoner → Science → Finance → Coding
 #         → Architecture → Cyber → Orchestrator
 #
 # Hardware:  1× H100 SXM (80 GB VRAM)  —  JarvisLabs EU1
