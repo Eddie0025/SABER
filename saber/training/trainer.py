@@ -60,7 +60,7 @@ class TrainConfig:
     base_model: str = "Qwen/Qwen2.5-7B-Instruct"
     output_dir: str = "models/science_v2"
     epochs: int = 3
-    batch_size: int = 8                     # Per-device; safe for 80 GB H100
+    batch_size: int = 16                    # Per-device; 80 GB H100 native
     learning_rate: float = 2e-4
     lora_r: int = 64
     lora_alpha: int = 128
@@ -72,7 +72,7 @@ class TrainConfig:
             "gate_proj", "up_proj", "down_proj"
         ]
     )
-    gradient_accumulation_steps: int = 2    # Effective batch = 8 × 2 = 16 (2x faster weight updates)
+    gradient_accumulation_steps: int = 1    # Effective batch = 16 × 1 = 16 (H100 single-pass acceleration)
     warmup_ratio: float = 0.03
     fp16: bool = False
     bf16: bool = True                       # H100 has native bf16 support
