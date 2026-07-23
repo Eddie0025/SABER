@@ -64,7 +64,7 @@ def build_domain_kb(domain: str):
 
             guard = normalize_query_guard(text)
             cursor.execute(
-                "INSERT INTO passage_kb (id, query_guard, question_text, support_passage, label_text) VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO passage_kb (id, query_guard, question_text, support_passage, label_text) VALUES (?, ?, ?, ?, ?)",
                 (q_id, guard, text, support, label)
             )
             count += 1
