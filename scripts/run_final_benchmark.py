@@ -212,7 +212,7 @@ def run_benchmark():
     # ---------------------------------------------------------------
     if args.domain in ["all", "finance"]:
         try:
-            financebench = load_hf_dataset("virattt/financebench", split="train[:100]")
+            financebench = load_hf_dataset("virattt/financebench", split="train")
             added_fin = 0
             for row in financebench:
                 q_text = row.get("question", "")
@@ -230,7 +230,7 @@ def run_benchmark():
                         "dataset": "financebench"
                     })
                     added_fin += 1
-            print(f"[+] Loaded {added_fin} Finance (FinanceBench) cases.")
+            print(f"[+] Loaded FULL {added_fin} Finance (FinanceBench) cases.")
         except Exception as e:
             print(f"[!] FinanceBench load failed: {e}")
 
@@ -239,7 +239,7 @@ def run_benchmark():
     # ---------------------------------------------------------------
     if args.domain in ["all", "coding"]:
         try:
-            lcb = load_hf_dataset("livecodebench/code_generation_lite", "release_latest", split="test[:100]")
+            lcb = load_hf_dataset("livecodebench/code_generation_lite", "release_latest", split="test")
             added_code = 0
             for row in lcb:
                 q_text = row.get("question_content", "") or row.get("prompt", "")
@@ -258,7 +258,7 @@ def run_benchmark():
                         "dataset": "livecodebench"
                     })
                     added_code += 1
-            print(f"[+] Loaded {added_code} Coding (LiveCodeBench) cases.")
+            print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench) cases.")
         except Exception as e:
             print(f"[!] LiveCodeBench load failed: {e}")
 
@@ -305,9 +305,7 @@ def run_benchmark():
                         "dataset": "cybermetric_500"
                     })
                     added_cyb += 1
-                    if added_cyb >= 100:
-                        break
-            print(f"[+] Loaded {added_cyb} Cyber (CyberMetric-500) cases.")
+            print(f"[+] Loaded FULL {added_cyb} Cyber (CyberMetric-500) cases.")
         except Exception as e:
             # Fallback to secbench if CyberMetric-500 config fails
             try:
@@ -333,9 +331,7 @@ def run_benchmark():
                                 "dataset": "cybermetric_500"
                             })
                             added_cyb += 1
-                            if added_cyb >= 100:
-                                break
-                print(f"[+] Loaded {added_cyb} Cyber (CyberMetric Fallback) cases.")
+                print(f"[+] Loaded FULL {added_cyb} Cyber (CyberMetric Fallback) cases.")
             except Exception as ex:
                 print(f"[!] CyberMetric load failed: {ex}")
 
@@ -345,7 +341,7 @@ def run_benchmark():
     if args.domain in ["all", "architecture"]:
         try:
             # Load task-specific Architecture Decision Record (ADR) and Microservice design tasks from sa4s-serc/archbench
-            arch_ds = load_hf_dataset("sa4s-serc/archbench", "adr_generation", split="test[:100]")
+            arch_ds = load_hf_dataset("sa4s-serc/archbench", "adr_generation", split="test")
             added_arch = 0
             for row in arch_ds:
                 q_text = row.get("prompt", "") or row.get("query", "") or row.get("requirement", "")
@@ -360,11 +356,11 @@ def run_benchmark():
                         "dataset": "archbench"
                     })
                     added_arch += 1
-            print(f"[+] Loaded {added_arch} Architecture (ArchBench sa4s-serc) cases.")
+            print(f"[+] Loaded FULL {added_arch} Architecture (ArchBench sa4s-serc) cases.")
         except Exception as e:
             # Fallback to curated System Architecture design tasks if HF repository is offline
             try:
-                arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[30000:30100]")
+                arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[30000:30500]")
                 added_arch = 0
                 for row in arch_ds:
                     q_text = row.get("query", "")
@@ -379,7 +375,7 @@ def run_benchmark():
                             "dataset": "archbench"
                         })
                         added_arch += 1
-                print(f"[+] Loaded {added_arch} Architecture (ArchBench Fallback) cases.")
+                print(f"[+] Loaded FULL {added_arch} Architecture (ArchBench Fallback) cases.")
             except Exception as ex:
                 print(f"[!] ArchBench load failed: {ex}")
 
