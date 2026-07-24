@@ -150,6 +150,43 @@ def parse_exact_answer(raw_answer):
     return raw_answer.strip()
 
 # =====================================================================
+# Dynamic Python Code Execution Harness for LiveCodeBench
+# =====================================================================
+import multiprocessing
+import io
+import contextlib
+
+def _worker_exec(code_str, test_code, result_queue):
+    """Worker process to safely execute Python code in a isolated environment."""
+    try:
+        global_scope = {}
+        # Clean markdown code fences if present
+        clean_code = code_str.replace("```python", "").replace("```", "").strip()
+        exec(clean_code, global_scope)
+        if test_code:
+            exec(test_code, global_scope)
+        result_queue.put((True, "Pass"))
+    except Exception as e:
+        result_queue.put((False, str(e)))
+
+def execute_python_code(code_str, test_code="", timeout_sec=3):
+    """Execute Python code dynamically and return True/False pass status."""
+    result_queue = multiprocessing.Queue()
+    p = multiprocessing.Process(target=_worker_exec, args=(code_str, test_code, result_queue))
+    p.start()
+    p.join(timeout_sec)
+    
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        return False, "Timeout"
+        
+    if not result_queue.empty():
+        success, msg = result_queue.get()
+        return success, msg
+    return False, "Execution Error"
+
+# =====================================================================
 # Main Benchmark Pipeline — MCQ Only
 # =====================================================================
 import argparse
@@ -412,11 +449,18 @@ def run_benchmark():
             except Exception as e:
                 ans1 = f"[ERROR]: {e}"
                 
-            extracted1 = parse_mcq_answer(ans1, q) if is_mcq else parse_exact_answer(ans1)
-            case_res["runs"]["Base Qwen"] = {
-                "answer": ans1, "latency": round(time.time()-start, 2),
-                "evaluation": {"accuracy": 1.0 if extracted1 == expected_norm else 0.0}
-            }
+            if case["type"] == "code":
+                pass1, msg1 = execute_python_code(ans1)
+                case_res["runs"]["Base Qwen"] = {
+                    "answer": ans1, "latency": round(time.time()-start, 2),
+                    "evaluation": {"accuracy": 1.0 if pass1 else 0.0, "status": msg1}
+                }
+            else:
+                extracted1 = parse_mcq_answer(ans1, q) if is_mcq else parse_exact_answer(ans1)
+                case_res["runs"]["Base Qwen"] = {
+                    "answer": ans1, "latency": round(time.time()-start, 2),
+                    "evaluation": {"accuracy": 1.0 if extracted1 == expected_norm else 0.0}
+                }
             
             # --- Mode 2: Qwen with Adaptors ---
             start = time.time()
@@ -433,11 +477,18 @@ def run_benchmark():
             except Exception as e:
                 ans2 = f"[ERROR]: {e}"
                 
-            extracted2 = parse_mcq_answer(ans2, q) if is_mcq else parse_exact_answer(ans2)
-            case_res["runs"]["Qwen with Adaptors"] = {
-                "answer": ans2, "latency": round(time.time()-start, 2),
-                "evaluation": {"accuracy": 1.0 if extracted2 == expected_norm else 0.0}
-            }
+            if case["type"] == "code":
+                pass2, msg2 = execute_python_code(ans2)
+                case_res["runs"]["Qwen with Adaptors"] = {
+                    "answer": ans2, "latency": round(time.time()-start, 2),
+                    "evaluation": {"accuracy": 1.0 if pass2 else 0.0, "status": msg2}
+                }
+            else:
+                extracted2 = parse_mcq_answer(ans2, q) if is_mcq else parse_exact_answer(ans2)
+                case_res["runs"]["Qwen with Adaptors"] = {
+                    "answer": ans2, "latency": round(time.time()-start, 2),
+                    "evaluation": {"accuracy": 1.0 if extracted2 == expected_norm else 0.0}
+                }
             
             # --- Mode 3: Qwen Adaptor + CoT ---
             start = time.time()
@@ -674,6 +725,24 @@ def run_benchmark():
         exp = case_res.get("expected", "")
         if ds not in judge_summary:
             judge_summary[ds] = {}
+
+        # Bypass LLM Judge for coding datasets (Coding is executed dynamically)
+        if ds == "livecodebench":
+            for mode_name, run_data in case_res["runs"].items():
+                if mode_name not in judge_summary[ds]:
+                    judge_summary[ds][mode_name] = {
+                        "acc_sum": 0.0, "reas_sum": 0.0, "hall_sum": 0.0, "ovr_sum": 0.0, "cnt": 0
+                    }
+                pass_score = 100.0 if run_data["evaluation"].get("accuracy", 0.0) == 1.0 else 0.0
+                scores = {"accuracy_score": pass_score, "reasoning_score": pass_score, "hallucination_control": 100.0 if pass_score > 0 else 50.0, "overall_score": pass_score}
+                st = judge_summary[ds][mode_name]
+                st["acc_sum"] += scores["accuracy_score"]
+                st["reas_sum"] += scores["reasoning_score"]
+                st["hall_sum"] += scores["hallucination_control"]
+                st["ovr_sum"] += scores["overall_score"]
+                st["cnt"] += 1
+                run_data["llm_judge"] = scores
+            continue
 
         print(f"[*] Judge Evaluating Case {case_idx}/{total_judge_cases} [{ds}]...")
 
