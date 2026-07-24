@@ -426,6 +426,16 @@ def run_benchmark():
     
     config = SaberConfig()
 
+    checkpoint_file = "benchmark_checkpoint.json"
+    checkpoint_data = {}
+    if os.path.exists(checkpoint_file):
+        try:
+            with open(checkpoint_file, "r", encoding="utf-8") as f:
+                checkpoint_data = json.load(f)
+            print(f"[*] Loaded existing checkpoint with {len(checkpoint_data)} previously evaluated cases.")
+        except Exception as e:
+            print(f"[!] Warning: Could not read checkpoint file: {e}")
+
     for ds_name, cases in datasets.items():
         domain = cases[0]["domain"]
         print(f"\n==========================================================")
@@ -450,6 +460,14 @@ def run_benchmark():
         for idx_in_ds, case in enumerate(cases, 1):
             global_idx += 1
             q = case["question"]
+            case_key = f"{ds_name}_{global_idx}"
+            
+            # Check if this case was already completed in checkpoint
+            if case_key in checkpoint_data:
+                print(f"[*] [RESUMING] Skipping already completed case {global_idx}/{len(bench_cases)} [{ds_name}]")
+                results.append(checkpoint_data[case_key])
+                continue
+
             expected_norm = str(case.get("expected", "")).strip().upper()
             is_mcq = expected_norm in ["A", "B", "C", "D"]
             print(f"\n[{global_idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {q[:75].strip()}...")
@@ -605,6 +623,14 @@ def run_benchmark():
                 f.write("="*40 + "\n\n")
             
             results.append(case_res)
+            checkpoint_data[case_key] = case_res
+            
+            # Save checkpoint to disk on every case
+            try:
+                with open(checkpoint_file, "w", encoding="utf-8") as f:
+                    json.dump(checkpoint_data, f, indent=2)
+            except Exception:
+                pass
 
             # ----- Live Scoreboard (every 10 cases or dataset boundary) -----
             is_dataset_complete = (idx_in_ds == len(cases))
