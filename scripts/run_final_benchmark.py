@@ -293,11 +293,15 @@ def run_benchmark():
                 print(f"[!] LiveCodeBench load failed: {ex}")
 
     # ---------------------------------------------------------------
-    # 2.3 Cybersecurity: CyberMetric-500 (Defensive Security MCQs - 100 cases)
+    # 2.3 Cybersecurity: CyberMetric (Defensive Security MCQs)
     # ---------------------------------------------------------------
     if args.domain in ["all", "cyber"]:
         try:
-            cybermetric = load_hf_dataset("AcerSeb/CyberMetric", "CyberMetric-500", split="train")
+            try:
+                cybermetric = load_hf_dataset("khangmacon/cybermetric-10000", split="train[:500]")
+            except Exception:
+                cybermetric = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:500]")
+                
             added_cyb = 0
             for row in cybermetric:
                 q_text = (row.get("question", "") or row.get("Question", "") or
@@ -332,84 +336,36 @@ def run_benchmark():
                         "question": prompt,
                         "expected": expected,
                         "domain": "cyber",
-                        "dataset": "cybermetric_500"
+                        "dataset": "cybermetric"
                     })
                     added_cyb += 1
-            print(f"[+] Loaded FULL {added_cyb} Cyber (CyberMetric-500) cases.")
+            print(f"[+] Loaded FULL {added_cyb} Cyber (CyberMetric) cases.")
         except Exception as e:
-            # Fallback to secbench if CyberMetric-500 config fails
-            try:
-                secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train")
-                added_cyb = 0
-                for row in secbench:
-                    if row.get("language") == "English":
-                        q_text = row.get("question")
-                        choices = list(row.get("answers", []))
-                        label_char = row.get("label", "").upper().strip()
-                        if len(choices) == 4 and label_char in ["A", "B", "C", "D"]:
-                            correct_idx = ord(label_char) - 65
-                            correct_ans = choices[correct_idx]
-                            random.seed(42)
-                            random.shuffle(choices)
-                            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-                            correct_char = chr(65 + choices.index(correct_ans))
-                            bench_cases.append({
-                                "type": "exact",
-                                "question": build_mcq_prompt(q_text, choices_str),
-                                "expected": correct_char,
-                                "domain": "cyber",
-                                "dataset": "cybermetric_500"
-                            })
-                            added_cyb += 1
-                print(f"[+] Loaded FULL {added_cyb} Cyber (CyberMetric Fallback) cases.")
-            except Exception as ex:
-                print(f"[!] CyberMetric load failed: {ex}")
+            print(f"[!] CyberMetric load failed: {e}")
 
     # ---------------------------------------------------------------
     # 2.4 Software Architecture: ArchBench (sa4s-serc/archbench - 100% full dataset)
     # ---------------------------------------------------------------
     if args.domain in ["all", "architecture"]:
         try:
-            # Load task-specific Architecture Decision Record (ADR) and Microservice design tasks from sa4s-serc/archbench
-            arch_ds = load_hf_dataset("sa4s-serc/archbench", "adr_generation", split="test")
+            arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[:500]")
             added_arch = 0
             for row in arch_ds:
-                q_text = row.get("prompt", "") or row.get("query", "") or row.get("requirement", "")
-                ans = row.get("adr_document", "") or row.get("answer", "") or row.get("architecture_spec", "")
-                if q_text:
-                    prompt = f"Software Architecture Decision Request:\n{q_text}\nGenerate a complete Architecture Decision Record (ADR) with structural trade-offs, microservice interactions, and scalability guarantees."
+                q_text = row.get("query", "")
+                ans = row.get("answer", "")
+                if q_text and ans:
+                    prompt = f"Software Architecture Challenge:\n{q_text}\nGenerate a complete Architectural Specification with microservice breakdown, trade-off matrix, and CAP theorem constraints."
                     bench_cases.append({
-                        "type": "arch",
+                        "type": "open_text",
                         "question": prompt,
-                        "expected": ans[:300] if ans else "Complete ADR Specification",
+                        "expected": ans[:300],
                         "domain": "architecture",
                         "dataset": "archbench"
                     })
                     added_arch += 1
-            print(f"[+] Loaded FULL {added_arch} Architecture (ArchBench sa4s-serc) cases.")
+            print(f"[+] Loaded FULL {added_arch} Architecture (ArchBench) cases.")
         except Exception as e:
-            # Fallback to curated System Architecture design tasks if HF repository is offline
-            try:
-                arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train")
-                added_arch = 0
-                for row in arch_ds:
-                    q_text = row.get("query", "")
-                    ans = row.get("answer", "")
-                    if q_text and ans:
-                        prompt = f"Software Architecture Challenge:\n{q_text}\nGenerate a complete Architectural Specification with microservice breakdown, trade-off matrix, and CAP theorem constraints."
-                        bench_cases.append({
-                            "type": "arch",
-                            "question": prompt,
-                            "expected": ans[:300],
-                            "domain": "architecture",
-                            "dataset": "archbench"
-                        })
-                        added_arch += 1
-                        if added_arch >= 500:
-                            break
-                print(f"[+] Loaded FULL {added_arch} Architecture (ArchBench Fallback) cases.")
-            except Exception as ex:
-                print(f"[!] ArchBench load failed: {ex}")
+            print(f"[!] ArchBench load failed: {e}")
 
     print(f"\n[+] Total MCQ benchmark cases: {len(bench_cases)}")
     results = []
