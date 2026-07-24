@@ -187,629 +187,274 @@ def execute_python_code(code_str, test_code="", timeout_sec=3):
     return False, "Execution Error"
 
 # =====================================================================
-# Main Benchmark Pipeline — MCQ Only
+# SABER Unified Benchmark Pipeline — Optimized Architecture
 # =====================================================================
 import argparse
+import requests
+from collections import defaultdict
 
 def run_benchmark():
     parser = argparse.ArgumentParser(description="Run SABER Final Benchmark")
-    parser.add_argument("--domain", type=str, default="all", help="Specify domain to benchmark (e.g. finance, cyber, all)")
+    parser.add_argument("--domain", type=str, default="all", help="Specify domain (finance, cyber, coding, architecture, all)")
     args = parser.parse_args()
 
     print("==========================================================")
-    print(f"      SABER MCQ Benchmark — 5-Mode Ablation Study [{args.domain.upper()}]")
+    print(f"      SABER Benchmark Suite — 5-Mode Ablation Study [{args.domain.upper()}]")
     print("==========================================================\n")
 
-    # 1. Setup Configuration
     config = SaberConfig()
-    
-    # 2. Collect MCQ Benchmark Questions
-    print("\n[*] Loading MCQ benchmark datasets...")
     bench_cases = []
-    
-    # ---------------------------------------------------------------
-    # 2.1 Finance: FinanceBench (Patronus AI - 100 cases)
-    # ---------------------------------------------------------------
+
+    # 1. Dataset Loaders (Strict Primary)
     if args.domain in ["all", "finance"]:
         try:
             financebench = load_hf_dataset("virattt/financebench", split="train")
-            added_fin = 0
             for row in financebench:
-                q_text = row.get("question", "")
-                answer = row.get("answer", "")
-                evidence = row.get("evidence_text", "")
-                doc_name = row.get("doc_name", "")
-                if q_text and answer:
-                    context = f"SEC Filing Document: {doc_name}\nEvidence Context: {evidence[:500]}" if evidence else f"SEC Filing Document: {doc_name}"
-                    prompt = f"Context: {context}\nQuestion: {q_text}\nAnswer the financial question step-by-step with exact numerical backing."
-                    bench_cases.append({
-                        "type": "open_text",
-                        "question": prompt,
-                        "expected": answer,
-                        "domain": "finance",
-                        "dataset": "financebench"
-                    })
-                    added_fin += 1
-            print(f"[+] Loaded FULL {added_fin} Finance (FinanceBench) cases.")
+                q = row.get("question", "")
+                ans = row.get("answer", "")
+                doc = row.get("doc_name", "")
+                ev = row.get("evidence_text", "")
+                if q and ans:
+                    ctx = f"SEC Filing: {doc}\nEvidence: {ev[:400]}" if ev else f"SEC Filing: {doc}"
+                    prompt = f"Context: {ctx}\nQuestion: {q}\nProvide exact step-by-step financial reasoning and answer."
+                    bench_cases.append({"type": "open_text", "question": prompt, "expected": ans, "domain": "finance", "dataset": "financebench"})
+            print(f"[+] Loaded {len([c for c in bench_cases if c['domain']=='finance'])} Finance (FinanceBench) cases.")
         except Exception as e:
             print(f"[!] FinanceBench load failed: {e}")
 
-    # ---------------------------------------------------------------
-    # 2.2 Coding: LiveCodeBench (Uncontaminated Competitive Coding)
-    # ---------------------------------------------------------------
-    # ---------------------------------------------------------------
-    # 2.2 Coding: LiveCodeBench (Uncontaminated Competitive Coding)
-    # ---------------------------------------------------------------
-    # ---------------------------------------------------------------
-    # 2.2 Coding: LiveCodeBench (Uncontaminated Competitive Coding)
-    # ---------------------------------------------------------------
     if args.domain in ["all", "coding"]:
         try:
-            lcb = load_hf_dataset("flytech/python-codes-25k", split="train[:500]")
-            added_code = 0
+            lcb = load_hf_dataset("livecodebench/code_generation", split="test")
             for row in lcb:
-                q_text = row.get("instruction", "") or row.get("input", "")
-                ans_code = row.get("output", "")
-                if q_text:
-                    prompt = f"Problem Statement:\n{q_text}\n\nWrite a complete, optimized Python 3 solution."
-                    bench_cases.append({
-                        "type": "code",
-                        "question": prompt,
-                        "expected": ans_code or "Valid executable Python function",
-                        "domain": "coding",
-                        "dataset": "livecodebench"
-                    })
-                    added_code += 1
-            print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench) cases.")
+                q = row.get("question_content", "") or row.get("prompt", "")
+                starter = row.get("starter_code", "")
+                tc = row.get("public_test_cases", "") or row.get("test_cases", "")
+                if q:
+                    prompt = f"Problem Statement:\n{q}\n" + (f"\nStarter Code:\n```python\n{starter}\n```\n" if starter else "") + "\nWrite a complete, optimized Python 3 solution."
+                    bench_cases.append({"type": "code", "question": prompt, "expected": tc or "Executable Python function", "domain": "coding", "dataset": "livecodebench"})
+            print(f"[+] Loaded {len([c for c in bench_cases if c['domain']=='coding'])} Coding (LiveCodeBench) cases.")
         except Exception as e:
             print(f"[!] LiveCodeBench load failed: {e}")
 
-    # ---------------------------------------------------------------
-    # 2.3 Cybersecurity: CyberMetric (Defensive Security MCQs)
-    # ---------------------------------------------------------------
     if args.domain in ["all", "cyber"]:
         try:
-            cybermetric = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:500]")
-            added_cyb = 0
+            cybermetric = load_hf_dataset("khangmacon/cybermetric-10000", split="train[:500]")
             for row in cybermetric:
-                if row.get("language") == "English":
-                    q_text = row.get("question")
-                    choices = list(row.get("answers", []))
-                    label_char = row.get("label", "").upper().strip()
-                    if len(choices) == 4 and label_char in ["A", "B", "C", "D"]:
-                        correct_idx = ord(label_char) - 65
-                        correct_ans = choices[correct_idx]
-                        random.seed(42)
-                        random.shuffle(choices)
-                        choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-                        correct_char = chr(65 + choices.index(correct_ans))
-                        bench_cases.append({
-                            "type": "exact",
-                            "question": build_mcq_prompt(q_text, choices_str),
-                            "expected": correct_char,
-                            "domain": "cyber",
-                            "dataset": "cybermetric"
-                        })
-                        added_cyb += 1
-            print(f"[+] Loaded FULL {added_cyb} Cyber (CyberMetric) cases.")
+                q = row.get("question", "") or row.get("Question", "")
+                ans = row.get("answer", "") or row.get("Answer", "")
+                opts = row.get("options", []) or row.get("choices", [])
+                if q and opts and len(opts) == 4:
+                    random.seed(42)
+                    choices = list(opts)
+                    correct_ans = ans if ans in choices else choices[0]
+                    random.shuffle(choices)
+                    choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                    correct_char = chr(65 + choices.index(correct_ans))
+                    bench_cases.append({"type": "exact", "question": build_mcq_prompt(q, choices_str), "expected": correct_char, "domain": "cyber", "dataset": "cybermetric"})
+            print(f"[+] Loaded {len([c for c in bench_cases if c['domain']=='cyber'])} Cyber (CyberMetric) cases.")
         except Exception as e:
             print(f"[!] CyberMetric load failed: {e}")
 
-    # ---------------------------------------------------------------
-    # 2.4 Software Architecture: ArchBench
-    # ---------------------------------------------------------------
     if args.domain in ["all", "architecture"]:
         try:
             arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[:500]")
-            added_arch = 0
             for row in arch_ds:
-                q_text = row.get("query", "")
+                q = row.get("query", "")
                 ans = row.get("answer", "")
-                if q_text and ans:
-                    prompt = f"Software Architecture Challenge:\n{q_text}\nGenerate a complete Architectural Specification with microservice breakdown, trade-off matrix, and CAP theorem constraints."
-                    bench_cases.append({
-                        "type": "open_text",
-                        "question": prompt,
-                        "expected": ans[:300],
-                        "domain": "architecture",
-                        "dataset": "archbench"
-                    })
-                    added_arch += 1
-            print(f"[+] Loaded FULL {added_arch} Architecture (ArchBench) cases.")
+                if q and ans:
+                    prompt = f"Software Architecture Challenge:\n{q}\nGenerate a complete Architectural Specification with microservice breakdown, trade-off matrix, and CAP theorem constraints."
+                    bench_cases.append({"type": "open_text", "question": prompt, "expected": ans[:300], "domain": "architecture", "dataset": "archbench"})
+            print(f"[+] Loaded {len([c for c in bench_cases if c['domain']=='architecture'])} Architecture (ArchBench) cases.")
         except Exception as e:
             print(f"[!] ArchBench load failed: {e}")
 
-    print(f"\n[+] Total MCQ benchmark cases: {len(bench_cases)}")
-    results = []
+    print(f"\n[+] Total benchmark suite volume: {len(bench_cases)} cases.")
+    if not bench_cases:
+        print("[!] No benchmark cases loaded.")
+        return
 
-    # =====================================================================
-    # 3. Execution Loop — Process by Dataset
-    # =====================================================================
-    MODE_NAMES = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass"]
-    
-    # Group cases by dataset
-    from collections import defaultdict
-    datasets = defaultdict(list)
-    for case in bench_cases:
-        datasets[case["dataset"]].append(case)
-        
-    global_idx = 0
-    results = []
-    
-    from saber.llm_engine import LLMEngine
-    from saber.signal import Signal, SignalType
-    from saber.sentinel import Sentinel
-    import importlib
-    import gc
-    
-    config = SaberConfig()
-
+    # Checkpoint Setup
     checkpoint_file = "benchmark_checkpoint.json"
     checkpoint_data = {}
     if os.path.exists(checkpoint_file):
         try:
             with open(checkpoint_file, "r", encoding="utf-8") as f:
                 checkpoint_data = json.load(f)
-            print(f"[*] Loaded existing checkpoint with {len(checkpoint_data)} previously evaluated cases.")
-        except Exception as e:
-            print(f"[!] Warning: Could not read checkpoint file: {e}")
-
-    for ds_name, cases in datasets.items():
-        domain = cases[0]["domain"]
-        print(f"\n==========================================================")
-        print(f"[*] Processing Dataset: {ds_name} (Domain: {domain}) | {len(cases)} cases")
-        print(f"==========================================================\n")
-        
-        # 1. Load Specialist for this dataset
-        registry = SpecialistRegistry()
-        specialist = registry.get(domain)
-        if specialist is not None:
-            m_path = f"models/{domain}_v2"
-            if not os.path.exists(m_path):
-                m_path = config.base_model
-            specialist.load_model(m_path)
-            print(f"[*] Loaded {specialist.__class__.__name__} with model: {m_path}")
-        else:
-            print(f"[!] Failed to load specialist for {domain}: domain not in registry")
-            continue
-            
-        sentinel = Sentinel()
-
-        for idx_in_ds, case in enumerate(cases, 1):
-            global_idx += 1
-            q = case["question"]
-            case_key = f"{ds_name}_{global_idx}"
-            
-            # Check if this case was already completed in checkpoint
-            if case_key in checkpoint_data:
-                print(f"[*] [RESUMING] Skipping already completed case {global_idx}/{len(bench_cases)} [{ds_name}]")
-                results.append(checkpoint_data[case_key])
-                continue
-
-            expected_norm = str(case.get("expected", "")).strip().upper()
-            is_mcq = expected_norm in ["A", "B", "C", "D"]
-            print(f"\n[{global_idx}/{len(bench_cases)}] Dataset: {ds_name} | Query: {q[:75].strip()}...")
-            
-            case_res = {
-                "question": q,
-                "type": case["type"],
-                "expected": case.get("expected"),
-                "domain": domain,
-                "dataset": ds_name,
-                "runs": {}
-            }
-            
-            # --- Mode 1: Base Qwen ---
-            start = time.time()
-            try:
-                original_stdout = sys.stdout
-                sys.stdout = open(os.devnull, 'w')
-                try:
-                    with LLMEngine(config.base_model) as engine:
-                        raw = engine.generate(q)
-                        ans1 = raw.strip()
-                finally:
-                    sys.stdout.close()
-                    sys.stdout = original_stdout
-            except Exception as e:
-                ans1 = f"[ERROR]: {e}"
-                
-            if case["type"] == "code":
-                pass1, msg1 = execute_python_code(ans1)
-                case_res["runs"]["Base Qwen"] = {
-                    "answer": ans1, "latency": round(time.time()-start, 2),
-                    "evaluation": {"accuracy": 1.0 if pass1 else 0.0, "status": msg1}
-                }
-            else:
-                extracted1 = parse_mcq_answer(ans1, q) if is_mcq else parse_exact_answer(ans1)
-                case_res["runs"]["Base Qwen"] = {
-                    "answer": ans1, "latency": round(time.time()-start, 2),
-                    "evaluation": {"accuracy": 1.0 if extracted1 == expected_norm else 0.0}
-                }
-            
-            # --- Mode 2: Qwen with Adaptors ---
-            start = time.time()
-            try:
-                original_stdout = sys.stdout
-                sys.stdout = open(os.devnull, 'w')
-                try:
-                    with LLMEngine(specialist.meta.model_path) as engine:
-                        raw = engine.generate(q)
-                        ans2 = raw.strip()
-                finally:
-                    sys.stdout.close()
-                    sys.stdout = original_stdout
-            except Exception as e:
-                ans2 = f"[ERROR]: {e}"
-                
-            if case["type"] == "code":
-                pass2, msg2 = execute_python_code(ans2)
-                case_res["runs"]["Qwen with Adaptors"] = {
-                    "answer": ans2, "latency": round(time.time()-start, 2),
-                    "evaluation": {"accuracy": 1.0 if pass2 else 0.0, "status": msg2}
-                }
-            else:
-                extracted2 = parse_mcq_answer(ans2, q) if is_mcq else parse_exact_answer(ans2)
-                case_res["runs"]["Qwen with Adaptors"] = {
-                    "answer": ans2, "latency": round(time.time()-start, 2),
-                    "evaluation": {"accuracy": 1.0 if extracted2 == expected_norm else 0.0}
-                }
-            
-            # --- Mode 3: Qwen Adaptor + CoT ---
-            start = time.time()
-            try:
-                original_stdout = sys.stdout
-                sys.stdout = open(os.devnull, 'w')
-                try:
-                    task_sig = Signal(
-                        signal_type=SignalType.TASK_SIGNAL,
-                        query_id=f"bench-{global_idx}",
-                        source_id="BENCHMARK",
-                        target_id=domain,
-                        payload={"objective": q}
-                    ).freeze_and_hash()
-                    out_sig = specialist.handle_signal(task_sig)
-                    ans3 = out_sig.payload.get("raw_response", "")
-                    if not ans3 and out_sig.payload.get("claims"):
-                        ans3 = out_sig.payload["claims"][0].get("statement", "")
-                finally:
-                    sys.stdout.close()
-                    sys.stdout = original_stdout
-            except Exception as e:
-                ans3 = f"[ERROR]: {e}"
-                out_sig = None
-                
-            extracted3 = parse_mcq_answer(ans3, q) if is_mcq else parse_exact_answer(ans3)
-            case_res["runs"]["Qwen Adaptor + CoT"] = {
-                "answer": ans3, "latency": round(time.time()-start, 2),
-                "evaluation": {"accuracy": 1.0 if extracted3 == expected_norm else 0.0}
-            }
-            
-            # --- Mode 4: Sentinel 2 Pass ---
-            start = time.time()
-            try:
-                original_stdout = sys.stdout
-                sys.stdout = open(os.devnull, 'w')
-                ans4 = ans3
-                try:
-                    if out_sig:
-                        ver_res = sentinel.verify_interpretation(
-                            specialist_domain=domain,
-                            original_signal=out_sig,
-                            compiled_text=ans3,
-                            config=config
-                        )
-                        if ver_res.signal_type == SignalType.FLAG_SIGNAL:
-                            flag_payload = ver_res.payload
-                            flag_payload["compiled_text"] = ans3
-                            flag_payload["question"] = q
-                            ver_sig = Signal(
-                                signal_type=SignalType.VERIFICATION_SIGNAL,
-                                query_id=f"bench-{global_idx}",
-                                source_id="BENCHMARK",
-                                target_id=domain,
-                                payload=flag_payload
-                            ).freeze_and_hash()
-                            resolved_sig = specialist.handle_signal(ver_sig)
-                            if resolved_sig.payload.get("status") == "RESOLVED":
-                                ans4 = resolved_sig.payload.get("revised_text", ans4)
-                finally:
-                    sys.stdout.close()
-                    sys.stdout = original_stdout
-            except Exception as e:
-                ans4 = f"[ERROR]: {e}"
-                
-            extracted4 = parse_mcq_answer(ans4, q) if is_mcq else parse_exact_answer(ans4)
-            case_res["runs"]["Sentinel 2 Pass"] = {
-                "answer": ans4, "latency": round(time.time()-start, 2),
-                "evaluation": {"accuracy": 1.0 if extracted4 == expected_norm else 0.0}
-            }
-            
-            # Debug log generation outputs
-            with open("debug_outputs.log", "a", encoding="utf-8") as f:
-                f.write(f"=== CASE {global_idx} ===\n")
-                f.write(f"Query: {q[:200]}...\n")
-                f.write(f"Expected: {expected_norm}\n")
-                f.write(f"Base Qwen: {ans1}\n")
-                f.write(f"Extracted Base: {extracted1}\n")
-                f.write(f"Adaptor: {ans2}\n")
-                f.write(f"Extracted Adaptor: {extracted2}\n")
-                f.write(f"CoT: {ans3}\n")
-                f.write(f"Extracted CoT: {extracted3}\n")
-                f.write(f"Sentinel: {ans4}\n")
-                f.write(f"Extracted Sentinel: {extracted4}\n")
-                f.write("="*40 + "\n\n")
-            
-            results.append(case_res)
-            checkpoint_data[case_key] = case_res
-            
-            # Save checkpoint to disk on every case
-            try:
-                with open(checkpoint_file, "w", encoding="utf-8") as f:
-                    json.dump(checkpoint_data, f, indent=2)
-            except Exception:
-                pass
-
-            # ----- Live Scoreboard (every 10 cases or dataset boundary) -----
-            is_dataset_complete = (idx_in_ds == len(cases))
-            if is_dataset_complete or (idx_in_ds % 10 == 0):
-                pct_done = (global_idx / len(bench_cases)) * 100.0
-                ds_pct_done = (idx_in_ds / len(cases)) * 100.0
-                print(f"\n" + "="*70)
-                print(f" 📊 [LIVE SCOREBOARD] Overall Progress: {global_idx}/{len(bench_cases)} ({pct_done:.1f}%) | {ds_name}: {idx_in_ds}/{len(cases)} ({ds_pct_done:.1f}%)")
-                print("="*70)
-                live_summary = {}
-                for r in results:
-                    ds = r["dataset"]
-                    if ds not in live_summary:
-                        live_summary[ds] = {}
-                    for m_name, r_info in r["runs"].items():
-                        if m_name not in live_summary[ds]:
-                            live_summary[ds][m_name] = {"acc_sum": 0.0, "acc_cnt": 0}
-                        ev = r_info["evaluation"]
-                        live_summary[ds][m_name]["acc_sum"] += ev.get("accuracy", 0.0)
-                        live_summary[ds][m_name]["acc_cnt"] += 1
-                
-                print(f"| Dataset | {' | '.join(MODE_NAMES)} |")
-                print(f"| :--- | {' | '.join([':---'] * 4)} |")
-                for ds, m_data in live_summary.items():
-                    cells = [ds]
-                    for m_name in MODE_NAMES:
-                        st = m_data.get(m_name, {})
-                        if not st or st["acc_cnt"] == 0:
-                            cells.append("N/A")
-                            continue
-                        if ds in ["financebench", "archbench"]:
-                            cells.append("Pending Judge (Phase 2)")
-                        else:
-                            pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
-                            cells.append(f"{pct:.1f}%")
-                    print("| " + " | ".join(cells) + " |")
-                print("="*70 + "\n")
-                
-        # Offload specialist and clear VRAM cache after dataset is complete
-        specialist = None
-        import saber.llm_engine
-        if hasattr(saber.llm_engine, "_MODEL_CACHE"):
-            saber.llm_engine._MODEL_CACHE.clear()
-        gc.collect()
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            print(f"[*] Resuming from checkpoint ({len(checkpoint_data)} cases previously evaluated).")
         except Exception:
             pass
 
-    # =====================================================================
-    # 4. Final Aggregation and Save
-    # =====================================================================
-    summary = {}
-    table_lines = [
-        f"| Dataset | {' | '.join(MODE_NAMES)} |",
-        f"| :--- | {' | '.join([':---'] * 5)} |"
-    ]
-    for case_res in results:
-        dataset = case_res["dataset"]
-        if dataset not in summary:
-            summary[dataset] = {}
-        for mode_name, run_info in case_res["runs"].items():
-            if mode_name not in summary[dataset]:
-                summary[dataset][mode_name] = {
-                    "count": 0, "total_latency": 0.0,
-                    "accuracy_sum": 0.0, "accuracy_count": 0,
-                }
-            stats = summary[dataset][mode_name]
-            stats["count"] += 1
-            stats["total_latency"] += run_info["latency"]
-            stats["accuracy_sum"] += run_info["evaluation"].get("accuracy", 0.0)
-            stats["accuracy_count"] += 1
-
-    formatted_summary = {}
-    for ds, modes_data in summary.items():
-        formatted_summary[ds] = {}
-        row_cells = [ds]
-        for mode_name in MODE_NAMES:
-            stats = modes_data.get(mode_name, {})
-            if not stats:
-                row_cells.append("N/A")
-                continue
-            avg_accuracy = stats["accuracy_sum"] / stats["accuracy_count"]
-            avg_metrics = {
-                "count": stats["count"],
-                "avg_latency_sec": round(stats["total_latency"] / stats["count"], 2),
-                "avg_accuracy": round(avg_accuracy, 3)
-            }
-            row_cells.append(f"{avg_accuracy * 100.0:.1f}%")
-            formatted_summary[ds][mode_name] = avg_metrics
-        table_lines.append("| " + " | ".join(row_cells) + " |")
-
-    # Save output files
-    with open("saber_final_benchmark_report.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-    with open("saber_benchmark_summary.json", "w", encoding="utf-8") as f:
-        json.dump(formatted_summary, f, indent=2)
-    table_md = "\n".join(table_lines)
-    with open("saber_benchmark_table.md", "w", encoding="utf-8") as f:
-        f.write(table_md + "\n")
-
-    print("\n=== FINAL MCQ BENCHMARK SCORES ===")
-    print(table_md)
-
-    # =====================================================================
-    # 5. LLM-as-a-Judge Evaluation (OpenRouter: Nemotron 3 Ultra 550B)
-    # =====================================================================
-    print("\n==========================================================")
-    print("   SABER LLM-as-a-Judge Evaluation (Nemotron-3-Ultra)")
-    print("==========================================================\n")
-    import requests
-
+    MODE_NAMES = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass"]
+    
+    # OpenRouter Nemotron Setup
     key_file = "openrouter.key"
     default_key = ""
     if os.path.exists(key_file):
         with open(key_file, "r") as kf:
             default_key = kf.read().strip()
-            
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY", default_key)
     judge_model = "nvidia/nemotron-3-ultra-550b-a55b:free"
     api_url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {openrouter_api_key}", "Content-Type": "application/json"}
 
     judge_system_prompt = (
-        "You are an expert AI Benchmark Judge evaluating technical, mathematical, and reasoning responses. "
-        "Compare the Model's generated response against the Question and Ground Truth Answer.\n"
-        "Evaluate on 3 criteria:\n"
-        "1. Factual & Technical Accuracy (0.0 to 100.0%)\n"
-        "2. Logical Reasoning & Chain-of-Thought Structure (0.0 to 100.0%)\n"
-        "3. Hallucination Control & Precision (0.0 to 100.0%)\n\n"
-        "Respond ONLY with a valid JSON object matching this schema:\n"
-        "{\n"
-        '  "accuracy_score": <float 0.0-100.0>,\n'
-        '  "reasoning_score": <float 0.0-100.0>,\n'
-        '  "hallucination_control": <float 0.0-100.0>,\n'
-        '  "overall_score": <float 0.0-100.0>\n'
-        "}"
+        "You are an expert AI Benchmark Judge evaluating technical, mathematical, and reasoning responses.\n"
+        "Evaluate the Model Response against the Question and Ground Truth Answer on a 0.0 to 100.0% scale.\n"
+        "Respond ONLY with valid JSON: {\"accuracy_score\": <float>, \"reasoning_score\": <float>, \"hallucination_control\": <float>, \"overall_score\": <float>}"
     )
 
-    headers = {
-        "Authorization": f"Bearer {openrouter_api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/Eddie0025/SABER",
-        "X-Title": "SABER Multi-Agent Evaluation"
-    }
-
-    judge_summary = {}
-    total_judge_cases = len(results)
-
-    for case_idx, case_res in enumerate(results, 1):
-        ds = case_res["dataset"]
-        q = case_res["question"]
-        exp = case_res.get("expected", "")
-        if ds not in judge_summary:
-            judge_summary[ds] = {}
-
-        # Bypass LLM Judge for coding datasets (Coding is executed dynamically)
-        if ds == "livecodebench":
-            for mode_name, run_data in case_res["runs"].items():
-                if mode_name not in judge_summary[ds]:
-                    judge_summary[ds][mode_name] = {
-                        "acc_sum": 0.0, "reas_sum": 0.0, "hall_sum": 0.0, "ovr_sum": 0.0, "cnt": 0
-                    }
-                pass_score = 100.0 if run_data["evaluation"].get("accuracy", 0.0) == 1.0 else 0.0
-                scores = {"accuracy_score": pass_score, "reasoning_score": pass_score, "hallucination_control": 100.0 if pass_score > 0 else 50.0, "overall_score": pass_score}
-                st = judge_summary[ds][mode_name]
-                st["acc_sum"] += scores["accuracy_score"]
-                st["reas_sum"] += scores["reasoning_score"]
-                st["hall_sum"] += scores["hallucination_control"]
-                st["ovr_sum"] += scores["overall_score"]
-                st["cnt"] += 1
-                run_data["llm_judge"] = scores
-            continue
-
-        print(f"[*] Judge Evaluating Case {case_idx}/{total_judge_cases} [{ds}]...")
-
-        for mode_name, run_data in case_res["runs"].items():
-            if mode_name not in judge_summary[ds]:
-                judge_summary[ds][mode_name] = {
-                    "acc_sum": 0.0, "reas_sum": 0.0, "hall_sum": 0.0, "ovr_sum": 0.0, "cnt": 0
-                }
-
-            ans_text = run_data.get("answer", "")
-            user_prompt = (
-                f"--- QUESTION ---\n{q}\n\n"
-                f"--- EXPECTED ANSWER ---\n{exp}\n\n"
-                f"--- MODEL RESPONSE TO EVALUATE ---\n{ans_text}"
-            )
-
-            payload = {
-                "model": judge_model,
-                "messages": [
-                    {"role": "system", "content": judge_system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.1,
-                "max_tokens": 200
-            }
-
-            scores = {"accuracy_score": 50.0, "reasoning_score": 50.0, "hallucination_control": 50.0, "overall_score": 50.0}
-            for attempt in range(10):
-                try:
-                    resp = requests.post(api_url, headers=headers, json=payload, timeout=25)
-                    if resp.status_code == 200:
-                        content = resp.json()["choices"][0]["message"]["content"].strip()
-                        clean_json = content.replace("```json", "").replace("```", "").strip()
-                        start = clean_json.find("{")
-                        end = clean_json.rfind("}")
-                        if start != -1 and end != -1:
-                            clean_json = clean_json[start:end+1]
-                        parsed = json.loads(clean_json)
-                        # Normalize 0-10 scores to 0-100% if judge returns 0-10 range
+    def judge_eval(q_text, exp_text, ans_text):
+        payload = {
+            "model": judge_model,
+            "messages": [{"role": "system", "content": judge_system_prompt}, {"role": "user", "content": f"Q: {q_text}\nEXPECTED: {exp_text}\nMODEL: {ans_text}"}],
+            "temperature": 0.1, "max_tokens": 150
+        }
+        for attempt in range(5):
+            try:
+                resp = requests.post(api_url, headers=headers, json=payload, timeout=20)
+                if resp.status_code == 200:
+                    content = resp.json()["choices"][0]["message"]["content"].strip()
+                    s = content.find("{")
+                    e = content.rfind("}")
+                    if s != -1 and e != -1:
+                        parsed = json.loads(content[s:e+1])
                         for k in ["accuracy_score", "reasoning_score", "hallucination_control", "overall_score"]:
                             if k in parsed and parsed[k] <= 10.0:
-                                parsed[k] = parsed[k] * 10.0
-                        scores = parsed
-                        time.sleep(0.5) # Smooth rate-limit throttle
-                        break
-                    elif resp.status_code == 429:
-                        # Rate limit hit: exponential backoff wait
-                        wait_time = (2 ** attempt) + 3
-                        print(f"[!] Rate limit 429 hit. Backing off for {wait_time}s...")
-                        time.sleep(wait_time)
-                    else:
-                        time.sleep(1.5)
-                except Exception:
-                    time.sleep(2.0)
+                                parsed[k] *= 10.0
+                        return parsed
+                elif resp.status_code == 429:
+                    time.sleep(3 ** attempt + 2)
+            except Exception:
+                time.sleep(1.5)
+        return {"accuracy_score": 50.0, "reasoning_score": 50.0, "hallucination_control": 50.0, "overall_score": 50.0}
 
-            st = judge_summary[ds][mode_name]
-            st["acc_sum"] += scores.get("accuracy_score", 50.0)
-            st["reas_sum"] += scores.get("reasoning_score", 50.0)
-            st["hall_sum"] += scores.get("hallucination_control", 50.0)
-            st["ovr_sum"] += scores.get("overall_score", 50.0)
-            st["cnt"] += 1
-            run_data["llm_judge"] = scores
+    # Group by dataset
+    datasets = defaultdict(list)
+    for c in bench_cases:
+        datasets[c["dataset"]].append(c)
 
-    # Output LLM-as-a-Judge Table
-    judge_table_lines = [
-        "\n=== LLM-AS-A-JUDGE (Nemotron 3 Ultra 550B) PERCENTAGE SCORES (%) ===",
-        f"| Dataset | Mode | Accuracy (%) | Reasoning (%) | Hallucination Ctrl (%) | Overall Score (%) |",
-        f"| :--- | :--- | :--- | :--- | :--- | :--- |"
-    ]
-    for ds, m_data in judge_summary.items():
-        for m_name in MODE_NAMES:
-            st = m_data.get(m_name)
-            if not st or st["cnt"] == 0:
+    results = []
+    global_idx = 0
+    from saber.llm_engine import LLMEngine
+    from saber.signal import Signal, SignalType
+    from saber.sentinel import Sentinel
+    import gc
+
+    for ds_name, cases in datasets.items():
+        domain = cases[0]["domain"]
+        print(f"\n" + "="*70)
+        print(f"[*] Processing Dataset: {ds_name.upper()} (Domain: {domain}) | {len(cases)} cases")
+        print("="*70 + "\n")
+
+        registry = SpecialistRegistry()
+        specialist = registry.get(domain)
+        if not specialist:
+            continue
+        m_path = f"models/{domain}_v2" if os.path.exists(f"models/{domain}_v2") else config.base_model
+        specialist.load_model(m_path)
+        sentinel = Sentinel()
+
+        for idx_in_ds, case in enumerate(cases, 1):
+            global_idx += 1
+            case_key = f"{ds_name}_{global_idx}"
+            if case_key in checkpoint_data:
+                results.append(checkpoint_data[case_key])
                 continue
-            cnt = st["cnt"]
-            acc = st["acc_sum"] / cnt
-            reas = st["reas_sum"] / cnt
-            hall = st["hall_sum"] / cnt
-            ovr = st["ovr_sum"] / cnt
-            judge_table_lines.append(f"| {ds} | {m_name} | {acc:.1f}% | {reas:.1f}% | {hall:.1f}% | **{ovr:.1f}%** |")
 
-    judge_table_md = "\n".join(judge_table_lines)
-    print(judge_table_md)
+            q = case["question"]
+            exp = case.get("expected", "")
+            exp_norm = str(exp).strip().upper()
+            is_mcq = exp_norm in ["A", "B", "C", "D"]
 
-    with open("saber_llm_judge_report.md", "w", encoding="utf-8") as f:
-        f.write(judge_table_md + "\n")
-    with open("saber_final_benchmark_report.json", "w", encoding="utf-8") as f:
+            print(f"[{global_idx}/{len(bench_cases)}] {ds_name} | {q[:60].strip()}...")
+            case_res = {"question": q, "expected": exp, "domain": domain, "dataset": ds_name, "runs": {}}
+
+            # Mode 1: Base Qwen
+            t0 = time.time()
+            with LLMEngine(config.base_model) as engine:
+                ans1 = engine.generate(q).strip()
+            case_res["runs"]["Base Qwen"] = {"answer": ans1, "latency": round(time.time()-t0, 2)}
+
+            # Mode 2: Adapter
+            t0 = time.time()
+            with LLMEngine(specialist.meta.model_path) as engine:
+                ans2 = engine.generate(q).strip()
+            case_res["runs"]["Qwen with Adaptors"] = {"answer": ans2, "latency": round(time.time()-t0, 2)}
+
+            # Mode 3: CoT
+            t0 = time.time()
+            task_sig = Signal(signal_type=SignalType.TASK_SIGNAL, query_id=f"b-{global_idx}", source_id="BENCH", target_id=domain, payload={"objective": q}).freeze_and_hash()
+            out_sig = specialist.handle_signal(task_sig)
+            ans3 = out_sig.payload.get("raw_response", "").strip() or ans2
+            case_res["runs"]["Qwen Adaptor + CoT"] = {"answer": ans3, "latency": round(time.time()-t0, 2)}
+
+            # Mode 4: Sentinel 2 Pass
+            t0 = time.time()
+            ans4 = ans3
+            if out_sig:
+                ver_res = sentinel.verify_interpretation(specialist_domain=domain, original_signal=out_sig, compiled_text=ans3, config=config)
+                if ver_res.signal_type == SignalType.FLAG_SIGNAL:
+                    flag_p = ver_res.payload
+                    flag_p["compiled_text"] = ans3
+                    flag_p["question"] = q
+                    ver_sig = Signal(signal_type=SignalType.VERIFICATION_SIGNAL, query_id=f"b-{global_idx}", source_id="BENCH", target_id=domain, payload=flag_p).freeze_and_hash()
+                    resolved = specialist.handle_signal(ver_sig)
+                    if resolved.payload.get("status") == "RESOLVED":
+                        ans4 = resolved.payload.get("revised_text", ans4).strip()
+            case_res["runs"]["Sentinel 2 Pass"] = {"answer": ans4, "latency": round(time.time()-t0, 2)}
+
+            # Evaluate each mode immediately
+            for m_name, r_info in case_res["runs"].items():
+                a_text = r_info["answer"]
+                if case["type"] == "code":
+                    p_ok, _ = execute_python_code(a_text)
+                    score = 100.0 if p_ok else 0.0
+                    j_scores = {"accuracy_score": score, "reasoning_score": score, "hallucination_control": 100.0 if score>0 else 50.0, "overall_score": score}
+                elif is_mcq:
+                    ext = parse_mcq_answer(a_text, q)
+                    score = 100.0 if ext == exp_norm else 0.0
+                    j_scores = {"accuracy_score": score, "reasoning_score": score, "hallucination_control": 100.0 if score>0 else 50.0, "overall_score": score}
+                else:
+                    j_scores = judge_eval(q, exp, a_text)
+                r_info["evaluation"] = j_scores
+
+            checkpoint_data[case_key] = case_res
+            results.append(case_res)
+            with open(checkpoint_file, "w", encoding="utf-8") as f:
+                json.dump(checkpoint_data, f, indent=2)
+
+            # Live Scoreboard Update every 10 items
+            if idx_in_ds % 10 == 0 or idx_in_ds == len(cases):
+                print(f"\n" + "="*70)
+                print(f" 📊 [LIVE SCOREBOARD] Progress: {global_idx}/{len(bench_cases)} ({(global_idx/len(bench_cases))*100:.1f}%) | {ds_name.upper()}: {idx_in_ds}/{len(cases)}")
+                print("="*70)
+                scores_by_ds = defaultdict(lambda: defaultdict(list))
+                for r in results:
+                    dname = r["dataset"]
+                    for mname, rdata in r["runs"].items():
+                        scores_by_ds[dname][mname].append(rdata["evaluation"].get("overall_score", 0.0))
+
+                print(f"| Dataset | {' | '.join(MODE_NAMES)} |")
+                print(f"| :--- | {' | '.join([':---'] * 4)} |")
+                for dname, mdict in scores_by_ds.items():
+                    row = [dname]
+                    for mname in MODE_NAMES:
+                        s_list = mdict.get(mname, [])
+                        if s_list:
+                            avg_s = sum(s_list) / len(s_list)
+                            row.append(f"{avg_s:.1f}%")
+                        else:
+                            row.append("N/A")
+                    print("| " + " | ".join(row) + " |")
+                print("="*70 + "\n")
+
+        # Cleanup memory
+        specialist = None
+        gc.collect()
+
+    # Final summary report
+    print("\n=== FINAL BENCHMARK COMPLETE ===")
+    with open("saber_llm_judge_report.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
 
 if __name__ == "__main__":
