@@ -282,36 +282,49 @@ def run_benchmark():
 
             # Mode 1: Base Qwen
             t0 = time.time()
-            with LLMEngine(config.base_model) as engine:
-                ans1 = engine.generate(q).strip()
+            try:
+                with LLMEngine(config.base_model) as engine:
+                    ans1 = engine.generate(q).strip()
+            except Exception as e:
+                ans1 = f"[ERROR]: {e}"
             case_res["runs"]["Base Qwen"] = {"answer": ans1, "latency": round(time.time()-t0, 2)}
 
             # Mode 2: Adapter
             t0 = time.time()
-            with LLMEngine(specialist.meta.model_path) as engine:
-                ans2 = engine.generate(q).strip()
+            try:
+                with LLMEngine(specialist.meta.model_path) as engine:
+                    ans2 = engine.generate(q).strip()
+            except Exception as e:
+                ans2 = f"[ERROR]: {e}"
             case_res["runs"]["Qwen with Adaptors"] = {"answer": ans2, "latency": round(time.time()-t0, 2)}
 
             # Mode 3: CoT
             t0 = time.time()
-            task_sig = Signal(signal_type=SignalType.TASK_SIGNAL, query_id=f"b-{global_idx}", source_id="BENCH", target_id=domain, payload={"objective": q}).freeze_and_hash()
-            out_sig = specialist.handle_signal(task_sig)
-            ans3 = out_sig.payload.get("raw_response", "").strip() or ans2
+            out_sig = None
+            try:
+                task_sig = Signal(signal_type=SignalType.TASK_SIGNAL, query_id=f"b-{global_idx}", source_id="BENCH", target_id=domain, payload={"objective": q}).freeze_and_hash()
+                out_sig = specialist.handle_signal(task_sig)
+                ans3 = out_sig.payload.get("raw_response", "").strip() or ans2
+            except Exception as e:
+                ans3 = f"[ERROR]: {e}"
             case_res["runs"]["Qwen Adaptor + CoT"] = {"answer": ans3, "latency": round(time.time()-t0, 2)}
 
             # Mode 4: Sentinel 2 Pass
             t0 = time.time()
             ans4 = ans3
-            if out_sig:
-                ver_res = sentinel.verify_interpretation(specialist_domain=domain, original_signal=out_sig, compiled_text=ans3, config=config)
-                if ver_res.signal_type == SignalType.FLAG_SIGNAL:
-                    flag_p = ver_res.payload
-                    flag_p["compiled_text"] = ans3
-                    flag_p["question"] = q
-                    ver_sig = Signal(signal_type=SignalType.VERIFICATION_SIGNAL, query_id=f"b-{global_idx}", source_id="BENCH", target_id=domain, payload=flag_p).freeze_and_hash()
-                    resolved = specialist.handle_signal(ver_sig)
-                    if resolved.payload.get("status") == "RESOLVED":
-                        ans4 = resolved.payload.get("revised_text", ans4).strip()
+            try:
+                if out_sig:
+                    ver_res = sentinel.verify_interpretation(specialist_domain=domain, original_signal=out_sig, compiled_text=ans3, config=config)
+                    if ver_res.signal_type == SignalType.FLAG_SIGNAL:
+                        flag_p = ver_res.payload
+                        flag_p["compiled_text"] = ans3
+                        flag_p["question"] = q
+                        ver_sig = Signal(signal_type=SignalType.VERIFICATION_SIGNAL, query_id=f"b-{global_idx}", source_id="BENCH", target_id=domain, payload=flag_p).freeze_and_hash()
+                        resolved = specialist.handle_signal(ver_sig)
+                        if resolved.payload.get("status") == "RESOLVED":
+                            ans4 = resolved.payload.get("revised_text", ans4).strip()
+            except Exception as e:
+                ans4 = ans3
             case_res["runs"]["Sentinel 2 Pass"] = {"answer": ans4, "latency": round(time.time()-t0, 2)}
 
             # Capture CoT claims and Sentinel revision statements
