@@ -358,11 +358,13 @@ class MetaReasoner:
         from saber.llm_engine import LLMEngine
         import re
 
-        # ── Detect query type & format context ──
+        # ── Robust Contextual MCQ Detection ──
+        # Checks options A/B/C/D, option lists, question keywords, or choice structures
         is_mcq = bool(re.search(
             r"(?:ANSWER:\s*LETTER|Options:|Option\s*[A-D]|multiple\s*choice|"
-            r"\b[A-D]\s*[:\.\)]\s+\S|\b[a-d]\)\s+\S|Which\s+of\s+the\s+following|"
-            r"Choose\s+the\s+correct\s+option)",
+            r"\b[A-D]\s*[:\.\)]\s*|\b[a-d]\)\s*|Which\s+of\s+the\s+following|"
+            r"Choose\s+the\s+correct|select\s+the|Question:\s*.*?\b[A-D]\b|"
+            r"\bA\b[\s\S]*?\bB\b[\s\S]*?\bC\b[\s\S]*?\bD\b)",
             query, re.IGNORECASE
         ))
 
