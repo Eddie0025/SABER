@@ -237,54 +237,32 @@ def run_benchmark():
     # ---------------------------------------------------------------
     # 2.2 Coding: LiveCodeBench (Uncontaminated Competitive Coding)
     # ---------------------------------------------------------------
+    # ---------------------------------------------------------------
+    # 2.2 Coding: LiveCodeBench (Uncontaminated Competitive Coding)
+    # ---------------------------------------------------------------
     if args.domain in ["all", "coding"]:
-        try:
-            try:
-                lcb = load_hf_dataset("livecodebench/code_generation", split="test")
-            except Exception:
-                lcb = load_hf_dataset("livecodebench/code_generation", split="train")
-                
-            added_code = 0
-            for row in lcb:
-                q_text = row.get("question_content", "") or row.get("prompt", "") or row.get("question", "")
-                starter = row.get("starter_code", "")
-                tc = row.get("public_test_cases", "") or row.get("test_cases", "")
-                if q_text:
-                    prompt = f"Problem Statement:\n{q_text}\n"
-                    if starter:
-                        prompt += f"\nStarter Code:\n```python\n{starter}\n```\n"
-                    prompt += "\nWrite a complete, optimized Python 3 solution."
-                    bench_cases.append({
-                        "type": "code",
-                        "question": prompt,
-                        "expected": tc or "Valid executable Python function",
-                        "domain": "coding",
-                        "dataset": "livecodebench"
-                    })
-                    added_code += 1
-                    if added_code >= 500:
-                        break
-            print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench) cases.")
-        except Exception as e:
-            try:
-                lcb = load_hf_dataset("flytech/python-codes-25k", split="train[:500]")
-                added_code = 0
-                for row in lcb:
-                    q_text = row.get("instruction", "") or row.get("input", "")
-                    ans_code = row.get("output", "")
-                    if q_text:
-                        prompt = f"Problem Statement:\n{q_text}\n\nWrite a complete, optimized Python 3 solution."
-                        bench_cases.append({
-                            "type": "code",
-                            "question": prompt,
-                            "expected": ans_code or "Valid executable Python function",
-                            "domain": "coding",
-                            "dataset": "livecodebench"
-                        })
-                        added_code += 1
-                print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench) cases.")
-            except Exception as ex:
-                print(f"[!] LiveCodeBench load failed: {ex}")
+        lcb = load_hf_dataset("livecodebench/code_generation", split="test")
+        added_code = 0
+        for row in lcb:
+            q_text = row.get("question_content", "") or row.get("prompt", "") or row.get("question", "")
+            starter = row.get("starter_code", "")
+            tc = row.get("public_test_cases", "") or row.get("test_cases", "")
+            if q_text:
+                prompt = f"Problem Statement:\n{q_text}\n"
+                if starter:
+                    prompt += f"\nStarter Code:\n```python\n{starter}\n```\n"
+                prompt += "\nWrite a complete, optimized Python 3 solution."
+                bench_cases.append({
+                    "type": "code",
+                    "question": prompt,
+                    "expected": tc or "Valid executable Python function",
+                    "domain": "coding",
+                    "dataset": "livecodebench"
+                })
+                added_code += 1
+                if added_code >= 500:
+                    break
+        print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench) cases.")
 
     # ---------------------------------------------------------------
     # 2.3 Cybersecurity: CyberMetric (Defensive Security MCQs)
