@@ -124,22 +124,28 @@ def parse_exact_answer(raw_answer):
     if not lines:
         return ""
     
-    # Pass 1: check last line for "ANSWER: <value>"
+    # Pass 1: check last line for "ANSWER: <value>" or "GROSS PROFIT IS <value>"
     last_line = lines[-1].upper()
-    match = re.search(r"ANSWER:\s*(\S+)", last_line)
+    match = re.search(r"ANSWER:\s*(\$?[\d,]+(?:\.\d+)?M?)", last_line)
     if match:
-        return match.group(1).replace('$', '').replace('M', '').replace('%', '').strip('.,()[]')
+        return match.group(1).replace('$', '').replace('M', '').replace(',', '').strip('.,()[]')
         
     # Pass 2: check any line for "ANSWER: <value>"
     for line in reversed(lines):
-        match = re.search(r"ANSWER:\s*(\S+)", line.upper())
+        match = re.search(r"ANSWER:\s*(\$?[\d,]+(?:\.\d+)?M?)", line.upper())
         if match:
-            return match.group(1).replace('$', '').replace('M', '').replace('%', '').strip('.,()[]')
+            return match.group(1).replace('$', '').replace('M', '').replace(',', '').strip('.,()[]')
+
+    # Pass 3: Look for conclusion step (e.g., ## Step 4 [CONCLUDE] or "The result is X")
+    full_upper = raw_answer.upper()
+    match_conclusion = re.search(r"(?:CONCLUDE|CONCLUSION|GROSS PROFIT IS|RESULT IS|FINAL ANSWER IS|PROFIT:)\s*:?\s*\$?([\d,]+(?:\.\d+)?)", full_upper)
+    if match_conclusion:
+        return match_conclusion.group(1).replace(',', '').strip('.,()[]')
             
-    # Pass 3: Extract the last sequence of digits/numbers
-    all_numbers = re.findall(r"\d+", raw_answer)
+    # Pass 4: Extract the last sequence of digits/numbers from the end of the text
+    all_numbers = re.findall(r"\b\d+(?:\.\d+)?\b", raw_answer)
     if all_numbers:
-        return all_numbers[-1]
+        return all_numbers[-1].replace(',', '')
         
     return raw_answer.strip()
 
