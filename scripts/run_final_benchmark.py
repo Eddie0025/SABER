@@ -358,7 +358,7 @@ def run_benchmark():
                 print(f"[!] CyberMetric load failed: {ex}")
 
     # ---------------------------------------------------------------
-    # 2.4 Software Architecture: ArchBench (sa4s-serc/archbench - 100 cases)
+    # 2.4 Software Architecture: ArchBench (sa4s-serc/archbench - 100% full dataset)
     # ---------------------------------------------------------------
     if args.domain in ["all", "architecture"]:
         try:
@@ -382,7 +382,7 @@ def run_benchmark():
         except Exception as e:
             # Fallback to curated System Architecture design tasks if HF repository is offline
             try:
-                arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[30000:30500]")
+                arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train")
                 added_arch = 0
                 for row in arch_ds:
                     q_text = row.get("query", "")
@@ -397,6 +397,8 @@ def run_benchmark():
                             "dataset": "archbench"
                         })
                         added_arch += 1
+                        if added_arch >= 500:
+                            break
                 print(f"[+] Loaded FULL {added_arch} Architecture (ArchBench Fallback) cases.")
             except Exception as ex:
                 print(f"[!] ArchBench load failed: {ex}")
