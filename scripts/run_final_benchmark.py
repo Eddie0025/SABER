@@ -886,14 +886,14 @@ def run_benchmark():
     # Push Notification System (Telegram / Discord / NTFY Webhook)
     # -----------------------------------------------------------------
     def send_remote_notification(text):
-        # 1. Check NTFY.sh public push channel (Works on any phone via browser or app without setup)
+        # 1. NTFY.sh Push Channel
         ntfy_topic = os.environ.get("NTFY_TOPIC", "saber_benchmark_updates")
         try:
-            requests.post(f"https://ntfy.sh/{ntfy_topic}", data=text.encode("utf-8"), timeout=10)
+            requests.post(f"https://ntfy.sh/{ntfy_topic}", data=text.encode("utf-8"), timeout=5, verify=False)
         except Exception:
             pass
 
-        # 2. Check Telegram Bot Token & Chat ID
+        # 2. Telegram Bot Push
         tg_token = os.environ.get("TELEGRAM_BOT_TOKEN")
         tg_chat = os.environ.get("TELEGRAM_CHAT_ID")
         if tg_token and tg_chat:
@@ -901,21 +901,24 @@ def run_benchmark():
                 requests.post(
                     f"https://api.telegram.org/bot{tg_token}/sendMessage",
                     json={"chat_id": tg_chat, "text": text, "parse_mode": "Markdown"},
-                    timeout=10
+                    timeout=5, verify=False
                 )
             except Exception:
                 pass
 
-        # 3. Check Discord Webhook URL
+        # 3. Discord Webhook
         discord_webhook = os.environ.get("DISCORD_WEBHOOK_URL")
         if discord_webhook:
             try:
-                requests.post(discord_webhook, json={"content": text}, timeout=10)
+                requests.post(discord_webhook, json={"content": text}, timeout=5, verify=False)
             except Exception:
                 pass
 
-    msg = f"🏆 *SABER Benchmark Completed!*\n\n```\n{judge_table_md}\n```\n\nFull results saved to `saber_llm_judge_report.md` on DGX!"
-    send_remote_notification(msg)
+    try:
+        msg = f"🏆 *SABER Benchmark Completed!*\n\n```\n{judge_table_md}\n```\n\nFull results saved to `saber_llm_judge_report.md` on DGX!"
+        send_remote_notification(msg)
+    except Exception as e:
+        print(f"[!] Notification push failed silently: {e}")
 
 if __name__ == "__main__":
     run_benchmark()
