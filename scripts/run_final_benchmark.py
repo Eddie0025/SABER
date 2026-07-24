@@ -842,7 +842,7 @@ def run_benchmark():
             }
 
             scores = {"accuracy_score": 50.0, "reasoning_score": 50.0, "hallucination_control": 50.0, "overall_score": 50.0}
-            for attempt in range(3):
+            for attempt in range(10):
                 try:
                     resp = requests.post(api_url, headers=headers, json=payload, timeout=25)
                     if resp.status_code == 200:
@@ -858,8 +858,15 @@ def run_benchmark():
                             if k in parsed and parsed[k] <= 10.0:
                                 parsed[k] = parsed[k] * 10.0
                         scores = parsed
-                        time.sleep(1.0) # Rate-limit protection between OpenRouter requests
+                        time.sleep(0.5) # Smooth rate-limit throttle
                         break
+                    elif resp.status_code == 429:
+                        # Rate limit hit: exponential backoff wait
+                        wait_time = (2 ** attempt) + 3
+                        print(f"[!] Rate limit 429 hit. Backing off for {wait_time}s...")
+                        time.sleep(wait_time)
+                    else:
+                        time.sleep(1.5)
                 except Exception:
                     time.sleep(2.0)
 
