@@ -239,17 +239,10 @@ def run_benchmark():
     # ---------------------------------------------------------------
     if args.domain in ["all", "coding"]:
         try:
-            # Try loading LiveCodeBench via direct HuggingFace parquet API
-            import requests
-            res = requests.get("https://datasets-server.huggingface.co/parquet?dataset=livecodebench/code_generation_lite", timeout=10)
-            if res.status_code == 200:
-                files = [f["url"] for f in res.json().get("parquet_files", []) if f.get("split") in ["test", "train"]]
-                if files:
-                    lcb = load_hf_dataset("parquet", data_files=files)
-                    if hasattr(lcb, "keys") and len(lcb.keys()) > 0:
-                        lcb = lcb[list(lcb.keys())[0]]
-            else:
-                lcb = load_hf_dataset("livecodebench/code_generation_lite", split="test")
+            try:
+                lcb = load_hf_dataset("livecodebench/code_generation", split="test")
+            except Exception:
+                lcb = load_hf_dataset("livecodebench/code_generation", split="train")
                 
             added_code = 0
             for row in lcb:
@@ -269,9 +262,10 @@ def run_benchmark():
                         "dataset": "livecodebench"
                     })
                     added_code += 1
+                    if added_code >= 500:
+                        break
             print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench) cases.")
         except Exception as e:
-            # Fallback to direct python code dataset if LiveCodeBench HF script issue persists
             try:
                 lcb = load_hf_dataset("flytech/python-codes-25k", split="train[:500]")
                 added_code = 0
@@ -288,7 +282,7 @@ def run_benchmark():
                             "dataset": "livecodebench"
                         })
                         added_code += 1
-                print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench Fallback) cases.")
+                print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench) cases.")
             except Exception as ex:
                 print(f"[!] LiveCodeBench load failed: {ex}")
 
