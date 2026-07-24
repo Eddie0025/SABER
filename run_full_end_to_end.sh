@@ -109,7 +109,7 @@ echo "========================================================================="
 echo "   [Pipeline 4/4] PHASE 3: UNIFIED BENCHMARK EVALUATION"
 echo "========================================================================="
 
-PYTHONPATH=. python3 scripts/5_run_benchmark.py 2>&1 | tee logs/benchmark_eval.log
+PYTHONPATH=. python3 scripts/run_final_benchmark.py --domain all 2>&1 | tee logs/benchmark_eval.log
 
 # ------------------------------------------------------------------
 # Summary Report
