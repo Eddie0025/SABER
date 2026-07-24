@@ -152,9 +152,15 @@ def parse_exact_answer(raw_answer):
 # =====================================================================
 # Main Benchmark Pipeline — MCQ Only
 # =====================================================================
+import argparse
+
 def run_benchmark():
+    parser = argparse.ArgumentParser(description="Run SABER Final Benchmark")
+    parser.add_argument("--domain", type=str, default="all", help="Specify domain to benchmark (e.g. finance, cyber, all)")
+    args = parser.parse_args()
+
     print("==========================================================")
-    print("      SABER MCQ Benchmark — 5-Mode Ablation Study")
+    print(f"      SABER MCQ Benchmark — 5-Mode Ablation Study [{args.domain.upper()}]")
     print("==========================================================\n")
 
     # 1. Setup Configuration
@@ -169,61 +175,63 @@ def run_benchmark():
     # ---------------------------------------------------------------
     # 2.3 Finance: FinQA Math (80 exact cases)
     # ---------------------------------------------------------------
-    random.seed(42)
-    for i in range(80):
-        rev = random.randint(100, 5000)
-        cogs = random.randint(50, int(rev * 0.6))
-        gp = rev - cogs
-        bench_cases.append({
-            "type": "exact",
-            "question": f"Context: Revenue: ${rev}M, COGS: ${cogs}M.\nQuestion: Calculate Gross Profit.",
-            "expected": f"{gp}",
-            "domain": "finance",
-            "dataset": "finqa"
-        })
-    print(f"[+] Loaded 80 Finance (FinQA Math) cases.")
+    if args.domain in ["all", "finance"]:
+        random.seed(42)
+        for i in range(80):
+            rev = random.randint(100, 5000)
+            cogs = random.randint(50, int(rev * 0.6))
+            gp = rev - cogs
+            bench_cases.append({
+                "type": "exact",
+                "question": f"Context: Revenue: ${rev}M, COGS: ${cogs}M.\nQuestion: Calculate Gross Profit.",
+                "expected": f"{gp}",
+                "domain": "finance",
+                "dataset": "finqa"
+            })
+        print(f"[+] Loaded 80 Finance (FinQA Math) cases.")
 
     # ---------------------------------------------------------------
     # 2.4 Cyber: SecBench (100 cases)
     # ---------------------------------------------------------------
-    try:
-        secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train")
-        all_cyber = []
-        for row in secbench:
-            if row.get("language") == "English":
-                q_text = row.get("question")
-                choices = list(row.get("answers", []))
-                label_char = row.get("label", "").upper().strip()
-                if len(choices) != 4 or not label_char or not q_text:
-                    continue
-                if len(label_char) != 1 or label_char not in ["A", "B", "C", "D"]:
-                    continue
-                correct_idx = ord(label_char) - 65
-                if not (0 <= correct_idx < 4):
-                    continue
-                correct_ans = choices[correct_idx]
+    if args.domain in ["all", "cyber"]:
+        try:
+            secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train")
+            all_cyber = []
+            for row in secbench:
+                if row.get("language") == "English":
+                    q_text = row.get("question")
+                    choices = list(row.get("answers", []))
+                    label_char = row.get("label", "").upper().strip()
+                    if len(choices) != 4 or not label_char or not q_text:
+                        continue
+                    if len(label_char) != 1 or label_char not in ["A", "B", "C", "D"]:
+                        continue
+                    correct_idx = ord(label_char) - 65
+                    if not (0 <= correct_idx < 4):
+                        continue
+                    correct_ans = choices[correct_idx]
+                    
+                    random.seed(42)
+                    random.shuffle(choices)
+                    choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                    correct_char = chr(65 + choices.index(correct_ans))
+                    
+                    all_cyber.append({
+                        "type": "exact",
+                        "question": build_mcq_prompt(q_text, choices_str),
+                        "expected": correct_char,
+                        "domain": "cyber",
+                        "dataset": "secbench"
+                    })
                 
-                random.seed(42)
-                random.shuffle(choices)
-                choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-                correct_char = chr(65 + choices.index(correct_ans))
-                
-                all_cyber.append({
-                    "type": "exact",
-                    "question": build_mcq_prompt(q_text, choices_str),
-                    "expected": correct_char,
-                    "domain": "cyber",
-                    "dataset": "secbench"
-                })
-            
-        if all_cyber:
-            sliced_cyber = all_cyber[-100:]
-            bench_cases.extend(sliced_cyber)
-            print(f"[+] Loaded {len(sliced_cyber)} Cyber (SecBench) cases.")
-        else:
-            print("[!] Failed to load SecBench cases.")
-    except Exception as e:
-        print(f"[!] SecBench load failed: {e}")
+            if all_cyber:
+                sliced_cyber = all_cyber[-100:]
+                bench_cases.extend(sliced_cyber)
+                print(f"[+] Loaded {len(sliced_cyber)} Cyber (SecBench) cases.")
+            else:
+                print("[!] Failed to load SecBench cases.")
+        except Exception as e:
+            print(f"[!] SecBench load failed: {e}")
 
     print(f"\n[+] Total MCQ benchmark cases: {len(bench_cases)}")
     results = []
@@ -607,9 +615,10 @@ def run_benchmark():
                             if k in parsed and parsed[k] <= 10.0:
                                 parsed[k] = parsed[k] * 10.0
                         scores = parsed
+                        time.sleep(1.0) # Rate-limit protection between OpenRouter requests
                         break
                 except Exception:
-                    time.sleep(1)
+                    time.sleep(2.0)
 
             st = judge_summary[ds][mode_name]
             st["acc_sum"] += scores.get("accuracy_score", 50.0)
