@@ -68,12 +68,14 @@ def run_prometheus_grading():
     )
 
     scores_by_mode = {}
+    dataset_scores = {}
 
     for idx, case in enumerate(cases, 1):
         q = case["question"]
         ref = str(case["expected"]).strip()
         case_id = case["case_id"]
         c_type = case.get("type", "open_text")
+        dataset_name = case.get("dataset", "unknown")
 
         # Detect if MCQ
         is_mcq = ref.upper() in ["A", "B", "C", "D"] or c_type == "exact"
@@ -116,14 +118,9 @@ def run_prometheus_grading():
             score_match = re.search(r"\[Score\s*([1-5])\]", eval_output) or re.search(r"\b([1-5])\b", eval_output)
             score_val = float(score_match.group(1)) * 20.0 if score_match else 50.0 # Convert 1-5 to 0-100%
 
-            resp_data["prometheus_eval"] = {
-                "score_pct": score_val,
-                "feedback": eval_output.strip()
-            }
-
-            if mode_name not in scores_by_mode:
-                scores_by_mode[mode_name] = []
-            scores_by_mode[mode_name].append(score_val)
+            if dataset_name not in dataset_scores:
+                dataset_scores[dataset_name] = defaultdict(list)
+            dataset_scores[dataset_name][mode_name].append(score_val)
 
         if idx % 10 == 0:
             with open(args.output_file, "w", encoding="utf-8") as f:
@@ -132,13 +129,42 @@ def run_prometheus_grading():
     with open(args.output_file, "w", encoding="utf-8") as f:
         json.dump(cases, f, indent=2)
 
-    print("\n==========================================================")
-    print("   PROMETHEUS 2 LOCAL EVALUATION COMPLETE SUMMARY (%)")
-    print("==========================================================")
-    for mode, s_list in scores_by_mode.items():
-        avg = sum(s_list) / len(s_list) if s_list else 0.0
-        print(f" Mode: {mode:25s} | Prometheus Score: {avg:.2f}%")
-    print("==========================================================\n")
+    # =====================================================================
+    # Format Separate Markdown Tables per Dataset & Respective Modes (%)
+    # =====================================================================
+    mode_names = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass"]
+    table_lines = [
+        "# SABER Benchmark Results — Prometheus 2 (8B) Evaluation Report\n",
+        "## Overall Dataset Score Summary (%)\n",
+        f"| Dataset | {' | '.join(mode_names)} |",
+        f"| :--- | {' | '.join([':---'] * len(mode_names))} |"
+    ]
+
+    print("\n======================================================================")
+    print(" 📊 PROMETHEUS 2 (8B) BENCHMARK REPORT — PER-DATASET PERCENTAGES (%)")
+    print("======================================================================\n")
+
+    for ds, m_dict in dataset_scores.items():
+        row = [ds.upper()]
+        for mode in mode_names:
+            s_list = m_dict.get(mode, [])
+            if s_list:
+                avg_score = sum(s_list) / len(s_list)
+                row.append(f"{avg_score:.1f}%")
+            else:
+                row.append("N/A")
+        table_lines.append("| " + " | ".join(row) + " |")
+
+    report_md = "\n".join(table_lines)
+    print(report_md)
+    print("\n======================================================================\n")
+
+    md_file = args.output_file.replace(".json", ".md")
+    with open(md_file, "w", encoding="utf-8") as f:
+        f.write(report_md + "\n")
+
+    print(f"[+] Markdown report saved to '{md_file}'.")
+    print(f"[+] Full JSON report saved to '{args.output_file}'.")
 
 if __name__ == "__main__":
     run_prometheus_grading()
