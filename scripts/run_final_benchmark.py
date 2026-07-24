@@ -258,9 +258,9 @@ def run_benchmark():
             "messages": [{"role": "system", "content": judge_sys}, {"role": "user", "content": f"Q: {q_text}\nEXPECTED: {exp_text}\nMODEL: {ans_text}"}],
             "temperature": 0.1, "max_tokens": 150
         }
-        for attempt in range(5):
+        for attempt in range(10):
             try:
-                resp = requests.post(api_url, headers=headers, json=payload, timeout=20)
+                resp = requests.post(api_url, headers=headers, json=payload, timeout=25)
                 if resp.status_code == 200:
                     content = resp.json()["choices"][0]["message"]["content"].strip()
                     s = content.find("{")
@@ -270,11 +270,17 @@ def run_benchmark():
                         for k in ["accuracy_score", "reasoning_score", "hallucination_control", "overall_score"]:
                             if k in parsed and parsed[k] <= 10.0:
                                 parsed[k] *= 10.0
+                        time.sleep(0.5) # Gentle rate-limit pacing
                         return parsed
                 elif resp.status_code == 429:
-                    time.sleep(3 ** attempt + 2)
+                    wait_time = (2 ** attempt) + 3
+                    print(f"[!] Rate limit (HTTP 429) hit on OpenRouter. Backing off for {wait_time}s (Attempt {attempt+1}/10)...")
+                    sys.stdout.flush()
+                    time.sleep(wait_time)
+                else:
+                    time.sleep(1.5)
             except Exception:
-                time.sleep(1.5)
+                time.sleep(2.0)
         return {"accuracy_score": 50.0, "reasoning_score": 50.0, "hallucination_control": 50.0, "overall_score": 50.0}
 
     # Group by dataset
