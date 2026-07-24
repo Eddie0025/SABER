@@ -251,18 +251,16 @@ def run_benchmark():
         print(f"==========================================================\n")
         
         # 1. Load Specialist for this dataset
-        specialist_class_name = f"{domain.capitalize()}Specialist"
-        try:
-            mod = importlib.import_module(f"saber.specialists.{domain}")
-            specialist_cls = getattr(mod, specialist_class_name)
-            specialist = specialist_cls()
+        registry = SpecialistRegistry()
+        specialist = registry.get(domain)
+        if specialist is not None:
             m_path = f"models/{domain}_v2"
             if not os.path.exists(m_path):
                 m_path = config.base_model
             specialist.load_model(m_path)
-            print(f"[*] Loaded {specialist_class_name} with model: {m_path}")
-        except Exception as e:
-            print(f"[!] Failed to load specialist for {domain}: {e}")
+            print(f"[*] Loaded {specialist.__class__.__name__} with model: {m_path}")
+        else:
+            print(f"[!] Failed to load specialist for {domain}: domain not in registry")
             continue
             
         sentinel = Sentinel()
