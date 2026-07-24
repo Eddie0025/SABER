@@ -314,77 +314,48 @@ def run_benchmark():
                         ans4 = resolved.payload.get("revised_text", ans4).strip()
             case_res["runs"]["Sentinel 2 Pass"] = {"answer": ans4, "latency": round(time.time()-t0, 2)}
 
-            # Perform local evaluation instantly (100x faster, ZERO rate-limit dependency)
-            for m_name, r_info in case_res["runs"].items():
-                a_text = r_info["answer"]
-                if case["type"] == "code":
-                    p_ok, _ = execute_python_code(a_text)
-                    score = 100.0 if p_ok else 0.0
-                    j_scores = {"accuracy_score": score, "reasoning_score": score, "hallucination_control": 100.0 if score>0 else 50.0, "overall_score": score}
-                elif is_mcq:
-                    ext = parse_mcq_answer(a_text, q)
-                    score = 100.0 if ext == exp_norm else 0.0
-                    j_scores = {"accuracy_score": score, "reasoning_score": score, "hallucination_control": 100.0 if score>0 else 50.0, "overall_score": score}
-                else:
-                    # Deterministic Local NLP Evaluation: Exact Numbers + Semantic Overlap (ROUGE-L approximation)
-                    exp_str = str(exp).strip().lower()
-                    ans_str = a_text.lower()
-                    
-                    # 1. Exact Numerical Match (Finance/Numbers)
-                    nums_exp = set(re.findall(r"\b\d+(?:\.\d+)?\b", exp_str))
-                    nums_ans = set(re.findall(r"\b\d+(?:\.\d+)?\b", ans_str))
-                    num_match = len(nums_exp.intersection(nums_ans)) / max(len(nums_exp), 1) if nums_exp else 1.0
-                    
-                    # 2. Key Term Semantic Overlap (N-gram precision/recall)
-                    words_exp = [w for w in re.findall(r"\b\w+\b", exp_str) if len(w) > 3]
-                    words_ans = set(re.findall(r"\b\w+\b", ans_str))
-                    overlap = sum(1 for w in words_exp if w in words_ans) / max(len(words_exp), 1) if words_exp else 0.5
-                    
-                    # 3. Combined Score (100% Offline, Instant)
-                    combined_score = round((num_match * 0.6 + overlap * 0.4) * 100.0, 1)
-                    j_scores = {
-                        "accuracy_score": combined_score,
-                        "reasoning_score": round(overlap * 100.0, 1),
-                        "hallucination_control": round(num_match * 100.0, 1),
-                        "overall_score": combined_score
-                    }
-                r_info["evaluation"] = j_scores
+            # Capture CoT claims and Sentinel revision statements
+            cot_claims = []
+            if out_sig and out_sig.payload.get("claims"):
+                cot_claims = [c.get("statement", "") for c in out_sig.payload["claims"]]
 
-            checkpoint_data[case_key] = case_res
-            results.append(case_res)
+            sentinel_flags = []
+            if out_sig and sentinel:
+                ver_res = sentinel.verify_interpretation(specialist_domain=domain, original_signal=out_sig, compiled_text=ans3, config=config)
+                if ver_res.signal_type == SignalType.FLAG_SIGNAL:
+                    sentinel_flags = ver_res.payload.get("flags", [])
+
+            case_record = {
+                "case_id": case_key,
+                "dataset": ds_name,
+                "domain": domain,
+                "question": q,
+                "expected": exp,
+                "type": case["type"],
+                "responses": {
+                    "Base Qwen": {"answer": ans1, "latency": round(time.time()-t0, 2)},
+                    "Qwen with Adaptors": {"answer": ans2, "latency": round(time.time()-t0, 2)},
+                    "Qwen Adaptor + CoT": {"answer": ans3, "claims": cot_claims, "latency": round(time.time()-t0, 2)},
+                    "Sentinel 2 Pass": {"answer": ans4, "sentinel_flags": sentinel_flags, "latency": round(time.time()-t0, 2)}
+                }
+            }
+
+            checkpoint_data[case_key] = case_record
+            results.append(case_record)
 
             with open(checkpoint_file, "w", encoding="utf-8") as f:
                 json.dump(checkpoint_data, f, indent=2)
 
-            # Live Scoreboard Update every 10 cases
             if idx_in_ds % 10 == 0 or idx_in_ds == len(cases):
-                print(f"\n" + "="*70)
-                print(f" 📊 [LIVE SCOREBOARD] Progress: {global_idx}/{len(bench_cases)} ({(global_idx/len(bench_cases))*100:.1f}%) | {ds_name.upper()}: {idx_in_ds}/{len(cases)}")
-                print("="*70)
-                scores_by_ds = defaultdict(lambda: defaultdict(list))
-                for r in results:
-                    dname = r["dataset"]
-                    for mname, rdata in r["runs"].items():
-                        scores_by_ds[dname][mname].append(rdata["evaluation"].get("overall_score", 0.0))
-
-                print(f"| Dataset | {' | '.join(MODE_NAMES)} |")
-                print(f"| :--- | {' | '.join([':---'] * 4)} |")
-                for dname, mdict in scores_by_ds.items():
-                    row = [dname]
-                    for mname in MODE_NAMES:
-                        s_list = mdict.get(mname, [])
-                        if s_list:
-                            avg_s = sum(s_list) / len(s_list)
-                            row.append(f"{avg_s:.1f}%")
-                        else:
-                            row.append("N/A")
-                    print("| " + " | ".join(row) + " |")
-                print("="*70 + "\n")
+                print(f"[*] Recorded {global_idx}/{len(bench_cases)} cases | {ds_name.upper()}: {idx_in_ds}/{len(cases)} saved to benchmark_outputs.json")
                 sys.stdout.flush()
 
         specialist = None
     
-    print("\n=== BENCHMARK COMPLETE ===")
+    with open("benchmark_outputs.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+
+    print(f"\n[+] GENERATION COMPLETE! All raw model answers, CoT claims, and Sentinel statements saved to 'benchmark_outputs.json'.")
     sys.stdout.flush()
 
 if __name__ == "__main__":
