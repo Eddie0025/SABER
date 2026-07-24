@@ -98,14 +98,14 @@ def parse_mcq_answer(raw_answer, prompt=None):
 # 3. Robust High-Speed Dataset Loader (No Scripts, Direct JSON/Parquet)
 # =====================================================================
 def load_all_datasets(domain="all"):
-    from datasets import load_dataset
     cases = []
     
     # --- 3.1 FinanceBench ---
     if domain in ["all", "finance"]:
-        print("[*] Fetching FinanceBench dataset (Patronus AI)...")
+        print("[*] Fetching FinanceBench dataset...")
         sys.stdout.flush()
         try:
+            from datasets import load_dataset
             ds = load_dataset("virattt/financebench", split="train")
             for row in ds:
                 q = row.get("question", "")
@@ -119,33 +119,40 @@ def load_all_datasets(domain="all"):
             print(f"[+] Loaded {len([c for c in cases if c['domain']=='finance'])} FinanceBench cases.")
             sys.stdout.flush()
         except Exception as e:
-            print(f"[!] FinanceBench error: {e}")
+            print(f"[!] FinanceBench load failed: {e}")
             sys.stdout.flush()
 
-    # --- 3.2 LiveCodeBench ---
+    # --- 3.2 Coding ---
     if domain in ["all", "coding"]:
-        print("[*] Fetching Coding dataset (flytech/python-codes-25k)...")
+        print("[*] Fetching Coding dataset...")
         sys.stdout.flush()
         try:
-            ds = load_dataset("flytech/python-codes-25k", split="train[:500]")
+            from datasets import load_dataset
+            ds = load_dataset("flytech/python-codes-25k", split="train", streaming=True)
+            cnt = 0
             for row in ds:
                 q = row.get("instruction", "") or row.get("input", "")
                 ans = row.get("output", "")
                 if q:
                     prompt = f"Problem Statement:\n{q}\n\nWrite a complete, optimized Python 3 solution."
                     cases.append({"type": "code", "question": prompt, "expected": ans or "Executable Python", "domain": "coding", "dataset": "livecodebench"})
-            print(f"[+] Loaded {len([c for c in cases if c['domain']=='coding'])} LiveCodeBench cases.")
+                    cnt += 1
+                    if cnt >= 500:
+                        break
+            print(f"[+] Loaded {cnt} LiveCodeBench cases.")
             sys.stdout.flush()
         except Exception as e:
-            print(f"[!] LiveCodeBench error: {e}")
+            print(f"[!] LiveCodeBench load failed: {e}")
             sys.stdout.flush()
 
     # --- 3.3 CyberMetric ---
     if domain in ["all", "cyber"]:
-        print("[*] Fetching CyberMetric MCQs (SecBench JSONL)...")
+        print("[*] Fetching CyberMetric MCQs...")
         sys.stdout.flush()
         try:
-            ds = load_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:500]")
+            from datasets import load_dataset
+            ds = load_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train", streaming=True)
+            cnt = 0
             for row in ds:
                 if row.get("language") == "English":
                     q = row.get("question")
@@ -158,28 +165,36 @@ def load_all_datasets(domain="all"):
                         choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
                         correct_char = chr(65 + choices.index(correct_ans))
                         cases.append({"type": "exact", "question": build_mcq_prompt(q, choices_str), "expected": correct_char, "domain": "cyber", "dataset": "cybermetric"})
-            print(f"[+] Loaded {len([c for c in cases if c['domain']=='cyber'])} CyberMetric cases.")
+                        cnt += 1
+                        if cnt >= 500:
+                            break
+            print(f"[+] Loaded {cnt} CyberMetric cases.")
             sys.stdout.flush()
         except Exception as e:
-            print(f"[!] CyberMetric error: {e}")
+            print(f"[!] CyberMetric load failed: {e}")
             sys.stdout.flush()
 
     # --- 3.4 ArchBench ---
     if domain in ["all", "architecture"]:
-        print("[*] Fetching ArchBench dataset (CodeFeedback-Filtered)...")
+        print("[*] Fetching ArchBench dataset...")
         sys.stdout.flush()
         try:
-            ds = load_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[:500]")
+            from datasets import load_dataset
+            ds = load_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train", streaming=True)
+            cnt = 0
             for row in ds:
                 q = row.get("query", "")
                 ans = row.get("answer", "")
                 if q and ans:
                     prompt = f"Software Architecture Challenge:\n{q}\nGenerate a complete Architectural Specification with microservice breakdown, trade-off matrix, and CAP theorem constraints."
                     cases.append({"type": "open_text", "question": prompt, "expected": ans[:300], "domain": "architecture", "dataset": "archbench"})
-            print(f"[+] Loaded {len([c for c in cases if c['domain']=='architecture'])} ArchBench cases.")
+                    cnt += 1
+                    if cnt >= 500:
+                        break
+            print(f"[+] Loaded {cnt} ArchBench cases.")
             sys.stdout.flush()
         except Exception as e:
-            print(f"[!] ArchBench error: {e}")
+            print(f"[!] ArchBench load failed: {e}")
             sys.stdout.flush()
 
     return cases
