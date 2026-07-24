@@ -4,213 +4,110 @@ import sys
 import time
 import random
 import re
+import requests
+import multiprocessing
 from typing import Dict, Any, List
+from collections import defaultdict
 
 # Ensure saber module can be imported
 sys.path.append(os.path.abspath('.'))
 
-# Disable Hugging Face verbose logs and cache models in memory (crucial for single GPU)
+# Disable Hugging Face verbose logs and lock models in GPU VRAM
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 os.environ["SABER_KEEP_MODELS_LOADED"] = "1"
 os.environ["SABER_BENCHMARK_MODE"] = "1"
 
-from saber.config import SaberConfig, VerificationTier
+from saber.config import SaberConfig
 from saber.registry import SpecialistRegistry
-from saber.audit import AuditLogger
-from saber.orchestrator import Orchestrator
+from saber.llm_engine import LLMEngine
+from saber.signal import Signal, SignalType
+from saber.sentinel import Sentinel
 
 # =====================================================================
-# HF Dataset Loader Helper (Supporting Auth Token)
+# 1. Sandboxed Python Code Harness
 # =====================================================================
-def load_hf_dataset(path, name=None, split=None, **kwargs):
-    from datasets import load_dataset
-    token = os.getenv("HF_TOKEN")
-    if token:
-        kwargs["token"] = token
-    if name:
-        kwargs["name"] = name
-    if split:
-        kwargs["split"] = split
-    return load_dataset(path, **kwargs)
+def _exec_target(code_str, result_queue):
+    """Worker target function for isolated code execution."""
+    try:
+        ns = {}
+        exec(code_str, ns)
+        result_queue.put((True, "Executed Successfully"))
+    except Exception as e:
+        result_queue.put((False, f"Runtime Error: {type(e).__name__}: {e}"))
+
+def execute_python_code(code_str: str, timeout: float = 3.0) -> (bool, str):
+    """Execute Python code in a sandboxed subprocess with timeout."""
+    clean_code = re.sub(r"^```python\s*", "", code_str, flags=re.MULTILINE)
+    clean_code = re.sub(r"^```\s*$", "", clean_code, flags=re.MULTILINE).strip()
+    
+    if not clean_code:
+        return False, "Empty Code"
+        
+    ctx = multiprocessing.get_context("spawn")
+    q = ctx.Queue()
+    proc = ctx.Process(target=_exec_target, args=(clean_code, q))
+    proc.start()
+    proc.join(timeout=timeout)
+    
+    if proc.is_alive():
+        proc.terminate()
+        proc.join()
+        return False, "Execution Timeout (>3s)"
+        
+    if not q.empty():
+        return q.get()
+    return False, "Execution Failed"
 
 # =====================================================================
-# Strict MCQ Prompt Builder
+# 2. Strict MCQ Answer Parser
 # =====================================================================
-MCQ_SUFFIX = (
-    "\n\nAnswer the following multiple choice question. "
-    "The last line of your response MUST strictly follow the format: "
-    "ANSWER: LETTER (where LETTER is A, B, C, or D)."
-)
+MCQ_SUFFIX = "\n\nAnswer the following multiple choice question. The last line MUST strictly follow: ANSWER: LETTER (A, B, C, or D)."
 
 def build_mcq_prompt(question_text, choices_str):
-    """Build a strict MCQ prompt with format enforcement."""
     return f"Question: {question_text}\nOptions:\n{choices_str}{MCQ_SUFFIX}"
 
-# =====================================================================
-# Strict MCQ Answer Parser
-# =====================================================================
 def parse_mcq_answer(raw_answer, prompt=None):
-    """Extract the answer letter using a multi-pass parser.
-    
-    Priority order:
-      1. Last line: ANSWER: X (strict format)
-      2. Any line: ANSWER: X
-      3. Common patterns: 'The answer is X', 'correct answer is X'
-      4. Last line: standalone letter (A/B/C/D)
-      5. Literal Option Value Matching (if prompt is provided)
-    
-    Returns the letter (A-D) or None if nothing found."""
     lines = [line.strip() for line in raw_answer.split('\n') if line.strip()]
     if not lines:
         return None
     
-    # Pass 1: Check last line for strict ANSWER: X (or ANSWER: <X>, ANSWER: (X))
     last_line = lines[-1].upper()
     match = re.search(r"ANSWER:\s*[<\(]?([A-D])\b[>\)]?", last_line)
     if match:
         return match.group(1)
-    
-    # Pass 2: Check ANY line for ANSWER: X (model put it mid-response)
+        
     for line in reversed(lines):
         match = re.search(r"ANSWER:\s*[<\(]?([A-D])\b[>\)]?", line.upper())
         if match:
             return match.group(1)
-    
-    # Pass 3: Common natural language patterns
-    # The letter must NOT be followed by another letter (prevents "answer is A complex..." false positive)
+            
     full_text = raw_answer.upper()
-    for pattern in [
-        r"THE\s+(?:CORRECT\s+)?ANSWER\s+IS\s*:?\s*\(?([A-D])\)?(?![A-Za-z])",
-        r"CORRECT\s+ANSWER\s*:?\s*\(?([A-D])\)?(?![A-Za-z])",
-        r"OPTION\s+([A-D])(?![A-Za-z])\s+IS\s+CORRECT",
-    ]:
+    for pattern in [r"THE\s+(?:CORRECT\s+)?ANSWER\s+IS\s*:?\s*\(?([A-D])\)?(?![A-Za-z])", r"CORRECT\s+ANSWER\s*:?\s*\(?([A-D])\)?(?![A-Za-z])"]:
         match = re.search(pattern, full_text)
         if match:
             return match.group(1)
-    
-    # Pass 4: Last line is just a single letter
+            
     if re.fullmatch(r"[A-D]\.?", last_line):
         return last_line[0]
         
-    # Pass 5: Literal Option Value Matching (e.g. model outputs raw option text)
-    if prompt:
-        options = {}
-        matches = re.findall(r"\n\s*([A-D])\s*[:\.\)]\s*(.*)", prompt)
-        for letter, val in matches:
-            # Strip suffixes or instructions from option value
-            val_clean = val.split("\n")[0].strip().lower().strip('.,()[]"\' ')
-            if val_clean:
-                options[letter] = val_clean
-                
-        last_line_clean = lines[-1].lower()
-        if "conclusion:" in last_line_clean:
-            last_line_clean = last_line_clean.split("conclusion:")[-1].strip()
-        last_line_clean = last_line_clean.strip('.,()[]"\' ')
-        
-        for letter, val in options.items():
-            if val == last_line_clean:
-                return letter
-    
     return None
 
 # =====================================================================
-# Strict Exact/Numerical Answer Parser
+# 3. Robust High-Speed Dataset Loader (No Scripts, Direct JSON/Parquet)
 # =====================================================================
-def parse_exact_answer(raw_answer):
-    """Extract exact/numerical answers from raw response."""
-    lines = [line.strip() for line in raw_answer.split('\n') if line.strip()]
-    if not lines:
-        return ""
+def load_all_datasets(domain="all"):
+    from datasets import load_dataset
+    cases = []
     
-    # Pass 1: check last line for "ANSWER: <value>" or "GROSS PROFIT IS <value>"
-    last_line = lines[-1].upper()
-    match = re.search(r"ANSWER:\s*(\$?[\d,]+(?:\.\d+)?M?)", last_line)
-    if match:
-        return match.group(1).replace('$', '').replace('M', '').replace(',', '').strip('.,()[]')
-        
-    # Pass 2: check any line for "ANSWER: <value>"
-    for line in reversed(lines):
-        match = re.search(r"ANSWER:\s*(\$?[\d,]+(?:\.\d+)?M?)", line.upper())
-        if match:
-            return match.group(1).replace('$', '').replace('M', '').replace(',', '').strip('.,()[]')
-
-    # Pass 3: Look for conclusion step (e.g., ## Step 4 [CONCLUDE] or "The result is X")
-    full_upper = raw_answer.upper()
-    match_conclusion = re.search(r"(?:CONCLUDE|CONCLUSION|GROSS PROFIT IS|RESULT IS|FINAL ANSWER IS|PROFIT:)\s*:?\s*\$?([\d,]+(?:\.\d+)?)", full_upper)
-    if match_conclusion:
-        return match_conclusion.group(1).replace(',', '').strip('.,()[]')
-            
-    # Pass 4: Extract the last sequence of digits/numbers from the end of the text
-    all_numbers = re.findall(r"\b\d+(?:\.\d+)?\b", raw_answer)
-    if all_numbers:
-        return all_numbers[-1].replace(',', '')
-        
-    return raw_answer.strip()
-
-# =====================================================================
-# Dynamic Python Code Execution Harness for LiveCodeBench
-# =====================================================================
-import multiprocessing
-import io
-import contextlib
-
-def _worker_exec(code_str, test_code, result_queue):
-    """Worker process to safely execute Python code in a isolated environment."""
-    try:
-        global_scope = {}
-        # Clean markdown code fences if present
-        clean_code = code_str.replace("```python", "").replace("```", "").strip()
-        exec(clean_code, global_scope)
-        if test_code:
-            exec(test_code, global_scope)
-        result_queue.put((True, "Pass"))
-    except Exception as e:
-        result_queue.put((False, str(e)))
-
-def execute_python_code(code_str, test_code="", timeout_sec=3):
-    """Execute Python code dynamically and return True/False pass status."""
-    result_queue = multiprocessing.Queue()
-    p = multiprocessing.Process(target=_worker_exec, args=(code_str, test_code, result_queue))
-    p.start()
-    p.join(timeout_sec)
-    
-    if p.is_alive():
-        p.terminate()
-        p.join()
-        return False, "Timeout"
-        
-    if not result_queue.empty():
-        success, msg = result_queue.get()
-        return success, msg
-    return False, "Execution Error"
-
-# =====================================================================
-# SABER Unified Benchmark Pipeline — Optimized Architecture
-# =====================================================================
-import argparse
-import requests
-from collections import defaultdict
-
-def run_benchmark():
-    parser = argparse.ArgumentParser(description="Run SABER Final Benchmark")
-    parser.add_argument("--domain", type=str, default="all", help="Specify domain (finance, cyber, coding, architecture, all)")
-    args = parser.parse_args()
-
-    print("==========================================================")
-    print(f"      SABER Benchmark Suite — 5-Mode Ablation Study [{args.domain.upper()}]")
-    print("==========================================================\n")
-
-    config = SaberConfig()
-    bench_cases = []
-
-    # 1. Dataset Loaders (Strict Primary)
-    if args.domain in ["all", "finance"]:
-        print("[*] Loading FinanceBench dataset...")
+    # --- 3.1 FinanceBench ---
+    if domain in ["all", "finance"]:
+        print("[*] Fetching FinanceBench dataset (Patronus AI)...")
+        sys.stdout.flush()
         try:
-            financebench = load_hf_dataset("virattt/financebench", split="train")
-            for row in financebench:
+            ds = load_dataset("virattt/financebench", split="train")
+            for row in ds:
                 q = row.get("question", "")
                 ans = row.get("answer", "")
                 doc = row.get("doc_name", "")
@@ -218,66 +115,97 @@ def run_benchmark():
                 if q and ans:
                     ctx = f"SEC Filing: {doc}\nEvidence: {ev[:400]}" if ev else f"SEC Filing: {doc}"
                     prompt = f"Context: {ctx}\nQuestion: {q}\nProvide exact step-by-step financial reasoning and answer."
-                    bench_cases.append({"type": "open_text", "question": prompt, "expected": ans, "domain": "finance", "dataset": "financebench"})
-            print(f"[+] Loaded {len([c for c in bench_cases if c['domain']=='finance'])} Finance (FinanceBench) cases.")
+                    cases.append({"type": "open_text", "question": prompt, "expected": ans, "domain": "finance", "dataset": "financebench"})
+            print(f"[+] Loaded {len([c for c in cases if c['domain']=='finance'])} FinanceBench cases.")
+            sys.stdout.flush()
         except Exception as e:
-            print(f"[!] FinanceBench load failed: {e}")
+            print(f"[!] FinanceBench error: {e}")
+            sys.stdout.flush()
 
-    if args.domain in ["all", "coding"]:
-        print("[*] Loading LiveCodeBench dataset...")
+    # --- 3.2 LiveCodeBench ---
+    if domain in ["all", "coding"]:
+        print("[*] Fetching Coding dataset (flytech/python-codes-25k)...")
+        sys.stdout.flush()
         try:
-            lcb = load_hf_dataset("flytech/python-codes-25k", split="train[:500]")
-            for row in lcb:
+            ds = load_dataset("flytech/python-codes-25k", split="train[:500]")
+            for row in ds:
                 q = row.get("instruction", "") or row.get("input", "")
-                ans_code = row.get("output", "")
+                ans = row.get("output", "")
                 if q:
                     prompt = f"Problem Statement:\n{q}\n\nWrite a complete, optimized Python 3 solution."
-                    bench_cases.append({"type": "code", "question": prompt, "expected": ans_code or "Executable Python function", "domain": "coding", "dataset": "livecodebench"})
-            print(f"[+] Loaded {len([c for c in bench_cases if c['domain']=='coding'])} Coding (LiveCodeBench) cases.")
+                    cases.append({"type": "code", "question": prompt, "expected": ans or "Executable Python", "domain": "coding", "dataset": "livecodebench"})
+            print(f"[+] Loaded {len([c for c in cases if c['domain']=='coding'])} LiveCodeBench cases.")
+            sys.stdout.flush()
         except Exception as e:
-            print(f"[!] LiveCodeBench load failed: {e}")
+            print(f"[!] LiveCodeBench error: {e}")
+            sys.stdout.flush()
 
-    if args.domain in ["all", "cyber"]:
-        print("[*] Loading CyberMetric dataset...")
+    # --- 3.3 CyberMetric ---
+    if domain in ["all", "cyber"]:
+        print("[*] Fetching CyberMetric MCQs (SecBench JSONL)...")
+        sys.stdout.flush()
         try:
-            cybermetric = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:500]")
-            for row in cybermetric:
+            ds = load_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:500]")
+            for row in ds:
                 if row.get("language") == "English":
                     q = row.get("question")
                     choices = list(row.get("answers", []))
-                    label_char = row.get("label", "").upper().strip()
-                    if len(choices) == 4 and label_char in ["A", "B", "C", "D"]:
-                        correct_idx = ord(label_char) - 65
-                        correct_ans = choices[correct_idx]
+                    lbl = row.get("label", "").upper().strip()
+                    if len(choices) == 4 and lbl in ["A", "B", "C", "D"]:
+                        correct_ans = choices[ord(lbl) - 65]
                         random.seed(42)
                         random.shuffle(choices)
                         choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
                         correct_char = chr(65 + choices.index(correct_ans))
-                        bench_cases.append({"type": "exact", "question": build_mcq_prompt(q, choices_str), "expected": correct_char, "domain": "cyber", "dataset": "cybermetric"})
-            print(f"[+] Loaded {len([c for c in bench_cases if c['domain']=='cyber'])} Cyber (CyberMetric) cases.")
+                        cases.append({"type": "exact", "question": build_mcq_prompt(q, choices_str), "expected": correct_char, "domain": "cyber", "dataset": "cybermetric"})
+            print(f"[+] Loaded {len([c for c in cases if c['domain']=='cyber'])} CyberMetric cases.")
+            sys.stdout.flush()
         except Exception as e:
-            print(f"[!] CyberMetric load failed: {e}")
+            print(f"[!] CyberMetric error: {e}")
+            sys.stdout.flush()
 
-    if args.domain in ["all", "architecture"]:
-        print("[*] Loading ArchBench dataset...")
+    # --- 3.4 ArchBench ---
+    if domain in ["all", "architecture"]:
+        print("[*] Fetching ArchBench dataset (CodeFeedback-Filtered)...")
+        sys.stdout.flush()
         try:
-            arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[:500]")
-            for row in arch_ds:
+            ds = load_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[:500]")
+            for row in ds:
                 q = row.get("query", "")
                 ans = row.get("answer", "")
                 if q and ans:
                     prompt = f"Software Architecture Challenge:\n{q}\nGenerate a complete Architectural Specification with microservice breakdown, trade-off matrix, and CAP theorem constraints."
-                    bench_cases.append({"type": "open_text", "question": prompt, "expected": ans[:300], "domain": "architecture", "dataset": "archbench"})
-            print(f"[+] Loaded {len([c for c in bench_cases if c['domain']=='architecture'])} Architecture (ArchBench) cases.")
+                    cases.append({"type": "open_text", "question": prompt, "expected": ans[:300], "domain": "architecture", "dataset": "archbench"})
+            print(f"[+] Loaded {len([c for c in cases if c['domain']=='architecture'])} ArchBench cases.")
+            sys.stdout.flush()
         except Exception as e:
-            print(f"[!] ArchBench load failed: {e}")
+            print(f"[!] ArchBench error: {e}")
+            sys.stdout.flush()
 
-    print(f"\n[+] Total benchmark suite volume: {len(bench_cases)} cases.")
+    return cases
+
+# =====================================================================
+# 4. Main Evaluation Engine
+# =====================================================================
+def run_benchmark():
+    import argparse
+    parser = argparse.ArgumentParser(description="SABER Benchmark Pipeline")
+    parser.add_argument("--domain", type=str, default="all")
+    args = parser.parse_args()
+
+    print("==========================================================")
+    print(f"   SABER Autonomous Benchmark Suite — 5-Mode Ablation [{args.domain.upper()}]")
+    print("==========================================================\n")
+    sys.stdout.flush()
+
+    bench_cases = load_all_datasets(args.domain)
+    print(f"\n[+] Total Benchmark Suite Volume: {len(bench_cases)} cases.")
+    sys.stdout.flush()
     if not bench_cases:
-        print("[!] No benchmark cases loaded.")
+        print("[!] No cases loaded. Exiting.")
         return
 
-    # Checkpoint Setup
+    # Load Checkpoint
     checkpoint_file = "benchmark_checkpoint.json"
     checkpoint_data = {}
     if os.path.exists(checkpoint_file):
@@ -285,12 +213,14 @@ def run_benchmark():
             with open(checkpoint_file, "r", encoding="utf-8") as f:
                 checkpoint_data = json.load(f)
             print(f"[*] Resuming from checkpoint ({len(checkpoint_data)} cases previously evaluated).")
+            sys.stdout.flush()
         except Exception:
             pass
 
+    config = SaberConfig()
     MODE_NAMES = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass"]
     
-    # OpenRouter Nemotron Setup
+    # OpenRouter API Key for Nemotron 550B
     key_file = "openrouter.key"
     default_key = ""
     if os.path.exists(key_file):
@@ -301,7 +231,7 @@ def run_benchmark():
     api_url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {"Authorization": f"Bearer {openrouter_api_key}", "Content-Type": "application/json"}
 
-    judge_system_prompt = (
+    judge_sys = (
         "You are an expert AI Benchmark Judge evaluating technical, mathematical, and reasoning responses.\n"
         "Evaluate the Model Response against the Question and Ground Truth Answer on a 0.0 to 100.0% scale.\n"
         "Respond ONLY with valid JSON: {\"accuracy_score\": <float>, \"reasoning_score\": <float>, \"hallucination_control\": <float>, \"overall_score\": <float>}"
@@ -310,7 +240,7 @@ def run_benchmark():
     def judge_eval(q_text, exp_text, ans_text):
         payload = {
             "model": judge_model,
-            "messages": [{"role": "system", "content": judge_system_prompt}, {"role": "user", "content": f"Q: {q_text}\nEXPECTED: {exp_text}\nMODEL: {ans_text}"}],
+            "messages": [{"role": "system", "content": judge_sys}, {"role": "user", "content": f"Q: {q_text}\nEXPECTED: {exp_text}\nMODEL: {ans_text}"}],
             "temperature": 0.1, "max_tokens": 150
         }
         for attempt in range(5):
@@ -339,28 +269,30 @@ def run_benchmark():
 
     results = []
     global_idx = 0
-    from saber.llm_engine import LLMEngine
-    from saber.signal import Signal, SignalType
-    from saber.sentinel import Sentinel
-    import gc
 
     for ds_name, cases in datasets.items():
         domain = cases[0]["domain"]
-        print(f"\n" + "="*70)
+        print(f"\n==========================================================")
         print(f"[*] Processing Dataset: {ds_name.upper()} (Domain: {domain}) | {len(cases)} cases")
-        print("="*70 + "\n")
+        print("==========================================================\n")
+        sys.stdout.flush()
 
         registry = SpecialistRegistry()
         specialist = registry.get(domain)
         if not specialist:
+            print(f"[!] Specialist for {domain} not found in registry. Skipping.")
             continue
+
         m_path = f"models/{domain}_v2" if os.path.exists(f"models/{domain}_v2") else config.base_model
+        print(f"[*] Loading Specialist Model: {m_path}...")
+        sys.stdout.flush()
         specialist.load_model(m_path)
         sentinel = Sentinel()
 
         for idx_in_ds, case in enumerate(cases, 1):
             global_idx += 1
             case_key = f"{ds_name}_{global_idx}"
+            
             if case_key in checkpoint_data:
                 results.append(checkpoint_data[case_key])
                 continue
@@ -370,7 +302,9 @@ def run_benchmark():
             exp_norm = str(exp).strip().upper()
             is_mcq = exp_norm in ["A", "B", "C", "D"]
 
-            print(f"[{global_idx}/{len(bench_cases)}] {ds_name} | {q[:60].strip()}...")
+            print(f"[{global_idx}/{len(bench_cases)}] {ds_name.upper()} | Case {idx_in_ds}/{len(cases)}: {q[:60].strip()}...")
+            sys.stdout.flush()
+
             case_res = {"question": q, "expected": exp, "domain": domain, "dataset": ds_name, "runs": {}}
 
             # Mode 1: Base Qwen
@@ -407,7 +341,7 @@ def run_benchmark():
                         ans4 = resolved.payload.get("revised_text", ans4).strip()
             case_res["runs"]["Sentinel 2 Pass"] = {"answer": ans4, "latency": round(time.time()-t0, 2)}
 
-            # Evaluate each mode immediately
+            # Perform evaluation
             for m_name, r_info in case_res["runs"].items():
                 a_text = r_info["answer"]
                 if case["type"] == "code":
@@ -424,10 +358,11 @@ def run_benchmark():
 
             checkpoint_data[case_key] = case_res
             results.append(case_res)
+
             with open(checkpoint_file, "w", encoding="utf-8") as f:
                 json.dump(checkpoint_data, f, indent=2)
 
-            # Live Scoreboard Update every 10 items
+            # Live Scoreboard Update every 10 cases
             if idx_in_ds % 10 == 0 or idx_in_ds == len(cases):
                 print(f"\n" + "="*70)
                 print(f" 📊 [LIVE SCOREBOARD] Progress: {global_idx}/{len(bench_cases)} ({(global_idx/len(bench_cases))*100:.1f}%) | {ds_name.upper()}: {idx_in_ds}/{len(cases)}")
@@ -451,15 +386,12 @@ def run_benchmark():
                             row.append("N/A")
                     print("| " + " | ".join(row) + " |")
                 print("="*70 + "\n")
+                sys.stdout.flush()
 
-        # Cleanup memory
         specialist = None
-        gc.collect()
-
-    # Final summary report
-    print("\n=== FINAL BENCHMARK COMPLETE ===")
-    with open("saber_llm_judge_report.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
+    
+    print("\n=== BENCHMARK COMPLETE ===")
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     run_benchmark()
