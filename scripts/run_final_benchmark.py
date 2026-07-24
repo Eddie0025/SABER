@@ -234,54 +234,6 @@ def run_benchmark():
 
     config = SaberConfig()
     MODE_NAMES = ["Base Qwen", "Qwen with Adaptors", "Qwen Adaptor + CoT", "Sentinel 2 Pass"]
-    
-    # OpenRouter API Key for Nemotron 550B
-    key_file = "openrouter.key"
-    default_key = ""
-    if os.path.exists(key_file):
-        with open(key_file, "r") as kf:
-            default_key = kf.read().strip()
-    openrouter_api_key = os.getenv("OPENROUTER_API_KEY", default_key)
-    judge_model = "nvidia/nemotron-3-ultra-550b-a55b:free"
-    api_url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {openrouter_api_key}", "Content-Type": "application/json"}
-
-    judge_sys = (
-        "You are an expert AI Benchmark Judge evaluating technical, mathematical, and reasoning responses.\n"
-        "Evaluate the Model Response against the Question and Ground Truth Answer on a 0.0 to 100.0% scale.\n"
-        "Respond ONLY with valid JSON: {\"accuracy_score\": <float>, \"reasoning_score\": <float>, \"hallucination_control\": <float>, \"overall_score\": <float>}"
-    )
-
-    def judge_eval(q_text, exp_text, ans_text):
-        payload = {
-            "model": judge_model,
-            "messages": [{"role": "system", "content": judge_sys}, {"role": "user", "content": f"Q: {q_text}\nEXPECTED: {exp_text}\nMODEL: {ans_text}"}],
-            "temperature": 0.1, "max_tokens": 150
-        }
-        for attempt in range(10):
-            try:
-                resp = requests.post(api_url, headers=headers, json=payload, timeout=25)
-                if resp.status_code == 200:
-                    content = resp.json()["choices"][0]["message"]["content"].strip()
-                    s = content.find("{")
-                    e = content.rfind("}")
-                    if s != -1 and e != -1:
-                        parsed = json.loads(content[s:e+1])
-                        for k in ["accuracy_score", "reasoning_score", "hallucination_control", "overall_score"]:
-                            if k in parsed and parsed[k] <= 10.0:
-                                parsed[k] *= 10.0
-                        time.sleep(0.5) # Gentle rate-limit pacing
-                        return parsed
-                elif resp.status_code == 429:
-                    wait_time = (2 ** attempt) + 3
-                    print(f"[!] Rate limit (HTTP 429) hit on OpenRouter. Backing off for {wait_time}s (Attempt {attempt+1}/10)...")
-                    sys.stdout.flush()
-                    time.sleep(wait_time)
-                else:
-                    time.sleep(1.5)
-            except Exception:
-                time.sleep(2.0)
-        return {"accuracy_score": 50.0, "reasoning_score": 50.0, "hallucination_control": 50.0, "overall_score": 50.0}
 
     # Group by dataset
     datasets = defaultdict(list)
