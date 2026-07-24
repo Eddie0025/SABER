@@ -35,17 +35,34 @@ def run_prometheus_grading():
         device_map="auto"
     )
 
-    rubric_template = (
+    # MCQ Rubric: Strict Letter Option & Reasoning Verification
+    mcq_rubric_template = (
         "### Task Description:\n"
-        "Evaluate the AI model's answer based on technical accuracy, logical reasoning, and correctness against the ground truth answer.\n\n"
+        "The question is a Multiple Choice Question (MCQ). Evaluate the Candidate Response against the Reference Answer letter/option.\n"
+        "Note: Advanced modes (CoT and Sentinel) contain internal reasoning chains, extracted claims, and audit flags. "
+        "Search through the candidate response, CoT claims, or Sentinel statements to determine if the correct option letter (A, B, C, or D) or correct factual choice is selected.\n\n"
         "### Question:\n{question}\n\n"
         "### Reference Answer:\n{reference}\n\n"
-        "### Candidate Answer:\n{candidate}\n\n"
+        "### Candidate Response & Agent Reasoning:\n{candidate}\n\n"
         "### Score Rubric:\n"
-        "[Score 5]: The response is completely accurate, flawless, and perfectly matches the reference answer.\n"
+        "[Score 5]: The correct MCQ option (or letter) is explicitly selected or logically derived in the response or CoT/Sentinel statements.\n"
+        "[Score 1]: An incorrect MCQ option is selected or no valid choice is derived.\n\n"
+        "### Feedback:"
+    )
+
+    # Open-Ended Rubric: Deep Technical & SEC Financial Evaluation
+    open_rubric_template = (
+        "### Task Description:\n"
+        "The question is Open-Ended (Financial SEC analysis or Software Architecture design). Evaluate technical accuracy, numerical precision, and trade-off depth against the reference answer.\n"
+        "Note: Advanced modes (CoT and Sentinel) include multi-step reasoning chains and verification audit flags. Evaluate the candidate's final synthesis, reasoning claims, and revised statements.\n\n"
+        "### Question:\n{question}\n\n"
+        "### Reference Answer:\n{reference}\n\n"
+        "### Candidate Response & Agent Reasoning:\n{candidate}\n\n"
+        "### Score Rubric:\n"
+        "[Score 5]: The response is completely accurate, contains all exact numerical/architectural details, and perfectly aligns with the reference answer.\n"
         "[Score 4]: The response is mostly accurate with minor missing details.\n"
         "[Score 3]: The response is partially correct but has notable omissions.\n"
-        "[Score 2]: The response has major inaccuracies.\n"
+        "[Score 2]: The response has major inaccuracies or wrong numbers.\n"
         "[Score 1]: The response is completely wrong or irrelevant.\n\n"
         "### Feedback:"
     )
@@ -54,22 +71,39 @@ def run_prometheus_grading():
 
     for idx, case in enumerate(cases, 1):
         q = case["question"]
-        ref = case["expected"]
+        ref = str(case["expected"]).strip()
         case_id = case["case_id"]
+        c_type = case.get("type", "open_text")
 
-        print(f"[{idx}/{len(cases)}] Grading Case {case_id} [{case['dataset']}]...")
+        # Detect if MCQ
+        is_mcq = ref.upper() in ["A", "B", "C", "D"] or c_type == "exact"
+
+        print(f"[{idx}/{len(cases)}] Grading Case {case_id} [{'MCQ' if is_mcq else 'OPEN-ENDED'}]...")
         sys.stdout.flush()
 
         for mode_name, resp_data in case.get("responses", {}).items():
             candidate_text = resp_data.get("answer", "")
             
-            # Append CoT claims or Sentinel flags if available for holistic evaluation
+            # Extract and format CoT claims and Sentinel revision statements for Prometheus
+            extra_context = []
             if "claims" in resp_data and resp_data["claims"]:
-                candidate_text += "\n\n[CoT Claims]: " + " | ".join(resp_data["claims"])
+                extra_context.append("--- Extracted Chain-of-Thought (CoT) Claims ---")
+                for c_idx, claim_stmt in enumerate(resp_data["claims"], 1):
+                    extra_context.append(f"Claim {c_idx}: {claim_stmt}")
+            
             if "sentinel_flags" in resp_data and resp_data["sentinel_flags"]:
-                candidate_text += "\n\n[Sentinel Audit Flags]: " + str(resp_data["sentinel_flags"])
+                extra_context.append("--- Sentinel Audit Verification Flags ---")
+                for f_idx, flag in enumerate(resp_data["sentinel_flags"], 1):
+                    extra_context.append(f"Flag {f_idx}: {flag}")
 
-            prompt = rubric_template.format(question=q, reference=ref, candidate=candidate_text)
+            if extra_context:
+                candidate_text += "\n\n" + "\n".join(extra_context)
+
+            # Select MCQ vs Open-Ended Rubric
+            if is_mcq:
+                prompt = mcq_rubric_template.format(question=q, reference=ref, candidate=candidate_text)
+            else:
+                prompt = open_rubric_template.format(question=q, reference=ref, candidate=candidate_text)
             
             inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
             with torch.no_grad():
