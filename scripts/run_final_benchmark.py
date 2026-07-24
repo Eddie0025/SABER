@@ -267,42 +267,51 @@ def run_benchmark():
     # ---------------------------------------------------------------
     if args.domain in ["all", "cyber"]:
         try:
-            cybermetric = load_hf_dataset("AcerSeb/CyberMetric", "CyberMetric-500", split="train[:100]")
+            cybermetric = load_hf_dataset("AcerSeb/CyberMetric", "CyberMetric-500", split="train")
             added_cyb = 0
             for row in cybermetric:
-                q_text = row.get("question", "") or row.get("Question", "")
-                ans_val = row.get("answer", "") or row.get("Answer", "")
-                explanation = row.get("explanation", "") or row.get("Explanation", "")
+                q_text = (row.get("question", "") or row.get("Question", "") or
+                          row.get("input", "") or row.get("prompt", ""))
+                ans_val = (row.get("answer", "") or row.get("Answer", "") or
+                          row.get("output", "") or row.get("response", ""))
+                explanation = (row.get("explanation", "") or row.get("Explanation", "") or
+                              row.get("rationale", ""))
                 
-                # Check choices/options
-                options = row.get("options", []) or row.get("choices", [])
-                if q_text and (options or ans_val):
-                    if options and len(options) == 4:
+                options = row.get("options", []) or row.get("choices", []) or row.get("answers", [])
+                
+                if q_text:
+                    if options and isinstance(options, list) and len(options) >= 2:
                         random.seed(42)
-                        choices = list(options)
+                        choices = list(options[:4])
+                        while len(choices) < 4:
+                            choices.append("N/A")
                         correct_ans = ans_val if ans_val in choices else choices[0]
                         random.shuffle(choices)
                         choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
                         correct_char = chr(65 + choices.index(correct_ans))
                         prompt = build_mcq_prompt(q_text, choices_str)
                         expected = correct_char
+                        b_type = "exact"
                     else:
                         prompt = f"Cybersecurity Question:\n{q_text}\n\nProvide the accurate threat intelligence / SOC protocol answer."
-                        expected = f"{ans_val}\n{explanation}".strip()
+                        expected = f"{ans_val}\n{explanation}".strip() if explanation else str(ans_val).strip()
+                        b_type = "exact"
 
                     bench_cases.append({
-                        "type": "exact" if options else "text",
+                        "type": b_type,
                         "question": prompt,
                         "expected": expected,
                         "domain": "cyber",
                         "dataset": "cybermetric_500"
                     })
                     added_cyb += 1
+                    if added_cyb >= 100:
+                        break
             print(f"[+] Loaded {added_cyb} Cyber (CyberMetric-500) cases.")
         except Exception as e:
-            # Fallback to secbench if CyberMetric-500 config unavailable
+            # Fallback to secbench if CyberMetric-500 config fails
             try:
-                secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:100]")
+                secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train")
                 added_cyb = 0
                 for row in secbench:
                     if row.get("language") == "English":
@@ -324,6 +333,8 @@ def run_benchmark():
                                 "dataset": "cybermetric_500"
                             })
                             added_cyb += 1
+                            if added_cyb >= 100:
+                                break
                 print(f"[+] Loaded {added_cyb} Cyber (CyberMetric Fallback) cases.")
             except Exception as ex:
                 print(f"[!] CyberMetric load failed: {ex}")
