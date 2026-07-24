@@ -36,8 +36,12 @@ class SpecialistRegistry:
     def __init__(self, persist_path: Optional[str] = None) -> None:
         self._lock = threading.Lock()
         self._persist_path = persist_path
-        # domain → Specialist instance
-        self._specialists: Dict[str, Specialist] = {}
+        self._specialists: Dict[str, Specialist] = {
+            "cyber": CyberSpecialist(),
+            "finance": FinanceSpecialist(),
+            "coding": CodingSpecialist(),
+            "architecture": ArchitectureSpecialist()
+        }
         # domain → SpecialistMeta (for serialisation)
         self._meta: Dict[str, dict] = {}
 
