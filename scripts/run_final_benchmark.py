@@ -239,10 +239,18 @@ def run_benchmark():
     # ---------------------------------------------------------------
     if args.domain in ["all", "coding"]:
         try:
-            try:
-                lcb = load_hf_dataset("livecodebench/code_generation_lite", trust_remote_code=True, split="test")
-            except Exception:
-                lcb = load_hf_dataset("livecodebench/code_generation_lite", trust_remote_code=True, split="train")
+            # Try loading LiveCodeBench via direct HuggingFace parquet API
+            import requests
+            res = requests.get("https://datasets-server.huggingface.co/parquet?dataset=livecodebench/code_generation_lite", timeout=10)
+            if res.status_code == 200:
+                files = [f["url"] for f in res.json().get("parquet_files", []) if f.get("split") in ["test", "train"]]
+                if files:
+                    lcb = load_hf_dataset("parquet", data_files=files)
+                    if hasattr(lcb, "keys") and len(lcb.keys()) > 0:
+                        lcb = lcb[list(lcb.keys())[0]]
+            else:
+                lcb = load_hf_dataset("livecodebench/code_generation_lite", split="test")
+                
             added_code = 0
             for row in lcb:
                 q_text = row.get("question_content", "") or row.get("prompt", "") or row.get("question", "")
