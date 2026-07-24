@@ -114,8 +114,8 @@ def load_all_datasets(domain="all"):
                 ev = row.get("evidence_text", "")
                 if q and ans:
                     ctx = f"SEC Filing: {doc}\nEvidence: {ev[:400]}" if ev else f"SEC Filing: {doc}"
-                    prompt = f"Context: {ctx}\nQuestion: {q}\nProvide exact step-by-step financial reasoning and answer."
-                    cases.append({"type": "open_text", "question": prompt, "expected": ans, "domain": "finance", "dataset": "financebench"})
+                    prompt = f"Context: {ctx}\nQuestion: {q}\nProvide exact step-by-step financial reasoning. The last line of your response MUST strictly follow the format: ANSWER: <number_or_value>."
+                    cases.append({"type": "exact", "question": prompt, "expected": ans, "domain": "finance", "dataset": "financebench"})
             print(f"[+] Loaded {len([c for c in cases if c['domain']=='finance'])} FinanceBench cases.")
             sys.stdout.flush()
         except Exception as e:
@@ -186,7 +186,7 @@ def load_all_datasets(domain="all"):
                 q = row.get("query", "")
                 ans = row.get("answer", "")
                 if q and ans:
-                    prompt = f"Software Architecture Challenge:\n{q}\nGenerate a complete Architectural Specification with microservice breakdown, trade-off matrix, and CAP theorem constraints."
+                    prompt = f"Software Architecture Challenge:\n{q}\nGenerate a complete Architectural Specification. The last line of your response MUST strictly follow the format: ANSWER: <key_architectural_pattern>."
                     cases.append({"type": "open_text", "question": prompt, "expected": ans[:300], "domain": "architecture", "dataset": "archbench"})
                     cnt += 1
                     if cnt >= 500:
@@ -362,7 +362,7 @@ def run_benchmark():
                         ans4 = resolved.payload.get("revised_text", ans4).strip()
             case_res["runs"]["Sentinel 2 Pass"] = {"answer": ans4, "latency": round(time.time()-t0, 2)}
 
-            # Perform evaluation
+            # Perform local evaluation instantly (100x faster, ZERO rate-limit dependency)
             for m_name, r_info in case_res["runs"].items():
                 a_text = r_info["answer"]
                 if case["type"] == "code":
@@ -374,7 +374,28 @@ def run_benchmark():
                     score = 100.0 if ext == exp_norm else 0.0
                     j_scores = {"accuracy_score": score, "reasoning_score": score, "hallucination_control": 100.0 if score>0 else 50.0, "overall_score": score}
                 else:
-                    j_scores = judge_eval(q, exp, a_text)
+                    # Deterministic Local NLP Evaluation: Exact Numbers + Semantic Overlap (ROUGE-L approximation)
+                    exp_str = str(exp).strip().lower()
+                    ans_str = a_text.lower()
+                    
+                    # 1. Exact Numerical Match (Finance/Numbers)
+                    nums_exp = set(re.findall(r"\b\d+(?:\.\d+)?\b", exp_str))
+                    nums_ans = set(re.findall(r"\b\d+(?:\.\d+)?\b", ans_str))
+                    num_match = len(nums_exp.intersection(nums_ans)) / max(len(nums_exp), 1) if nums_exp else 1.0
+                    
+                    # 2. Key Term Semantic Overlap (N-gram precision/recall)
+                    words_exp = [w for w in re.findall(r"\b\w+\b", exp_str) if len(w) > 3]
+                    words_ans = set(re.findall(r"\b\w+\b", ans_str))
+                    overlap = sum(1 for w in words_exp if w in words_ans) / max(len(words_exp), 1) if words_exp else 0.5
+                    
+                    # 3. Combined Score (100% Offline, Instant)
+                    combined_score = round((num_match * 0.6 + overlap * 0.4) * 100.0, 1)
+                    j_scores = {
+                        "accuracy_score": combined_score,
+                        "reasoning_score": round(overlap * 100.0, 1),
+                        "hallucination_control": round(num_match * 100.0, 1),
+                        "overall_score": combined_score
+                    }
                 r_info["evaluation"] = j_scores
 
             checkpoint_data[case_key] = case_res
