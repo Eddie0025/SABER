@@ -260,8 +260,6 @@ def run_benchmark():
                     "dataset": "livecodebench"
                 })
                 added_code += 1
-                if added_code >= 500:
-                    break
         print(f"[+] Loaded FULL {added_code} Coding (LiveCodeBench) cases.")
 
     # ---------------------------------------------------------------
@@ -270,9 +268,9 @@ def run_benchmark():
     if args.domain in ["all", "cyber"]:
         try:
             try:
-                cybermetric = load_hf_dataset("khangmacon/cybermetric-10000", split="train[:500]")
+                cybermetric = load_hf_dataset("khangmacon/cybermetric-10000", split="train")
             except Exception:
-                cybermetric = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:500]")
+                cybermetric = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train")
                 
             added_cyb = 0
             for row in cybermetric:
@@ -320,7 +318,7 @@ def run_benchmark():
     # ---------------------------------------------------------------
     if args.domain in ["all", "architecture"]:
         try:
-            arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train[:500]")
+            arch_ds = load_hf_dataset("m-a-p/CodeFeedback-Filtered-Instruction", split="train")
             added_arch = 0
             for row in arch_ds:
                 q_text = row.get("query", "")
