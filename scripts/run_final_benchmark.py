@@ -536,15 +536,15 @@ def run_benchmark():
         "You are an expert AI Benchmark Judge evaluating technical, mathematical, and reasoning responses. "
         "Compare the Model's generated response against the Question and Ground Truth Answer.\n"
         "Evaluate on 3 criteria:\n"
-        "1. Factual & Technical Accuracy (0 to 10)\n"
-        "2. Logical Reasoning & Chain-of-Thought Structure (0 to 10)\n"
-        "3. Hallucination Control & Precision (0 to 10)\n\n"
+        "1. Factual & Technical Accuracy (0.0 to 100.0%)\n"
+        "2. Logical Reasoning & Chain-of-Thought Structure (0.0 to 100.0%)\n"
+        "3. Hallucination Control & Precision (0.0 to 100.0%)\n\n"
         "Respond ONLY with a valid JSON object matching this schema:\n"
         "{\n"
-        '  "accuracy_score": <float 0-10>,\n'
-        '  "reasoning_score": <float 0-10>,\n'
-        '  "hallucination_control": <float 0-10>,\n'
-        '  "overall_score": <float 0-10>\n'
+        '  "accuracy_score": <float 0.0-100.0>,\n'
+        '  "reasoning_score": <float 0.0-100.0>,\n'
+        '  "hallucination_control": <float 0.0-100.0>,\n'
+        '  "overall_score": <float 0.0-100.0>\n'
         "}"
     )
 
@@ -590,7 +590,7 @@ def run_benchmark():
                 "max_tokens": 200
             }
 
-            scores = {"accuracy_score": 5.0, "reasoning_score": 5.0, "hallucination_control": 5.0, "overall_score": 5.0}
+            scores = {"accuracy_score": 50.0, "reasoning_score": 50.0, "hallucination_control": 50.0, "overall_score": 50.0}
             for attempt in range(3):
                 try:
                     resp = requests.post(api_url, headers=headers, json=payload, timeout=25)
@@ -602,23 +602,27 @@ def run_benchmark():
                         if start != -1 and end != -1:
                             clean_json = clean_json[start:end+1]
                         parsed = json.loads(clean_json)
+                        # Normalize 0-10 scores to 0-100% if judge returns 0-10 range
+                        for k in ["accuracy_score", "reasoning_score", "hallucination_control", "overall_score"]:
+                            if k in parsed and parsed[k] <= 10.0:
+                                parsed[k] = parsed[k] * 10.0
                         scores = parsed
                         break
                 except Exception:
                     time.sleep(1)
 
             st = judge_summary[ds][mode_name]
-            st["acc_sum"] += scores.get("accuracy_score", 5.0)
-            st["reas_sum"] += scores.get("reasoning_score", 5.0)
-            st["hall_sum"] += scores.get("hallucination_control", 5.0)
-            st["ovr_sum"] += scores.get("overall_score", 5.0)
+            st["acc_sum"] += scores.get("accuracy_score", 50.0)
+            st["reas_sum"] += scores.get("reasoning_score", 50.0)
+            st["hall_sum"] += scores.get("hallucination_control", 50.0)
+            st["ovr_sum"] += scores.get("overall_score", 50.0)
             st["cnt"] += 1
             run_data["llm_judge"] = scores
 
     # Output LLM-as-a-Judge Table
     judge_table_lines = [
-        "\n=== LLM-AS-A-JUDGE (Nemotron 3 Ultra 550B) SCORES (0-10) ===",
-        f"| Dataset | Mode | Accuracy | Reasoning | Hallucination Ctrl | Overall Score |",
+        "\n=== LLM-AS-A-JUDGE (Nemotron 3 Ultra 550B) PERCENTAGE SCORES (%) ===",
+        f"| Dataset | Mode | Accuracy (%) | Reasoning (%) | Hallucination Ctrl (%) | Overall Score (%) |",
         f"| :--- | :--- | :--- | :--- | :--- | :--- |"
     ]
     for ds, m_data in judge_summary.items():
@@ -631,7 +635,7 @@ def run_benchmark():
             reas = st["reas_sum"] / cnt
             hall = st["hall_sum"] / cnt
             ovr = st["ovr_sum"] / cnt
-            judge_table_lines.append(f"| {ds} | {m_name} | {acc:.2f} | {reas:.2f} | {hall:.2f} | **{ovr:.2f}** |")
+            judge_table_lines.append(f"| {ds} | {m_name} | {acc:.1f}% | {reas:.1f}% | {hall:.1f}% | **{ovr:.1f}%** |")
 
     judge_table_md = "\n".join(judge_table_lines)
     print(judge_table_md)
