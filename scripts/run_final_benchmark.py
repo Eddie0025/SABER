@@ -671,8 +671,11 @@ def run_benchmark():
                         if not st or st["acc_cnt"] == 0:
                             cells.append("N/A")
                             continue
-                        pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
-                        cells.append(f"{pct:.1f}%")
+                        if ds in ["financebench", "archbench"]:
+                            cells.append("Pending Judge (Phase 2)")
+                        else:
+                            pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
+                            cells.append(f"{pct:.1f}%")
                     print("| " + " | ".join(cells) + " |")
                 print("="*70 + "\n")
                 
