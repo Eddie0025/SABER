@@ -637,7 +637,11 @@ def run_benchmark():
             # ----- Live Scoreboard (every 10 cases or dataset boundary) -----
             is_dataset_complete = (idx_in_ds == len(cases))
             if is_dataset_complete or (idx_in_ds % 10 == 0):
-                print(f"\n[LIVE UPDATE] Progress: {global_idx}/{len(bench_cases)} cases completed.")
+                pct_done = (global_idx / len(bench_cases)) * 100.0
+                ds_pct_done = (idx_in_ds / len(cases)) * 100.0
+                print(f"\n" + "="*70)
+                print(f" 📊 [LIVE SCOREBOARD] Overall Progress: {global_idx}/{len(bench_cases)} ({pct_done:.1f}%) | {ds_name}: {idx_in_ds}/{len(cases)} ({ds_pct_done:.1f}%)")
+                print("="*70)
                 live_summary = {}
                 for r in results:
                     ds = r["dataset"]
@@ -651,7 +655,7 @@ def run_benchmark():
                         live_summary[ds][m_name]["acc_cnt"] += 1
                 
                 print(f"| Dataset | {' | '.join(MODE_NAMES)} |")
-                print(f"| :--- | {' | '.join([':---'] * 5)} |")
+                print(f"| :--- | {' | '.join([':---'] * 4)} |")
                 for ds, m_data in live_summary.items():
                     cells = [ds]
                     for m_name in MODE_NAMES:
@@ -662,7 +666,7 @@ def run_benchmark():
                         pct = (st["acc_sum"] / st["acc_cnt"]) * 100.0
                         cells.append(f"{pct:.1f}%")
                     print("| " + " | ".join(cells) + " |")
-                print("-" * 60)
+                print("="*70 + "\n")
                 
         # Offload specialist and clear VRAM cache after dataset is complete
         specialist = None
