@@ -223,7 +223,7 @@ def run_benchmark():
                     context = f"SEC Filing Document: {doc_name}\nEvidence Context: {evidence[:500]}" if evidence else f"SEC Filing Document: {doc_name}"
                     prompt = f"Context: {context}\nQuestion: {q_text}\nAnswer the financial question step-by-step with exact numerical backing."
                     bench_cases.append({
-                        "type": "exact",
+                        "type": "open_text",
                         "question": prompt,
                         "expected": answer,
                         "domain": "finance",
