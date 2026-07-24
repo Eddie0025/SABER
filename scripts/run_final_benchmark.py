@@ -514,5 +514,132 @@ def run_benchmark():
     print("\n=== FINAL MCQ BENCHMARK SCORES ===")
     print(table_md)
 
+    # =====================================================================
+    # 5. LLM-as-a-Judge Evaluation (OpenRouter: Nemotron 3 Ultra 550B)
+    # =====================================================================
+    print("\n==========================================================")
+    print("   SABER LLM-as-a-Judge Evaluation (Nemotron-3-Ultra)")
+    print("==========================================================\n")
+    import requests
+
+    key_file = "openrouter.key"
+    default_key = ""
+    if os.path.exists(key_file):
+        with open(key_file, "r") as kf:
+            default_key = kf.read().strip()
+            
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY", default_key)
+    judge_model = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    api_url = "https://openrouter.ai/api/v1/chat/completions"
+
+    judge_system_prompt = (
+        "You are an expert AI Benchmark Judge evaluating technical, mathematical, and reasoning responses. "
+        "Compare the Model's generated response against the Question and Ground Truth Answer.\n"
+        "Evaluate on 3 criteria:\n"
+        "1. Factual & Technical Accuracy (0 to 10)\n"
+        "2. Logical Reasoning & Chain-of-Thought Structure (0 to 10)\n"
+        "3. Hallucination Control & Precision (0 to 10)\n\n"
+        "Respond ONLY with a valid JSON object matching this schema:\n"
+        "{\n"
+        '  "accuracy_score": <float 0-10>,\n'
+        '  "reasoning_score": <float 0-10>,\n'
+        '  "hallucination_control": <float 0-10>,\n'
+        '  "overall_score": <float 0-10>\n'
+        "}"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {openrouter_api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/Eddie0025/SABER",
+        "X-Title": "SABER Multi-Agent Evaluation"
+    }
+
+    judge_summary = {}
+    total_judge_cases = len(results)
+
+    for case_idx, case_res in enumerate(results, 1):
+        ds = case_res["dataset"]
+        q = case_res["question"]
+        exp = case_res.get("expected", "")
+        if ds not in judge_summary:
+            judge_summary[ds] = {}
+
+        print(f"[*] Judge Evaluating Case {case_idx}/{total_judge_cases} [{ds}]...")
+
+        for mode_name, run_data in case_res["runs"].items():
+            if mode_name not in judge_summary[ds]:
+                judge_summary[ds][mode_name] = {
+                    "acc_sum": 0.0, "reas_sum": 0.0, "hall_sum": 0.0, "ovr_sum": 0.0, "cnt": 0
+                }
+
+            ans_text = run_data.get("answer", "")
+            user_prompt = (
+                f"--- QUESTION ---\n{q}\n\n"
+                f"--- EXPECTED ANSWER ---\n{exp}\n\n"
+                f"--- MODEL RESPONSE TO EVALUATE ---\n{ans_text}"
+            )
+
+            payload = {
+                "model": judge_model,
+                "messages": [
+                    {"role": "system", "content": judge_system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 200
+            }
+
+            scores = {"accuracy_score": 5.0, "reasoning_score": 5.0, "hallucination_control": 5.0, "overall_score": 5.0}
+            for attempt in range(3):
+                try:
+                    resp = requests.post(api_url, headers=headers, json=payload, timeout=25)
+                    if resp.status_code == 200:
+                        content = resp.json()["choices"][0]["message"]["content"].strip()
+                        clean_json = content.replace("```json", "").replace("```", "").strip()
+                        start = clean_json.find("{")
+                        end = clean_json.rfind("}")
+                        if start != -1 and end != -1:
+                            clean_json = clean_json[start:end+1]
+                        parsed = json.loads(clean_json)
+                        scores = parsed
+                        break
+                except Exception:
+                    time.sleep(1)
+
+            st = judge_summary[ds][mode_name]
+            st["acc_sum"] += scores.get("accuracy_score", 5.0)
+            st["reas_sum"] += scores.get("reasoning_score", 5.0)
+            st["hall_sum"] += scores.get("hallucination_control", 5.0)
+            st["ovr_sum"] += scores.get("overall_score", 5.0)
+            st["cnt"] += 1
+            run_data["llm_judge"] = scores
+
+    # Output LLM-as-a-Judge Table
+    judge_table_lines = [
+        "\n=== LLM-AS-A-JUDGE (Nemotron 3 Ultra 550B) SCORES (0-10) ===",
+        f"| Dataset | Mode | Accuracy | Reasoning | Hallucination Ctrl | Overall Score |",
+        f"| :--- | :--- | :--- | :--- | :--- | :--- |"
+    ]
+    for ds, m_data in judge_summary.items():
+        for m_name in MODE_NAMES:
+            st = m_data.get(m_name)
+            if not st or st["cnt"] == 0:
+                continue
+            cnt = st["cnt"]
+            acc = st["acc_sum"] / cnt
+            reas = st["reas_sum"] / cnt
+            hall = st["hall_sum"] / cnt
+            ovr = st["ovr_sum"] / cnt
+            judge_table_lines.append(f"| {ds} | {m_name} | {acc:.2f} | {reas:.2f} | {hall:.2f} | **{ovr:.2f}** |")
+
+    judge_table_md = "\n".join(judge_table_lines)
+    print(judge_table_md)
+
+    with open("saber_llm_judge_report.md", "w", encoding="utf-8") as f:
+        f.write(judge_table_md + "\n")
+    with open("saber_final_benchmark_report.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+
 if __name__ == "__main__":
     run_benchmark()
