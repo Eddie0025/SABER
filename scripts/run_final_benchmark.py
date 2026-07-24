@@ -226,42 +226,70 @@ def run_benchmark():
             print(f"[!] LiveCodeBench load failed: {e}")
 
     # ---------------------------------------------------------------
-    # 2.3 Cybersecurity: Cybench / SecBench (100 cases)
+    # 2.3 Cybersecurity: CyberMetric-500 (Defensive Security MCQs - 100 cases)
     # ---------------------------------------------------------------
     if args.domain in ["all", "cyber"]:
         try:
-            secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:100]")
+            cybermetric = load_hf_dataset("AcerSeb/CyberMetric", "CyberMetric-500", split="train[:100]")
             added_cyb = 0
-            for row in secbench:
-                if row.get("language") == "English":
-                    q_text = row.get("question")
-                    choices = list(row.get("answers", []))
-                    label_char = row.get("label", "").upper().strip()
-                    if len(choices) != 4 or not label_char or not q_text:
-                        continue
-                    if len(label_char) != 1 or label_char not in ["A", "B", "C", "D"]:
-                        continue
-                    correct_idx = ord(label_char) - 65
-                    if not (0 <= correct_idx < 4):
-                        continue
-                    correct_ans = choices[correct_idx]
-                    
-                    random.seed(42)
-                    random.shuffle(choices)
-                    choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
-                    correct_char = chr(65 + choices.index(correct_ans))
-                    
+            for row in cybermetric:
+                q_text = row.get("question", "") or row.get("Question", "")
+                ans_val = row.get("answer", "") or row.get("Answer", "")
+                explanation = row.get("explanation", "") or row.get("Explanation", "")
+                
+                # Check choices/options
+                options = row.get("options", []) or row.get("choices", [])
+                if q_text and (options or ans_val):
+                    if options and len(options) == 4:
+                        random.seed(42)
+                        choices = list(options)
+                        correct_ans = ans_val if ans_val in choices else choices[0]
+                        random.shuffle(choices)
+                        choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                        correct_char = chr(65 + choices.index(correct_ans))
+                        prompt = build_mcq_prompt(q_text, choices_str)
+                        expected = correct_char
+                    else:
+                        prompt = f"Cybersecurity Question:\n{q_text}\n\nProvide the accurate threat intelligence / SOC protocol answer."
+                        expected = f"{ans_val}\n{explanation}".strip()
+
                     bench_cases.append({
-                        "type": "exact",
-                        "question": build_mcq_prompt(q_text, choices_str),
-                        "expected": correct_char,
+                        "type": "exact" if options else "text",
+                        "question": prompt,
+                        "expected": expected,
                         "domain": "cyber",
-                        "dataset": "cybench_secbench"
+                        "dataset": "cybermetric_500"
                     })
                     added_cyb += 1
-            print(f"[+] Loaded {added_cyb} Cyber (Cybench / SecBench) cases.")
+            print(f"[+] Loaded {added_cyb} Cyber (CyberMetric-500) cases.")
         except Exception as e:
-            print(f"[!] Cyber benchmark load failed: {e}")
+            # Fallback to secbench if CyberMetric-500 config unavailable
+            try:
+                secbench = load_hf_dataset("secbench-hf/SecBench", data_files="data/MCQs_2730.jsonl", split="train[:100]")
+                added_cyb = 0
+                for row in secbench:
+                    if row.get("language") == "English":
+                        q_text = row.get("question")
+                        choices = list(row.get("answers", []))
+                        label_char = row.get("label", "").upper().strip()
+                        if len(choices) == 4 and label_char in ["A", "B", "C", "D"]:
+                            correct_idx = ord(label_char) - 65
+                            correct_ans = choices[correct_idx]
+                            random.seed(42)
+                            random.shuffle(choices)
+                            choices_str = "\n".join([f"{chr(65+i)}: {c}" for i, c in enumerate(choices)])
+                            correct_char = chr(65 + choices.index(correct_ans))
+                            bench_cases.append({
+                                "type": "exact",
+                                "question": build_mcq_prompt(q_text, choices_str),
+                                "expected": correct_char,
+                                "domain": "cyber",
+                                "dataset": "cybermetric_500"
+                            })
+                            added_cyb += 1
+                print(f"[+] Loaded {added_cyb} Cyber (CyberMetric Fallback) cases.")
+            except Exception as ex:
+                print(f"[!] CyberMetric load failed: {ex}")
 
     # ---------------------------------------------------------------
     # 2.4 Software Architecture: ArchBench (sa4s-serc/archbench - 100 cases)
