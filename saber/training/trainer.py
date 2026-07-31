@@ -46,13 +46,17 @@ def run_dora_training(args):
     """
     SFT DoRA Training with early stopping (Save Best, Not Last) based on validate_dora.py checks.
     """
-    logger.info(f"Starting DoRA training. Base Model: {BASE_MODEL}")
-    
+    logger.info("Setting up tokenizer and padding...")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+    
+    # Critical fix for Qwen/Llama padding crashes
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right" # For SFT, right padding is standard
+    
     model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, device_map="auto")
     
     # 1. FIXED DATA COLLATOR (Native implementation)
-    # Mask loss (-100) on everything except the assistant's answer tokens.
     response_template = "<|im_start|>assistant\n"
     collator = CustomCompletionOnlyCollator(
         response_template=response_template, 
@@ -112,9 +116,12 @@ def run_dora_training(args):
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset,
-        eval_dataset=dataset.select(range(min(100, len(dataset)))), # Tiny subset for validation testing
+        eval_dataset=dataset.select(range(min(100, len(dataset)))),
         args=training_args,
-        data_collator=collator
+        data_collator=collator,
+        dataset_text_field="text",
+        max_seq_length=4096,
+        dataset_num_proc=8 # Speeds up the tokenization significantly on DGX
     )
     
     logger.info("Starting training loop on H100 DGX...")
