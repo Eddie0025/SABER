@@ -92,10 +92,7 @@ def run_dora_training(args):
     # 4. TOKENIZE DATASET MANUALLY (Bypasses TRL completely)
     logger.info("Pre-tokenizing dataset (Max Length: 4096)...")
     def tokenize_func(examples):
-        tokens = tokenizer(examples["text"], truncation=True, max_length=4096, padding=False)
-        # Duplicate input_ids into labels for language modeling
-        tokens["labels"] = [ids.copy() for ids in tokens["input_ids"]]
-        return tokens
+        return tokenizer(examples["text"], truncation=True, max_length=4096, padding=False)
         
     tokenized_dataset = dataset.map(tokenize_func, batched=True, num_proc=8, remove_columns=dataset.column_names)
     eval_dataset = tokenized_dataset.select(range(min(100, len(tokenized_dataset))))
