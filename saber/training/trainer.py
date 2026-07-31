@@ -1,8 +1,32 @@
-import argparse
+import os
+import sys
+import subprocess
 import logging
+import argparse
+
+# Auto-install dependencies if they fail
+def ensure_dependencies():
+    try:
+        import trl
+        import peft
+        import transformers
+        import datasets
+    except ImportError:
+        print("Missing required libraries. Installing them now...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "trl<0.9.0", "transformers", "peft", "datasets"])
+
+ensure_dependencies()
+
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
-from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
+from trl import SFTTrainer
+
+# Handle trl version differences for the data collator
+try:
+    from trl import DataCollatorForCompletionOnlyLM
+except ImportError:
+    from trl.trainer import DataCollatorForCompletionOnlyLM
+
 from saber.config import BASE_MODEL, TARGET_MODULE_PRESETS, DORA_CONFIG
 from saber.training.rewards import log_grpo_reward_variance
 from saber.training.dataset_loader import load_specialist_dataset, apply_chatml_formatting
