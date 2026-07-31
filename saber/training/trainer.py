@@ -2,9 +2,10 @@ import os
 import sys
 import logging
 import argparse
+import torch
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, BitsAndBytesConfig
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
+from peft import LoraConfig, get_peft_model
 
 # --- CUSTOM DATA COLLATOR ---
 # We implement this natively to avoid any TRL versioning/import nightmares
@@ -53,16 +54,12 @@ def run_dora_training(args):
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right" # For SFT, right padding is standard
     
-    # Load model in 4-bit quantization to fit in 80GB H100 VRAM
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype="float16",
-        bnb_4bit_use_double_quant=True
+    logger.info("Loading base model in native bfloat16 (no quantization) for higher DoRA accuracy...")
+    model = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL, 
+        torch_dtype=torch.bfloat16,
+        device_map="auto"
     )
-    logger.info("Loading model in 4-bit quantization (NF4)...")
-    model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, quantization_config=bnb_config, device_map="auto")
-    model = prepare_model_for_kbit_training(model)
     
     # 1. FIXED DATA COLLATOR (Native implementation)
     response_template = "<|im_start|>assistant\n"
@@ -108,7 +105,9 @@ def run_dora_training(args):
         return tokenizer(examples["text"], truncation=True, max_length=2048, padding=False)
         
     tokenized_dataset = dataset.map(tokenize_func, batched=True, num_proc=8, remove_columns=dataset.column_names)
-    eval_dataset = tokenized_dataset.select(range(min(100, len(tokenized_dataset))))
+    
+    # Shuffle and take 300 for validation
+    eval_dataset = tokenized_dataset.shuffle(seed=42).select(range(min(300, len(tokenized_dataset))))
 
     # 5. STANDARD NATIVE TRAINER EXECUTION (80GB H100 Optimized)
     # Batch=2 x GradAccum=16 = effective batch 32 (same as before, but fits in VRAM)
@@ -118,12 +117,14 @@ def run_dora_training(args):
         gradient_accumulation_steps=16,
         learning_rate=2e-4,
         num_train_epochs=3,
-        save_strategy="epoch",
-        eval_strategy="epoch",
+        save_strategy="steps",
+        save_steps=150,
+        eval_strategy="steps",
+        eval_steps=150,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         logging_steps=10,
-        fp16=True,
+        bf16=True,
         report_to="none",
         gradient_checkpointing=True
     )
