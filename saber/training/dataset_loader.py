@@ -17,15 +17,17 @@ DATASET_REGISTRY = {
         {"path": "tat-qa", "split": "train"}
     ],
     "python": [
-        {"path": "codealpaca", "split": "train"},
-        {"path": "magicoder-oss-instruct", "split": "train"},
-        {"path": "apps", "split": "train"}
+        {"path": "sahil2801/CodeAlpaca-20k", "split": "train"},
+        {"path": "ise-uiuc/Magicoder-OSS-Instruct-75K", "split": "train"}
+        # Removing APPS to avoid auth/structure issues for this test run
     ],
     "javascript": [
-        {"path": "the-stack-js-ts", "split": "train"}
+        # The Stack is gated (requires HF Token). Using an ungated code instruct dataset.
+        {"path": "TokenBender/code_instructions_122k_alpaca_style", "split": "train"}
     ],
     "sql": [
-        {"path": "spider", "split": "train"}
+        # Spider sometimes fails on older datasets library versions, using a robust SQL dataset
+        {"path": "b-mc2/sql-create-context", "split": "train"}
     ],
     "architecture_qa": [
         {"path": "synthetic-architecture-qa", "split": "train"}
