@@ -61,6 +61,11 @@ def run_dora_training(args):
         device_map="auto"
     )
     
+    # CRITICAL: Since we removed prepare_model_for_kbit_training, we must manually 
+    # enable input gradients so backprop flows through the frozen base weights to the adapters.
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+    
     # 1. FIXED DATA COLLATOR (Native implementation)
     response_template = "<|im_start|>assistant\n"
     collator = CustomCompletionOnlyCollator(
@@ -110,7 +115,13 @@ def run_dora_training(args):
     eval_dataset = tokenized_dataset.shuffle(seed=42).select(range(min(300, len(tokenized_dataset))))
 
     # 5. STANDARD NATIVE TRAINER EXECUTION (80GB H100 Optimized)
-    # Batch=2 x GradAccum=16 = effective batch 32 (same as before, but fits in VRAM)
+    # Batch=2 x GradAccum=16 = effective batch 32
+    # Dynamically calculate eval_steps to ensure ~10 points across the 3 epochs
+    effective_batch = 2 * 16
+    total_steps = (len(tokenized_dataset) // effective_batch) * 3
+    dynamic_eval_steps = max(1, total_steps // 10)
+    logger.info(f"Total Steps: {total_steps} | Dynamic Eval Steps: {dynamic_eval_steps}")
+
     training_args = TrainingArguments(
         output_dir=f"models/{args.specialist}_checkpoints",
         per_device_train_batch_size=2,
@@ -118,9 +129,9 @@ def run_dora_training(args):
         learning_rate=2e-4,
         num_train_epochs=3,
         save_strategy="steps",
-        save_steps=150,
+        save_steps=dynamic_eval_steps,
         eval_strategy="steps",
-        eval_steps=150,
+        eval_steps=dynamic_eval_steps,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         logging_steps=10,
