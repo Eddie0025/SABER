@@ -95,32 +95,56 @@ def run_dora_training(args):
         return
         
     # 4. SFT TRAINER EXECUTION (80GB H100 Optimized)
-    from transformers import TrainingArguments
-    
-    # "Save Best, Not Last" early stopping driven by eval accuracy
-    training_args = TrainingArguments(
-        output_dir=f"models/{args.specialist}_checkpoints",
-        per_device_train_batch_size=8,
-        gradient_accumulation_steps=4,
-        learning_rate=2e-4,
-        num_train_epochs=3, # Configured in DATASETS.md, but driven by early stopping
-        save_strategy="epoch",
-        eval_strategy="epoch",
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        logging_steps=10,
-        fp16=True, # H100 supports bf16 too
-        report_to="none"
-    )
+    # TRL 1.9.2+ requires SFTConfig instead of passing args to SFTTrainer directly
+    try:
+        from trl import SFTConfig
+        training_args = SFTConfig(
+            output_dir=f"models/{args.specialist}_checkpoints",
+            per_device_train_batch_size=8,
+            gradient_accumulation_steps=4,
+            learning_rate=2e-4,
+            num_train_epochs=3,
+            save_strategy="epoch",
+            eval_strategy="epoch",
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
+            logging_steps=10,
+            fp16=True,
+            report_to="none",
+            max_seq_length=4096,
+            dataset_text_field="text",
+            dataset_num_proc=8
+        )
+        trainer_kwargs = {"args": training_args}
+    except ImportError:
+        from transformers import TrainingArguments
+        training_args = TrainingArguments(
+            output_dir=f"models/{args.specialist}_checkpoints",
+            per_device_train_batch_size=8,
+            gradient_accumulation_steps=4,
+            learning_rate=2e-4,
+            num_train_epochs=3,
+            save_strategy="epoch",
+            eval_strategy="epoch",
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
+            logging_steps=10,
+            fp16=True,
+            report_to="none"
+        )
+        trainer_kwargs = {
+            "args": training_args,
+            "max_seq_length": 4096,
+            "dataset_text_field": "text",
+            "dataset_num_proc": 8
+        }
     
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset,
         eval_dataset=dataset.select(range(min(100, len(dataset)))),
-        args=training_args,
         data_collator=collator,
-        max_seq_length=4096,
-        dataset_num_proc=8 # Speeds up the tokenization significantly on DGX
+        **trainer_kwargs
     )
     
     logger.info("Starting training loop on H100 DGX...")
