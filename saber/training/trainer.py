@@ -1,31 +1,33 @@
 import os
 import sys
-import subprocess
 import logging
 import argparse
-
-# Auto-install dependencies if they fail
-def ensure_dependencies():
-    try:
-        import trl
-        import peft
-        import transformers
-        import datasets
-    except ImportError:
-        print("Missing required libraries. Installing them now...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "trl<0.9.0", "transformers", "peft", "datasets"])
-
-ensure_dependencies()
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
 from trl import SFTTrainer
 
-# Handle trl version differences for the data collator
-try:
-    from trl import DataCollatorForCompletionOnlyLM
-except ImportError:
-    from trl.trainer import DataCollatorForCompletionOnlyLM
+# --- CUSTOM DATA COLLATOR ---
+# We implement this natively to avoid any TRL versioning/import nightmares
+from transformers import DataCollatorForLanguageModeling
+
+class CustomCompletionOnlyCollator(DataCollatorForLanguageModeling):
+    def __init__(self, response_template: str, tokenizer, *args, **kwargs):
+        self.response_template_ids = tokenizer.encode(response_template, add_special_tokens=False)
+        super().__init__(tokenizer=tokenizer, *args, **kwargs)
+
+    def torch_call(self, examples):
+        batch = super().torch_call(examples)
+        for i in range(len(batch["labels"])):
+            labels = batch["labels"][i].tolist()
+            # Find the response template and mask everything before it with -100
+            for j in range(len(labels) - len(self.response_template_ids)):
+                if labels[j : j + len(self.response_template_ids)] == self.response_template_ids:
+                    # Mask everything up to the END of the response template
+                    batch["labels"][i, : j + len(self.response_template_ids)] = -100
+                    break
+        return batch
+# ----------------------------
 
 from saber.config import BASE_MODEL, TARGET_MODULE_PRESETS, DORA_CONFIG
 from saber.training.rewards import log_grpo_reward_variance
@@ -49,14 +51,15 @@ def run_dora_training(args):
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
     model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, device_map="auto")
     
-    # 1. FIXED DATA COLLATOR
+    # 1. FIXED DATA COLLATOR (Native implementation)
     # Mask loss (-100) on everything except the assistant's answer tokens.
     response_template = "<|im_start|>assistant\n"
-    collator = DataCollatorForCompletionOnlyLM(
+    collator = CustomCompletionOnlyCollator(
         response_template=response_template, 
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        mlm=False
     )
-    logger.info("Using DataCollatorForCompletionOnlyLM to correctly mask prompt tokens.")
+    logger.info("Using CustomCompletionOnlyCollator to correctly mask prompt tokens.")
     
     # 2. TARGET MODULE PRESET
     target_modules = get_target_modules(args.target_modules)
