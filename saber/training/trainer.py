@@ -3,9 +3,8 @@ import sys
 import logging
 import argparse
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
 from peft import LoraConfig, get_peft_model
-from trl import SFTTrainer
 
 # --- CUSTOM DATA COLLATOR ---
 # We implement this natively to avoid any TRL versioning/import nightmares
@@ -90,55 +89,39 @@ def run_dora_training(args):
     # 3. LOAD DATASET
     logger.info(f"Loading dataset for specialist: {args.specialist}")
     dataset = load_specialist_dataset(args.specialist)
-    if not dataset:
-        logger.error("Dataset loading failed. Aborting training.")
-        return
+    # 4. TOKENIZE DATASET MANUALLY (Bypasses TRL completely)
+    logger.info("Pre-tokenizing dataset (Max Length: 4096)...")
+    def tokenize_func(examples):
+        tokens = tokenizer(examples["text"], truncation=True, max_length=4096, padding=False)
+        # Duplicate input_ids into labels for language modeling
+        tokens["labels"] = [ids.copy() for ids in tokens["input_ids"]]
+        return tokens
         
-    # 4. SFT TRAINER EXECUTION (80GB H100 Optimized)
-    # TRL 1.9.2+ requires SFTConfig instead of passing args to SFTTrainer directly
-    try:
-        from trl import SFTConfig
-        training_args = SFTConfig(
-            output_dir=f"models/{args.specialist}_checkpoints",
-            per_device_train_batch_size=8,
-            gradient_accumulation_steps=4,
-            learning_rate=2e-4,
-            num_train_epochs=3,
-            save_strategy="epoch",
-            eval_strategy="epoch",
-            load_best_model_at_end=True,
-            metric_for_best_model="eval_loss",
-            logging_steps=10,
-            fp16=True,
-            report_to="none"
-        )
-        trainer_kwargs = {"args": training_args}
-    except ImportError:
-        from transformers import TrainingArguments
-        training_args = TrainingArguments(
-            output_dir=f"models/{args.specialist}_checkpoints",
-            per_device_train_batch_size=8,
-            gradient_accumulation_steps=4,
-            learning_rate=2e-4,
-            num_train_epochs=3,
-            save_strategy="epoch",
-            eval_strategy="epoch",
-            load_best_model_at_end=True,
-            metric_for_best_model="eval_loss",
-            logging_steps=10,
-            fp16=True,
-            report_to="none"
-        )
-        trainer_kwargs = {
-            "args": training_args
-        }
+    tokenized_dataset = dataset.map(tokenize_func, batched=True, num_proc=8, remove_columns=dataset.column_names)
+    eval_dataset = tokenized_dataset.select(range(min(100, len(tokenized_dataset))))
+
+    # 5. STANDARD NATIVE TRAINER EXECUTION (80GB H100 Optimized)
+    training_args = TrainingArguments(
+        output_dir=f"models/{args.specialist}_checkpoints",
+        per_device_train_batch_size=8,
+        gradient_accumulation_steps=4,
+        learning_rate=2e-4,
+        num_train_epochs=3,
+        save_strategy="epoch",
+        eval_strategy="epoch",
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        logging_steps=10,
+        fp16=True,
+        report_to="none"
+    )
     
-    trainer = SFTTrainer(
+    trainer = Trainer(
         model=model,
-        train_dataset=dataset,
-        eval_dataset=dataset.select(range(min(100, len(dataset)))),
+        train_dataset=tokenized_dataset,
+        eval_dataset=eval_dataset,
         data_collator=collator,
-        **trainer_kwargs
+        args=training_args
     )
     
     logger.info("Starting training loop on H100 DGX...")
