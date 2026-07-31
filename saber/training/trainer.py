@@ -98,6 +98,10 @@ def run_dora_training(args):
     # 3. LOAD DATASET
     logger.info(f"Loading dataset for specialist: {args.specialist}")
     dataset = load_specialist_dataset(args.specialist)
+    if dataset is None:
+        logger.error(f"Failed to load dataset for {args.specialist}. Skipping training.")
+        return
+        
     # 4. TOKENIZE DATASET MANUALLY (Bypasses TRL completely)
     logger.info("Pre-tokenizing dataset (Max Length: 2048)...")
     def tokenize_func(examples):
