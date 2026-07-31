@@ -157,7 +157,7 @@ def run_dora_training(args):
     
     # 5. POST-TRAINING VALIDATION
     logger.info("Triggering post-training validation suite...")
-    validate_dora(base_model=BASE_MODEL, adapter_path=output_model_path)
+    validate_dora(model=trainer.model, tokenizer=tokenizer, adapter_path=output_model_path)
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SABER Training Pipeline")
