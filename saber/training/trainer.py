@@ -119,7 +119,6 @@ def run_dora_training(args):
         eval_dataset=dataset.select(range(min(100, len(dataset)))),
         args=training_args,
         data_collator=collator,
-        dataset_text_field="text",
         max_seq_length=4096,
         dataset_num_proc=8 # Speeds up the tokenization significantly on DGX
     )
