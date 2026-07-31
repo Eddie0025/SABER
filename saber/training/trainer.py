@@ -110,10 +110,7 @@ def run_dora_training(args):
             metric_for_best_model="eval_loss",
             logging_steps=10,
             fp16=True,
-            report_to="none",
-            max_seq_length=4096,
-            dataset_text_field="text",
-            dataset_num_proc=8
+            report_to="none"
         )
         trainer_kwargs = {"args": training_args}
     except ImportError:
@@ -133,10 +130,7 @@ def run_dora_training(args):
             report_to="none"
         )
         trainer_kwargs = {
-            "args": training_args,
-            "max_seq_length": 4096,
-            "dataset_text_field": "text",
-            "dataset_num_proc": 8
+            "args": training_args
         }
     
     trainer = SFTTrainer(
