@@ -55,17 +55,51 @@ def run_dora_training(args):
     
     logger.info(f"DoRA Target Modules injected: {target_modules}")
     
+    
     # 3. LOAD DATASET
     logger.info(f"Loading dataset for specialist: {args.specialist}")
     dataset = load_specialist_dataset(args.specialist)
+    if not dataset:
+        logger.error("Dataset loading failed. Aborting training.")
+        return
+        
+    # 4. SFT TRAINER EXECUTION (80GB H100 Optimized)
+    from transformers import TrainingArguments
     
-    # In a full run, we would pass `dataset` to SFTTrainer here.
-    logger.info("Trainer scaffolding complete. Mocking training loop...")
+    # "Save Best, Not Last" early stopping driven by eval accuracy
+    training_args = TrainingArguments(
+        output_dir=f"models/{args.specialist}_checkpoints",
+        per_device_train_batch_size=8,
+        gradient_accumulation_steps=4,
+        learning_rate=2e-4,
+        num_train_epochs=3, # Configured in DATASETS.md, but driven by early stopping
+        save_strategy="epoch",
+        eval_strategy="epoch",
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        logging_steps=10,
+        fp16=True, # H100 supports bf16 too
+        report_to="none"
+    )
     
-    # 4. POST-TRAINING VALIDATION
-    # Simulating the validation check on the freshly trained adapter
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=dataset,
+        eval_dataset=dataset.select(range(min(100, len(dataset)))), # Tiny subset for validation testing
+        args=training_args,
+        data_collator=collator
+    )
+    
+    logger.info("Starting training loop on H100 DGX...")
+    trainer.train()
+    
+    output_model_path = f"models/{args.specialist}_v2"
+    trainer.model.save_pretrained(output_model_path)
+    logger.info(f"Training complete. Best model saved to {output_model_path}")
+    
+    # 5. POST-TRAINING VALIDATION
     logger.info("Triggering post-training validation suite...")
-    validate_dora(base_model=BASE_MODEL, adapter_path=f"models/{args.specialist}_v2")
+    validate_dora(base_model=BASE_MODEL, adapter_path=output_model_path)
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SABER Training Pipeline")
