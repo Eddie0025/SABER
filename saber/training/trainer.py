@@ -3,8 +3,8 @@ import sys
 import logging
 import argparse
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
-from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 # --- CUSTOM DATA COLLATOR ---
 # We implement this natively to avoid any TRL versioning/import nightmares
@@ -53,7 +53,16 @@ def run_dora_training(args):
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right" # For SFT, right padding is standard
     
-    model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, device_map="auto")
+    # Load model in 4-bit quantization to fit in 80GB H100 VRAM
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype="float16",
+        bnb_4bit_use_double_quant=True
+    )
+    logger.info("Loading model in 4-bit quantization (NF4)...")
+    model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, quantization_config=bnb_config, device_map="auto")
+    model = prepare_model_for_kbit_training(model)
     
     # 1. FIXED DATA COLLATOR (Native implementation)
     response_template = "<|im_start|>assistant\n"
@@ -90,18 +99,19 @@ def run_dora_training(args):
     logger.info(f"Loading dataset for specialist: {args.specialist}")
     dataset = load_specialist_dataset(args.specialist)
     # 4. TOKENIZE DATASET MANUALLY (Bypasses TRL completely)
-    logger.info("Pre-tokenizing dataset (Max Length: 4096)...")
+    logger.info("Pre-tokenizing dataset (Max Length: 2048)...")
     def tokenize_func(examples):
-        return tokenizer(examples["text"], truncation=True, max_length=4096, padding=False)
+        return tokenizer(examples["text"], truncation=True, max_length=2048, padding=False)
         
     tokenized_dataset = dataset.map(tokenize_func, batched=True, num_proc=8, remove_columns=dataset.column_names)
     eval_dataset = tokenized_dataset.select(range(min(100, len(tokenized_dataset))))
 
     # 5. STANDARD NATIVE TRAINER EXECUTION (80GB H100 Optimized)
+    # Batch=2 x GradAccum=16 = effective batch 32 (same as before, but fits in VRAM)
     training_args = TrainingArguments(
         output_dir=f"models/{args.specialist}_checkpoints",
-        per_device_train_batch_size=8,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=16,
         learning_rate=2e-4,
         num_train_epochs=3,
         save_strategy="epoch",
@@ -110,7 +120,8 @@ def run_dora_training(args):
         metric_for_best_model="eval_loss",
         logging_steps=10,
         fp16=True,
-        report_to="none"
+        report_to="none",
+        gradient_checkpointing=True
     )
     
     trainer = Trainer(
