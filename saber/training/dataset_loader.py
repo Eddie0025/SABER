@@ -7,38 +7,48 @@ logger = logging.getLogger("SABER_DatasetLoader")
 # Maps specialist domains to their HuggingFace datasets or local paths
 DATASET_REGISTRY = {
     "cybersecurity": [
-        {"path": "pAILabs/infosec-security-qa", "split": "train"}
+        {"path": "pAILabs/infosec-security-qa", "split": "train"},
+        {"path": "mitre/attack-stix", "split": "train"}, # Mock path
+        {"path": "cvefixes", "split": "train"} # Mock path
     ],
     "finance": [
-        {"path": "virattt/financial-qa-10K", "split": "train"}
+        {"path": "finqa", "split": "train"},
+        {"path": "convfinqa", "split": "train"},
+        {"path": "tat-qa", "split": "train"}
     ],
     "python": [
         {"path": "sahil2801/CodeAlpaca-20k", "split": "train"},
         {"path": "ise-uiuc/Magicoder-OSS-Instruct-75K", "split": "train"}
+        # Removing APPS to avoid auth/structure issues for this test run
     ],
     "javascript": [
+        # The Stack is gated (requires HF Token). Using an ungated code instruct dataset.
         {"path": "TokenBender/code_instructions_122k_alpaca_style", "split": "train"}
     ],
     "sql": [
+        # Spider sometimes fails on older datasets library versions, using a robust SQL dataset
         {"path": "b-mc2/sql-create-context", "split": "train"}
     ],
     "architecture_qa": [
-        {"path": "m-a-p/CodeFeedback-Filtered-Instruction", "split": "train"}
+        {"path": "synthetic-architecture-qa", "split": "train"}
     ],
     "architecture_planner": [
-        {"path": "m-a-p/CodeFeedback-Filtered-Instruction", "split": "train"}
+        {"path": "synthetic-planner-decomp", "split": "train"}
     ],
     "medical": [
-        {"path": "medalpaca/medical_meadow_medqa", "split": "train"}
+        {"path": "medical-o1-reasoning", "split": "train"},
+        {"path": "medqa-usmle", "split": "train"},
+        {"path": "medmcqa", "split": "train"}
     ],
     "science": [
-        {"path": "sciq", "split": "train"}
+        {"path": "sciq", "split": "train"},
+        {"path": "arc-challenge", "split": "train"}
     ],
     "orchestrator": [
-        {"path": "tatsu-lab/alpaca", "split": "train"}
+        {"path": "synthetic-routing", "split": "train"}
     ],
     "meta_reasoner": [
-        {"path": "tatsu-lab/alpaca", "split": "train"}
+        {"path": "synthetic-contradiction", "split": "train"}
     ]
 }
 
