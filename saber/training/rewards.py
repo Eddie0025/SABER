@@ -44,9 +44,6 @@ def extract_mcq_answer(text: str) -> str:
         if match:
             return match.group(1).upper()
             
-    matches = re.findall(r"\b([A-D])\b", text)
-    if matches:
-        return matches[-1].upper()
     return ""
 
 def is_mcq_prompt(prompt: str) -> bool:

@@ -6,50 +6,17 @@ logger = logging.getLogger("SABER_DatasetLoader")
 
 # Maps specialist domains to their HuggingFace datasets or local paths
 DATASET_REGISTRY = {
-    "cybersecurity": [
-        {"path": "pAILabs/infosec-security-qa", "split": "train"},
-        {"path": "mitre/attack-stix", "split": "train"}, # Mock path
-        {"path": "cvefixes", "split": "train"} # Mock path
-    ],
-    "finance": [
-        {"path": "finqa", "split": "train"},
-        {"path": "convfinqa", "split": "train"},
-        {"path": "tat-qa", "split": "train"}
-    ],
-    "python": [
-        {"path": "sahil2801/CodeAlpaca-20k", "split": "train"},
-        {"path": "ise-uiuc/Magicoder-OSS-Instruct-75K", "split": "train"}
-        # Removing APPS to avoid auth/structure issues for this test run
-    ],
-    "javascript": [
-        # The Stack is gated (requires HF Token). Using an ungated code instruct dataset.
-        {"path": "TokenBender/code_instructions_122k_alpaca_style", "split": "train"}
-    ],
-    "sql": [
-        # Spider sometimes fails on older datasets library versions, using a robust SQL dataset
-        {"path": "b-mc2/sql-create-context", "split": "train"}
-    ],
-    "architecture_qa": [
-        {"path": "synthetic-architecture-qa", "split": "train"}
-    ],
-    "architecture_planner": [
-        {"path": "synthetic-planner-decomp", "split": "train"}
-    ],
-    "medical": [
-        {"path": "medical-o1-reasoning", "split": "train"},
-        {"path": "medqa-usmle", "split": "train"},
-        {"path": "medmcqa", "split": "train"}
-    ],
-    "science": [
-        {"path": "sciq", "split": "train"},
-        {"path": "arc-challenge", "split": "train"}
-    ],
-    "orchestrator": [
-        {"path": "synthetic-routing", "split": "train"}
-    ],
-    "meta_reasoner": [
-        {"path": "synthetic-contradiction", "split": "train"}
-    ]
+    "cybersecurity": [{"path": "pAILabs/infosec-security-qa", "split": "train"}],
+    "finance": [{"path": "finqa", "split": "train"}],
+    "python": [{"path": "sahil2801/CodeAlpaca-20k", "split": "train"}],
+    "javascript": [{"path": "TokenBender/code_instructions_122k_alpaca_style", "split": "train"}],
+    "sql": [{"path": "b-mc2/sql-create-context", "split": "train"}],
+    "architecture_qa": [{"path": "GAIR/lima", "split": "train"}],
+    "architecture_planner": [{"path": "GAIR/lima", "split": "train"}],
+    "medical": [{"path": "medmcqa", "split": "train"}],
+    "science": [{"path": "sciq", "split": "train"}],
+    "orchestrator": [{"path": "GAIR/lima", "split": "train"}],
+    "meta_reasoner": [{"path": "GAIR/lima", "split": "train"}]
 }
 
 def apply_chatml_formatting(example):

@@ -26,9 +26,6 @@ def extract_mcq_answer(text: str) -> str:
         if match:
             return match.group(1).upper()
             
-    matches = re.findall(r"\b([A-D])\b", text)
-    if matches:
-        return matches[-1].upper()
     return None
 
 def evaluate_mcq(model_obj, tokenizer, dataset, mode_name):
