@@ -32,7 +32,7 @@ def extract_answer(text: str) -> str:
     
     # Common English patterns
     patterns = [
-        r"(?:Final Answer|ANSWER|Correct Answer|The correct option is|Therefore, the correct answer is)[\s:]*([A-D])\b",
+        r"(?:Final Answer|ANSWER|Correct Answer|The correct option is|Therefore, the correct answer is|Option)[\s:]*([A-D])\b",
         r"^([A-D])\.",
         r"(?:正确答案是|答案是|选项)[\s:]*([A-D])\b" # Chinese patterns
     ]
@@ -42,10 +42,10 @@ def extract_answer(text: str) -> str:
         if match:
             return match.group(1).upper()
             
-    # Fallback checking end of text
-    match = re.search(r"([A-D])\.$", text)
-    if match:
-        return match.group(1).upper()
+    # Fallback: find the last standalone A, B, C, or D in the text
+    matches = re.findall(r"\b([A-D])\b", text)
+    if matches:
+        return matches[-1].upper()
         
     return None
 
@@ -103,6 +103,8 @@ def run_evaluation():
     logger.info(f"\nLoading DoRA Adapter from {ADAPTER_PATH}...")
     try:
         model = PeftModel.from_pretrained(model, ADAPTER_PATH)
+        # CRITICAL: Merge weights into base model to restore native inference speed!
+        model = model.merge_and_unload()
         adapter_acc = evaluate_model(model, "CYBER ADAPTER")
         
         logger.info("\n=== FINAL RESULTS ===")
