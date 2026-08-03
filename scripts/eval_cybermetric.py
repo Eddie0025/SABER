@@ -21,7 +21,7 @@ def download_dataset():
         logger.info(f"Downloading {CYBERMETRIC_URL}...")
         urllib.request.urlretrieve(CYBERMETRIC_URL, local_path)
     with open(local_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return json.load(f)["questions"]
 
 def extract_answer(text: str) -> str:
     """
@@ -69,12 +69,12 @@ def run_evaluation():
         logger.info(f"\n--- Starting Evaluation: {mode_name} ---")
         for item in tqdm(dataset):
             question = item.get("question", "")
-            choices = item.get("choices", [])
-            truth = item.get("answer", "")
+            answers = item.get("answers", {})
+            truth = item.get("solution", "")
             
             prompt_text = f"{question}\n"
-            for choice in choices:
-                prompt_text += f"{choice}\n"
+            for k, v in answers.items():
+                prompt_text += f"{k}. {v}\n"
             prompt_text += "Please provide the correct option."
             
             messages = [{"role": "user", "content": prompt_text}]
