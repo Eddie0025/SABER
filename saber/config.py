@@ -18,8 +18,8 @@ TARGET_MODULE_PRESETS = {
 
 # Default LoRA/DoRA hyperparameters
 DORA_CONFIG = {
-    "r": 64,
-    "lora_alpha": 128,
+    "r": 16,
+    "lora_alpha": 32,
     "lora_dropout": 0.05,
     "use_dora": True,
     "task_type": "CAUSAL_LM"

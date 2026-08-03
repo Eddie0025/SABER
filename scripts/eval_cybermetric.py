@@ -92,8 +92,12 @@ def run_evaluation():
             elif prediction is None:
                 unparsed += 1
                 
-        accuracy = (correct / total) * 100
-        logger.info(f"[{mode_name}] Accuracy: {accuracy:.2f}% ({correct}/{total}) | Unparsed: {unparsed}")
+        parsed_total = total - unparsed
+        if parsed_total == 0:
+            accuracy = 0.0
+        else:
+            accuracy = (correct / parsed_total) * 100
+        logger.info(f"[{mode_name}] Accuracy: {accuracy:.2f}% ({correct}/{parsed_total}) | Unparsed/Voided: {unparsed}")
         return accuracy
 
     # Run Base Model
