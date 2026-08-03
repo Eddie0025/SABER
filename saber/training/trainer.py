@@ -159,12 +159,110 @@ def run_dora_training(args):
     logger.info("Triggering post-training validation suite...")
     validate_dora(model=trainer.model, tokenizer=tokenizer, adapter_path=output_model_path)
     
+    
+def run_grpo_training(args):
+    """
+    GRPO Training Phase.
+    Loads the fixed DoRA adapter (_v2) as the starting/reference model.
+    """
+    try:
+        from trl import GRPOTrainer, GRPOConfig
+    except ImportError:
+        logger.error("trl library is required for GRPO. Please install it.")
+        return
+        
+    logger.info("Setting up tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+    
+    # 1. Load the fixed DoRA adapter as the reference model
+    reference_adapter_path = f"models/{args.specialist}_v2"
+    if not os.path.exists(reference_adapter_path):
+        logger.error(f"Cannot run GRPO: DoRA checkpoint {reference_adapter_path} not found.")
+        return
+        
+    logger.info(f"Loading Base Model in bfloat16 for GRPO...")
+    model = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL, 
+        torch_dtype=torch.bfloat16,
+        device_map="auto"
+    )
+    
+    # Merge DoRA weights into the base model to create a solid reference
+    from peft import PeftModel
+    logger.info(f"Fusing DoRA weights from {reference_adapter_path} into base model...")
+    model = PeftModel.from_pretrained(model, reference_adapter_path)
+    model = model.merge_and_unload()
+    
+    # We apply a NEW DoRA adapter for the RL phase
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+        
+    target_modules = get_target_modules(args.target_modules)
+    peft_config = LoraConfig(
+        r=DORA_CONFIG["r"],
+        lora_alpha=DORA_CONFIG["lora_alpha"],
+        target_modules=target_modules,
+        lora_dropout=DORA_CONFIG["lora_dropout"],
+        use_dora=DORA_CONFIG["use_dora"],
+        task_type=DORA_CONFIG["task_type"]
+    )
+    
+    # 2. LOAD DATASET (Mixed 30% MCQ / 70% Open-Ended)
+    logger.info(f"Loading mixed dataset for GRPO...")
+    dataset = load_specialist_dataset(args.specialist)
+    if dataset is None:
+        return
+        
+    # The dataset_loader should have already mixed it. We just format it for GRPO.
+    def format_for_grpo(example):
+        question = example.get("question", "")
+        # Very simple formatting for GRPO
+        prompt = [{"role": "user", "content": question}]
+        prompt_text = tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
+        return {"prompt": prompt_text, "answer": example.get("solution", example.get("answer", ""))}
+        
+    grpo_dataset = dataset.map(format_for_grpo)
+    
+    # 3. CONFIGURE GRPO (Single GPU Optimized)
+    # Using beta=0.04, num_generations=8, per_device_batch=1, grad_accum=4 to fit 1x 80GB H100
+    grpo_args = GRPOConfig(
+        output_dir=f"models/{args.specialist}_grpo",
+        learning_rate=1e-5,
+        num_train_epochs=1,
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=4,
+        num_generations=8,
+        beta=args.kl_coef,
+        bf16=True,
+        gradient_checkpointing=True,
+        report_to="none"
+    )
+    
+    from saber.training.rewards import combined_reward
+    
+    trainer = GRPOTrainer(
+        model=model,
+        reward_funcs=[combined_reward],
+        args=grpo_args,
+        train_dataset=grpo_dataset,
+        peft_config=peft_config
+    )
+    
+    logger.info("Starting GRPO Training loop...")
+    trainer.train()
+    
+    trainer.model.save_pretrained(f"models/{args.specialist}_grpo_final")
+    logger.info("GRPO Training Complete.")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SABER Training Pipeline")
     parser.add_argument("--mode", type=str, required=True, choices=["dora", "grpo"], help="Training mode")
     parser.add_argument("--specialist", type=str, required=True, help="Which specialist dataset to load (e.g., cybersecurity, python)")
     parser.add_argument("--target_modules", type=str, default="all", choices=list(TARGET_MODULE_PRESETS.keys()), help="DoRA target module preset")
-    parser.add_argument("--kl_coef", type=float, default=0.1, help="KL penalty coefficient for GRPO")
+    parser.add_argument("--kl_coef", type=float, default=0.04, help="KL penalty coefficient for GRPO")
     
     args = parser.parse_args()
     
@@ -172,4 +270,4 @@ if __name__ == "__main__":
         run_dora_training(args)
     elif args.mode == "grpo":
         logger.info(f"Starting GRPO Training with kl_coef={args.kl_coef}")
-        # GRPO trainer logic goes here, integrating log_grpo_reward_variance
+        run_grpo_training(args)
