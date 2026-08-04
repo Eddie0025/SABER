@@ -115,26 +115,29 @@ def run_dora_training(args):
     # Shuffle and take 300 for validation
     eval_dataset = tokenized_dataset.shuffle(seed=42).select(range(min(300, len(tokenized_dataset))))
 
-    # 5. STANDARD NATIVE TRAINER EXECUTION (80GB H100 Optimized)
+    # 5. STANDARD NATIVE TRAINER EXECUTION (80GB H100 Optimized - 5 Epochs)
     # Batch=2 x GradAccum=16 = effective batch 32
-    # Dynamically calculate eval_steps to ensure ~10 points across the 3 epochs
+    # Dynamically calculate eval_steps to evaluate ~15 times across 5 epochs
     effective_batch = 2 * 16
-    total_steps = (len(tokenized_dataset) // effective_batch) * 3
-    dynamic_eval_steps = max(1, total_steps // 10)
-    logger.info(f"Total Steps: {total_steps} | Dynamic Eval Steps: {dynamic_eval_steps}")
+    num_epochs = 5
+    total_steps = (len(tokenized_dataset) // effective_batch) * num_epochs
+    dynamic_eval_steps = max(1, total_steps // 15)
+    logger.info(f"Total Steps: {total_steps} (5 Epochs) | Dynamic Eval & Save Steps: {dynamic_eval_steps}")
 
     training_args = TrainingArguments(
         output_dir=f"models/{args.specialist}_checkpoints",
         per_device_train_batch_size=2,
         gradient_accumulation_steps=16,
         learning_rate=1e-4,
-        num_train_epochs=2,
+        num_train_epochs=num_epochs,
         save_strategy="steps",
         save_steps=dynamic_eval_steps,
         eval_strategy="steps",
         eval_steps=dynamic_eval_steps,
+        save_total_limit=3,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
+        greater_is_better=False,
         logging_steps=10,
         bf16=True,
         report_to="none",
@@ -149,14 +152,29 @@ def run_dora_training(args):
         args=training_args
     )
     
-    logger.info("Starting training loop on H100 DGX...")
+    logger.info("Starting 5-epoch training loop on H100 DGX...")
     train_result = trainer.train()
     
-    # 1. ALWAYS SAVE MODEL FIRST
+    # 1. RETRIEVE BEST CHECKPOINT METRICS & SAVE
+    best_checkpoint = trainer.state.best_model_checkpoint or "Final Step"
+    best_metric = trainer.state.best_metric or "N/A"
+    logger.info(f"🏆 Best Checkpoint Identified: {best_checkpoint} with Best Eval Loss: {best_metric}")
+
     output_model_path = f"models/{args.specialist}_v2"
     trainer.model.save_pretrained(output_model_path)
-    logger.info(f"Training complete. Best model saved to {output_model_path}")
+    logger.info(f"Best model weights successfully saved to {output_model_path}")
     
+    # Save checkpoint metadata
+    best_info = {
+        "specialist": args.specialist,
+        "best_checkpoint": best_checkpoint,
+        "best_eval_loss": best_metric,
+        "total_epochs": num_epochs,
+        "total_steps": total_steps
+    }
+    with open(os.path.join(output_model_path, "best_checkpoint_info.json"), "w") as f:
+        json.dump(best_info, f, indent=2)
+
     # 2. SAVE LOGS SAFELY
     try:
         os.makedirs("logs", exist_ok=True)
@@ -167,7 +185,10 @@ def run_dora_training(args):
         
         summary_path = f"logs/{args.specialist}_dora_summary.md"
         with open(summary_path, "w") as f:
-            f.write(f"# DoRA Training Epoch Summary: {args.specialist}\n\n")
+            f.write(f"# DoRA Training 5-Epoch Summary: {args.specialist}\n\n")
+            f.write(f"- **Best Checkpoint**: `{best_checkpoint}`\n")
+            f.write(f"- **Best Eval Loss**: `{best_metric}`\n")
+            f.write(f"- **Total Epochs**: {num_epochs}\n\n")
             f.write("| Step | Epoch | Train Loss | Eval Loss | Grad Norm | Learning Rate |\n")
             f.write("|---|---|---|---|---|---|\n")
             for entry in trainer.state.log_history:
