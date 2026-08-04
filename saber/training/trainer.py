@@ -149,8 +149,31 @@ def run_dora_training(args):
     )
     
     logger.info("Starting training loop on H100 DGX...")
-    trainer.train()
+    train_result = trainer.train()
     
+    # Save structured epoch/step logs
+    os.makedirs("logs", exist_ok=True)
+    dora_log_path = f"logs/{args.specialist}_dora_epoch_logs.json"
+    with open(dora_log_path, "w") as f:
+        json.dump(trainer.state.log_history, f, indent=2)
+    logger.info(f"Saved DoRA epoch logs to {dora_log_path}")
+    
+    # Generate human-readable markdown summary
+    summary_path = f"logs/{args.specialist}_dora_summary.md"
+    with open(summary_path, "w") as f:
+        f.write(f"# DoRA Training Epoch Summary: {args.specialist}\n\n")
+        f.write("| Step | Epoch | Train Loss | Eval Loss | Grad Norm | Learning Rate |\n")
+        f.write("|---|---|---|---|---|---|\n")
+        for entry in trainer.state.log_history:
+            step = entry.get("step", "N/A")
+            epoch = f"{entry.get('epoch', 0):.2f}" if "epoch" in entry else "N/A"
+            t_loss = f"{entry.get('loss', 'N/A')}"
+            e_loss = f"{entry.get('eval_loss', 'N/A')}"
+            gnorm = f"{entry.get('grad_norm', 'N/A')}"
+            lr = f"{entry.get('learning_rate', 'N/A')}"
+            f.write(f"| {step} | {epoch} | {t_loss} | {e_loss} | {gnorm} | {lr} |\n")
+    logger.info(f"Saved DoRA training summary to {summary_path}")
+
     output_model_path = f"models/{args.specialist}_v2"
     trainer.model.save_pretrained(output_model_path)
     logger.info(f"Training complete. Best model saved to {output_model_path}")
@@ -186,7 +209,7 @@ def run_grpo_training(args):
     logger.info(f"Loading Base Model in bfloat16 for GRPO...")
     model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL, 
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16, 
         device_map="auto"
     )
     
@@ -254,8 +277,16 @@ def run_grpo_training(args):
     logger.info("Starting GRPO Training loop...")
     trainer.train()
     
-    trainer.model.save_pretrained(f"models/{args.specialist}_grpo_final")
-    logger.info("GRPO Training Complete.")
+    # Save structured GRPO epoch/step logs
+    os.makedirs("logs", exist_ok=True)
+    grpo_log_path = f"logs/{args.specialist}_grpo_epoch_logs.json"
+    with open(grpo_log_path, "w") as f:
+        json.dump(trainer.state.log_history, f, indent=2)
+    logger.info(f"Saved GRPO epoch logs to {grpo_log_path}")
+    
+    final_model_path = f"models/{args.specialist}_grpo_final"
+    trainer.model.save_pretrained(final_model_path)
+    logger.info(f"GRPO Training Complete. Final model saved to {final_model_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SABER Training Pipeline")

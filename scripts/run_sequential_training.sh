@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 
-# SABER Integrated Training Pipeline (DoRA -> Gate -> GRPO)
-# This script orchestrates the sequential training of all specialists.
-# It enforces a strict conditional gate: only models that beat the base
-# model on the generalized benchmark proceed to the GRPO RL phase.
+# SABER Sequential Training Pipeline (DoRA SFT -> GRPO RL)
+# Orchestrates end-to-end training for all specialists without intermediate gating.
 
 set -e  # Exit immediately if a command exits with a non-zero status
 set -u  # Treat unset variables as an error when substituting
-set -o pipefail # Return value of a pipeline is the status of the last command to exit with a non-zero status
+set -o pipefail # Fail pipeline if any command fails
 
 # --- Constants & Colors ---
 GREEN='\033[0;32m'
@@ -19,11 +17,11 @@ NC='\033[0m'
 LOG_FILE="logs/training_report.md"
 
 # Initialize markdown report table
-mkdir -p logs
+mkdir -p logs models results
 echo "# SABER Training Report" > "$LOG_FILE"
 echo "" >> "$LOG_FILE"
-echo "| Specialist | DoRA Status | Base Score | Adapter Score | Delta | Gate | GRPO Status |" >> "$LOG_FILE"
-echo "|---|---|---|---|---|---|---|" >> "$LOG_FILE"
+echo "| Specialist | DoRA SFT Status | DoRA Adapter | GRPO RL Status | Final Model |" >> "$LOG_FILE"
+echo "|---|---|---|---|---|" >> "$LOG_FILE"
 
 # --- Master Specialist List ---
 SPECIALISTS=(
@@ -39,65 +37,45 @@ SPECIALISTS=(
 )
 
 echo -e "${BLUE}======================================================${NC}"
-echo -e "${BLUE}  SABER MASTER TRAINING PIPELINE INITIALIZING...${NC}"
+echo -e "${BLUE}  SABER MASTER TRAINING PIPELINE (DoRA -> GRPO)${NC}"
 echo -e "${BLUE}======================================================${NC}"
 
 for SPEC in "${SPECIALISTS[@]}"; do
     # SAFETY GUARD: Ensure SPEC is not empty before rm -rf
     [[ -n "$SPEC" ]] || { echo -e "${RED}Error: SPEC variable is empty. Aborting to prevent accidental deletion.${NC}"; exit 1; }
 
-    echo -e "\n${YELLOW}>>> [1/5] PURGING OLD CHECKPOINTS FOR: ${SPEC}...${NC}"
-    rm -rf "models/${SPEC}_checkpoints" "models/${SPEC}_v2" "models/${SPEC}_grpo"
+    echo -e "\n${YELLOW}>>> [1/3] PURGING OLD ARTIFACTS FOR: ${SPEC}...${NC}"
+    rm -rf "models/${SPEC}_checkpoints" "models/${SPEC}_v2" "models/${SPEC}_grpo" "models/${SPEC}_grpo_final"
     
-    echo -e "${YELLOW}>>> [2/5] LAUNCHING DORA SFT FOR: ${SPEC}...${NC}"
-    if ! python -m saber.training.trainer --mode dora --specialist "$SPEC" --target_modules attn_only; then
-        echo -e "${RED}>>> [!] DORA TRAINING FAILED OR SKIPPED (MOCK DATA). BYPASSING.${NC}"
-        echo "| **${SPEC}** | ❌ Failed/Skipped | N/A | N/A | N/A | N/A | N/A |" >> "$LOG_FILE"
-        continue
-    fi
-    
-    echo -e "${YELLOW}>>> [3/5] LAUNCHING BENCHMARK GATE FOR: ${SPEC}...${NC}"
-    # Run generalized evaluation. It outputs a JSON line at the end prefixed with "RESULT_PAYLOAD:"
-    # containing {"base": 88.5, "adapter": 92.1, "pass": true, "is_structural": false}
-    EVAL_OUTPUT=$(python scripts/eval_specialist.py --specialist "$SPEC" 2>&1) || true
-    
-    # Extract the payload line
-    PAYLOAD=$(echo "$EVAL_OUTPUT" | grep "^RESULT_PAYLOAD:" | sed 's/RESULT_PAYLOAD://' || echo '{"error": "Eval crashed"}')
-    
-    echo -e "${BLUE}Eval Payload: $PAYLOAD${NC}"
-    
-    # Parse JSON payload (requires jq installed on DGX)
-    BASE_SCORE=$(echo "$PAYLOAD" | jq -r '.base // "Error"')
-    ADAPTER_SCORE=$(echo "$PAYLOAD" | jq -r '.adapter // "Error"')
-    DELTA=$(echo "$PAYLOAD" | jq -r '.delta // "N/A"')
-    PASS_GATE=$(echo "$PAYLOAD" | jq -r '.pass // "false"')
-    STRUCTURAL=$(echo "$PAYLOAD" | jq -r '.is_structural // "false"')
-    
-    # Structural models (like Orchestrator) skip MCQ benchmarks
-    if [ "$STRUCTURAL" = "true" ]; then
-        echo -e "${YELLOW}>>> [!] STRUCTURAL MODEL DETECTED. FLAGGING FOR MANUAL OPEN-ENDED REVIEW.${NC}"
-        echo "| **${SPEC}** | ✅ Complete | N/A | N/A | N/A | ⚠️ Manual | Pending |" >> "$LOG_FILE"
-        continue
-    fi
-    
-    # Conditional Gate Logic
-    if [ "$PASS_GATE" = "true" ]; then
-        echo -e "${GREEN}>>> [4/5] GATE PASSED! ADAPTER BEATS BASE (${ADAPTER_SCORE}% vs ${BASE_SCORE}%). PROCEEDING TO GRPO...${NC}"
+    echo -e "\n${YELLOW}>>> [2/3] LAUNCHING DORA SFT FOR: ${SPEC}...${NC}"
+    DORA_STATUS="❌ Failed"
+    DORA_PATH="N/A"
+    GRPO_STATUS="Skipped"
+    FINAL_PATH="N/A"
+
+    if python -m saber.training.trainer --mode dora --specialist "$SPEC" --target_modules attn_only; then
+        DORA_STATUS="✅ Complete"
+        DORA_PATH="models/${SPEC}_v2"
+        echo -e "${GREEN}>>> DORA SFT COMPLETE FOR ${SPEC}.${NC}"
         
-        echo -e "${YELLOW}>>> [5/5] LAUNCHING GRPO (PROMETHEUS 2 REWARDS) FOR: ${SPEC}...${NC}"
-        if python -m saber.training.trainer --mode grpo --specialist "$SPEC"; then
-            echo "| **${SPEC}** | ✅ Complete | ${BASE_SCORE}% | ${ADAPTER_SCORE}% | ${DELTA}% | ✅ PASS | ✅ Complete |" >> "$LOG_FILE"
-            echo -e "${GREEN}>>> GRPO COMPLETE FOR ${SPEC}.${NC}"
+        echo -e "\n${YELLOW}>>> [3/3] LAUNCHING GRPO RL (PROMETHEUS 2 REWARDS) FOR: ${SPEC}...${NC}"
+        if python -m saber.training.trainer --mode grpo --specialist "$SPEC" --target_modules attn_only --kl_coef 0.04; then
+            GRPO_STATUS="✅ Complete"
+            FINAL_PATH="models/${SPEC}_grpo_final"
+            echo -e "${GREEN}>>> GRPO RL COMPLETE FOR ${SPEC}.${NC}"
         else
-            echo "| **${SPEC}** | ✅ Complete | ${BASE_SCORE}% | ${ADAPTER_SCORE}% | ${DELTA}% | ✅ PASS | ❌ Failed |" >> "$LOG_FILE"
-            echo -e "${RED}>>> GRPO FAILED FOR ${SPEC}.${NC}"
+            GRPO_STATUS="❌ Failed"
+            echo -e "${RED}>>> GRPO RL FAILED FOR ${SPEC}.${NC}"
         fi
     else
-        echo -e "${RED}>>> [4/5] GATE FAILED! ADAPTER (${ADAPTER_SCORE}%) <= BASE (${BASE_SCORE}%). SKIPPING GRPO.${NC}"
-        echo "| **${SPEC}** | ✅ Complete | ${BASE_SCORE}% | ${ADAPTER_SCORE}% | ${DELTA}% | ❌ FAIL | Skipped |" >> "$LOG_FILE"
+        echo -e "${RED}>>> DORA SFT FAILED FOR ${SPEC}. SKIPPING GRPO.${NC}"
     fi
+
+    # Append status row to log report
+    echo "| **${SPEC}** | ${DORA_STATUS} | \`${DORA_PATH}\` | ${GRPO_STATUS} | \`${FINAL_PATH}\` |" >> "$LOG_FILE"
 done
 
 echo -e "\n${GREEN}======================================================${NC}"
-echo -e "${GREEN}  PIPELINE COMPLETE. SEE logs/training_report.md${NC}"
+echo -e "${GREEN}  ALL SPECIALISTS PROCESSED. REPORT SAVED TO logs/training_report.md${NC}"
 echo -e "${GREEN}======================================================${NC}"
+

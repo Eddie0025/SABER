@@ -84,15 +84,20 @@ def call_prometheus_judge(prompt: str, completion: str, reference: str) -> float
         
         result_text = judge_tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
         
-        # Parse the JSON from the local LLM Judge
-        judgement = json.loads(result_text)
-        total_score = float(judgement.get("total_score", 0))
+        # Robust JSON parsing from local LLM Judge output (handles markdown code fences)
+        json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
+        if json_match:
+            judgement = json.loads(json_match.group(0))
+        else:
+            judgement = json.loads(result_text)
+            
+        total_score = float(judgement.get("total_score", judgement.get("score", 0)))
         
         # Normalize 0-10 to 0.0-1.0
         return min(max(total_score / 10.0, 0.0), 1.0)
         
     except Exception as e:
-        logger.error(f"Local Prometheus inference failed or output invalid JSON: {e}")
+        logger.error(f"Local Prometheus inference parsing failed: {e}. Raw text: {result_text if 'result_text' in locals() else 'None'}")
         return 0.0
 
 def combined_reward(prompts: List[str], completions: List[str], answer: List[str], **kwargs) -> List[float]:
