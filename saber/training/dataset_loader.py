@@ -14,7 +14,10 @@ DATASET_REGISTRY = {
     "architecture_qa": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
     "architecture_planner": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
     "medical": [{"path": "lavita/ChatDoctor-HealthCareMagic-100k", "split": "train"}],
-    "science": [{"path": "allenai/sciq", "split": "train"}],
+    "science": [
+        {"path": "allenai/sciq", "split": "train"},
+        {"path": "openai/gsm8k", "split": "train", "name": "main"}
+    ],
     "orchestrator": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
     "meta_reasoner": [{"path": "HuggingFaceH4/no_robots", "split": "train"}]
 }
@@ -72,7 +75,10 @@ def load_specialist_dataset(specialist_name: str, max_samples: int = 20000) -> A
     for dset_config in DATASET_REGISTRY[specialist_name]:
         try:
             logger.info(f"Loading {dset_config['path']}")
-            dset = load_dataset(dset_config["path"], split=dset_config["split"], streaming=False)
+            load_kwargs = {"split": dset_config["split"], "streaming": False}
+            if "name" in dset_config:
+                load_kwargs["name"] = dset_config["name"]
+            dset = load_dataset(dset_config["path"], **load_kwargs)
             
             # Apply formatting
             dset = dset.map(apply_chatml_formatting)
