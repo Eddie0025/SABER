@@ -282,11 +282,14 @@ def run_grpo_training(args):
         
     grpo_dataset = dataset.map(format_for_grpo, remove_columns=[c for c in dataset.column_names if c not in ["prompt", "answer"]])
     
-    # 3. CONFIGURE GRPO (Single GPU Optimized for Speed + Quality)
-    # - num_generations=4: good advantage estimation
-    # - max_completion_length=512: full answer length
-    # - batch_size=2, grad_accum=4: effective batch of 8
-    # - 3k dataset cap keeps steps at ~1500 → ~10 hours per specialist
+    # 3. CONFIGURE GRPO (Per-specialist token limits)
+    # Long-form specialists (512 tokens): science, medical, architecture
+    # Short-form specialists (128 tokens): everything else (Q&A, code, SQL, finance)
+    # Models stop at EOS automatically — this is just the upper cap.
+    LONG_FORM_SPECIALISTS = {"science", "medical", "architecture_qa", "architecture_planner"}
+    max_completion_length = 512 if args.specialist in LONG_FORM_SPECIALISTS else 128
+    logger.info(f"Using max_completion_length={max_completion_length} for {args.specialist}")
+
     grpo_args = GRPOConfig(
         output_dir=f"models/{args.specialist}_grpo",
         learning_rate=1e-5,
@@ -295,7 +298,7 @@ def run_grpo_training(args):
         gradient_accumulation_steps=4,
         num_generations=4,
         generation_batch_size=4,
-        max_completion_length=512,
+        max_completion_length=max_completion_length,
         beta=args.kl_coef,
         bf16=True,
         gradient_checkpointing=True,
