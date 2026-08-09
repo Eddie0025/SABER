@@ -73,7 +73,7 @@ for SPEC in "${SPECIALISTS[@]}"; do
     fi
     
     # 3. Handle GRPO RL Phase
-    echo -e "\n${YELLOW}>>> [3/3] LAUNCHING GRPO RL (PROMETHEUS 2 REWARDS) FOR: ${SPEC}...${NC}"
+    echo -e "\n${YELLOW}>>> [3/3] LAUNCHING GRPO RL (STANDARD OUTCOME REWARDS) FOR: ${SPEC}...${NC}"
     # Delete any stale GRPO intermediate checkpoints just in case
     rm -rf "models/${SPEC}_grpo"
     
