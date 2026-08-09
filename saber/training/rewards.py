@@ -1,62 +1,30 @@
-import os
 import re
-import json
 import logging
-from typing import List, Dict, Any, Optional
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from typing import List
 
 logger = logging.getLogger("GRPORewards")
 
-# --- Local Prometheus 2 Setup ---
-PROMETHEUS_MODEL = "prometheus-eval/prometheus-7b-v2.0"
-judge_tokenizer = None
-judge_model = None
+# ============================================================================
+# STANDARD GRPO REWARD FUNCTIONS
+# ============================================================================
+# Following DeepSeek-R1 and Qwen2.5 approach:
+# - MCQ: exact match (binary 0/1)
+# - Open-ended: keyword/fact overlap against reference answer
+# - No LLM judge needed — GRPO learns reasoning quality from outcome rewards
+# ============================================================================
 
-def load_judge_model():
-    """Lazy loads the Prometheus 2 judge model on GPU in 4-bit alongside the policy model."""
-    global judge_tokenizer, judge_model
-    if judge_model is None:
-        logger.info(f"Loading local LLM Judge: {PROMETHEUS_MODEL} on GPU (4-bit)...")
-        
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=True
-        )
-        
-        judge_tokenizer = AutoTokenizer.from_pretrained(PROMETHEUS_MODEL)
-        if judge_tokenizer.pad_token is None:
-            judge_tokenizer.pad_token = judge_tokenizer.eos_token
-            
-        judge_model = AutoModelForCausalLM.from_pretrained(
-            PROMETHEUS_MODEL,
-            quantization_config=quantization_config,
-            device_map="auto"
-        )
-        judge_model.eval()
-        logger.info("Prometheus 2 judge loaded on GPU (4-bit) successfully.")
-
-def _extract_text_from_completion(completion) -> str:
-    """
-    TRL GRPOTrainer passes completions in different formats depending on version:
-    - Modern TRL: list of dicts like [{"role": "assistant", "content": "..."}]
-    - Older TRL: raw string
-    This function normalizes both.
-    """
-    if isinstance(completion, str):
-        return completion.strip()
-    if isinstance(completion, list):
-        texts = []
-        for msg in completion:
-            if isinstance(msg, dict):
-                texts.append(msg.get("content", ""))
-            elif isinstance(msg, str):
-                texts.append(msg)
-        return " ".join(texts).strip()
-    if isinstance(completion, dict):
-        return completion.get("content", str(completion)).strip()
-    return str(completion).strip()
+def _extract_text(item) -> str:
+    """Normalize TRL's various completion formats to a plain string."""
+    if isinstance(item, str):
+        return item.strip()
+    if isinstance(item, list):
+        return " ".join(
+            msg.get("content", "") if isinstance(msg, dict) else str(msg)
+            for msg in item
+        ).strip()
+    if isinstance(item, dict):
+        return item.get("content", str(item)).strip()
+    return str(item).strip()
 
 def extract_mcq_answer(text: str) -> str:
     """Extract MCQ answer letter (A-D) from generated text."""
@@ -70,7 +38,6 @@ def extract_mcq_answer(text: str) -> str:
         match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
         if match:
             return match.group(1).upper()
-    # Last resort: if the entire output is just a single letter
     cleaned = text.strip().upper()
     if cleaned in ["A", "B", "C", "D"]:
         return cleaned
@@ -80,105 +47,69 @@ def is_mcq_prompt(prompt: str) -> bool:
     """Detect if a prompt contains MCQ options (A. B. C. D.)"""
     return bool(re.search(r"[A-D]\.\s+\S", prompt))
 
-def call_prometheus_judge(prompt: str, completion: str, reference: str) -> float:
+def _fact_overlap_reward(completion: str, reference: str) -> float:
     """
-    Calls the locally loaded Prometheus 2 model to act as an LLM Judge for open-ended reasoning.
-    Returns a normalized reward between 0.0 and 1.0.
+    Standard outcome-based reward for open-ended questions.
+    Measures how many key facts from the reference appear in the completion.
+    Returns 0.0 to 1.0.
     """
-    load_judge_model()
+    if not reference or not completion:
+        return 0.0
     
-    rubric = (
-        "Evaluate the response based on Technical Correctness (0-5), "
-        "Completeness (0-3), and Hallucinations (0-2). "
-        "A response with hallucinations must receive 0 for that section. "
-        "Provide your evaluation output strictly as a JSON object with keys: "
-        "'correctness', 'completeness', 'hallucinations', 'total_score'. "
-        "Ensure 'total_score' is out of 10."
-    )
+    # Extract meaningful words (skip stop words)
+    stop = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has",
+            "had", "do", "does", "did", "will", "would", "could", "should", "may",
+            "might", "can", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+            "as", "and", "but", "or", "not", "no", "so", "it", "its", "this", "that",
+            "these", "those", "i", "me", "my", "we", "you", "your", "he", "she", "they",
+            "them", "their", "what", "which", "who", "how", "when", "where", "why"}
     
-    sys_prompt = "You are Prometheus, a rigorous technical evaluator. Follow the rubric perfectly."
-    user_prompt = f"### Instruction:\n{prompt}\n\n### Response to Evaluate:\n{completion}\n\n### Reference Fact/Answer:\n{reference}\n\n### Rubric:\n{rubric}"
+    ref_words = set(reference.lower().split()) - stop
+    comp_words = set(completion.lower().split()) - stop
     
-    messages = [
-        {"role": "system", "content": sys_prompt},
-        {"role": "user", "content": user_prompt}
-    ]
+    if not ref_words:
+        return 0.5  # No key facts to check — neutral
     
-    try:
-        prompt_text = judge_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    except Exception:
-        # Fallback if the tokenizer doesn't support chat templates
-        prompt_text = f"{sys_prompt}\n\n{user_prompt}\n\nEvaluation:"
+    overlap = ref_words & comp_words
+    score = len(overlap) / len(ref_words)
     
-    inputs = judge_tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048).to(judge_model.device)
+    # Bonus: penalize extremely short completions (< 5 words = likely garbage)
+    if len(completion.split()) < 5:
+        score *= 0.5
     
-    try:
-        with torch.no_grad():
-            outputs = judge_model.generate(**inputs, max_new_tokens=150, temperature=0.1, do_sample=False)
-        
-        result_text = judge_tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-        
-        # Robust JSON parsing from local LLM Judge output (handles markdown code fences)
-        json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
-        if json_match:
-            judgement = json.loads(json_match.group(0))
-        else:
-            judgement = json.loads(result_text)
-            
-        total_score = float(judgement.get("total_score", judgement.get("score", 0)))
-        
-        # Normalize 0-10 to 0.0-1.0
-        return min(max(total_score / 10.0, 0.0), 1.0)
-        
-    except Exception as e:
-        logger.warning(f"Prometheus judge parsing failed: {e}. Falling back to 0.5 neutral reward.")
-        return 0.5  # Neutral reward on parse failure, not 0.0 (which would punish the model unfairly)
+    return min(max(score, 0.0), 1.0)
 
 
 def combined_reward(prompts, completions, answer=None, **kwargs) -> List[float]:
     """
-    Master reward function passed to GRPOTrainer.
-    Handles both MCQ (exact-match) and open-ended (Prometheus 2 LLM Judge) questions.
-    
-    TRL GRPOTrainer calls this with:
-      - prompts: list of prompt strings or list of message-dicts
-      - completions: list of completion strings or list of message-dicts  
-      - answer: list of reference answers (from dataset column)
+    Standard GRPO reward function. No LLM judge needed.
+    - MCQ: binary exact-match (0.0 or 1.0)
+    - Open-ended: fact overlap against reference answer (0.0 to 1.0)
     """
     rewards = []
     
-    # Handle case where answer might not be provided
     if answer is None:
         answer = [""] * len(prompts)
     
     for i in range(len(prompts)):
         try:
-            # Normalize all inputs to plain strings
-            p = _extract_text_from_completion(prompts[i])
-            c = _extract_text_from_completion(completions[i])
+            p = _extract_text(prompts[i])
+            c = _extract_text(completions[i])
             a = str(answer[i]) if i < len(answer) else ""
             
             if is_mcq_prompt(p):
-                # MCQ exact-match reward (binary)
                 prediction = extract_mcq_answer(c)
                 truth = extract_mcq_answer(a) if len(a) > 1 else a.strip().upper()
-                if prediction and prediction == truth:
-                    rewards.append(1.0)
-                else:
-                    rewards.append(0.0)
+                rewards.append(1.0 if prediction and prediction == truth else 0.0)
             else:
-                # Open-ended: Prometheus 2 LLM Judge reward
-                score = call_prometheus_judge(p, c, a)
-                rewards.append(score)
+                rewards.append(_fact_overlap_reward(c, a))
         except Exception as e:
-            logger.warning(f"Reward computation error for sample {i}: {e}. Defaulting to 0.5")
-            rewards.append(0.5)
+            logger.warning(f"Reward error for sample {i}: {e}")
+            rewards.append(0.0)
             
     return rewards
 
-# Standard reward logging wrapper for the Trainer
+
+# Kept for backward compatibility with trainer.py import
 def log_grpo_reward_variance(trainer):
-    """
-    Hook to log reward variance and KL divergence metrics to TensorBoard/WandB.
-    """
-    pass  # Implementation provided by TRL's built-in callback hooks in modern versions
+    pass
