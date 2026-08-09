@@ -214,9 +214,16 @@ def run_grpo_training(args):
     Loads the fixed DoRA adapter (_v2) as the starting/reference model.
     """
     try:
+        # TRL's lazy loader throws a RuntimeError if it hits an ImportError under the hood.
+        # Older PyTorch versions (< 2.2) don't have FSDPModule, which crashes TRL's import.
+        # Since we are using Single-GPU (device_map="auto"), we can safely monkeypatch it.
+        import torch.distributed.fsdp
+        if not hasattr(torch.distributed.fsdp, "FSDPModule"):
+            torch.distributed.fsdp.FSDPModule = type("FSDPModule", (), {})
+            
         from trl import GRPOTrainer, GRPOConfig
-    except ImportError:
-        logger.error("trl library is required for GRPO. Please install it.")
+    except (ImportError, RuntimeError) as e:
+        logger.error(f"trl library error (cannot import GRPO): {e}")
         return
         
     logger.info("Setting up tokenizer...")
