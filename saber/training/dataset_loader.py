@@ -13,7 +13,7 @@ DATASET_REGISTRY = {
     "sql": [{"path": "b-mc2/sql-create-context", "split": "train"}],
     "architecture_qa": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
     "architecture_planner": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
-    "medical": [{"path": "openlifescienceai/medmcqa", "split": "train"}],
+    "medical": [{"path": "lavita/ChatDoctor-HealthCareMagic-100k", "split": "train"}],
     "science": [{"path": "allenai/sciq", "split": "train"}],
     "orchestrator": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
     "meta_reasoner": [{"path": "HuggingFaceH4/no_robots", "split": "train"}]
@@ -39,23 +39,7 @@ def apply_chatml_formatting(example):
     # --- EXTRACT ANSWER ---
     a = ''
     
-    # 1. MedMCQA: uses 'cop' (0-3 index) + 'opa'/'opb'/'opc'/'opd' option text
-    if 'cop' in example and 'opa' in example:
-        cop_idx = example.get('cop', -1)
-        options = [example.get('opa', ''), example.get('opb', ''), example.get('opc', ''), example.get('opd', '')]
-        option_labels = ['A', 'B', 'C', 'D']
-        if isinstance(cop_idx, int) and 0 <= cop_idx < 4:
-            correct_text = options[cop_idx]
-            correct_label = option_labels[cop_idx]
-            # Format question with MCQ options for training
-            q = f"{q}\n\nA. {options[0]}\nB. {options[1]}\nC. {options[2]}\nD. {options[3]}"
-            # Answer includes the label and the explanation if available
-            exp = example.get('exp', '')
-            a = f"{correct_label}. {correct_text}"
-            if exp:
-                a += f"\n\nExplanation: {exp}"
-    
-    # 2. SciQ: uses 'correct_answer' + distractor fields
+    # 1. SciQ: uses 'correct_answer' + support explanation (open-ended, no MCQ options)
     if not a and 'correct_answer' in example:
         a = example.get('correct_answer', '')
         support = example.get('support', '')
