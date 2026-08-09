@@ -282,20 +282,20 @@ def run_grpo_training(args):
         
     grpo_dataset = dataset.map(format_for_grpo, remove_columns=[c for c in dataset.column_names if c not in ["prompt", "answer"]])
     
-    # 3. CONFIGURE GRPO (Single GPU Optimized for Speed)
-    # - num_generations=2: minimum needed for GRPO advantage estimation
-    # - max_completion_length=128: most domain answers are short
+    # 3. CONFIGURE GRPO (Single GPU Optimized for Speed + Quality)
+    # - num_generations=4: good advantage estimation
+    # - max_completion_length=512: full answer length
     # - batch_size=2, grad_accum=4: effective batch of 8
-    # This gives ~1500 steps at ~4-6 sec/step = ~2 hours per specialist
+    # - 3k dataset cap keeps steps at ~1500 → ~10 hours per specialist
     grpo_args = GRPOConfig(
         output_dir=f"models/{args.specialist}_grpo",
         learning_rate=1e-5,
         num_train_epochs=1,
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
-        num_generations=2,
-        generation_batch_size=2,
-        max_completion_length=128,
+        num_generations=4,
+        generation_batch_size=4,
+        max_completion_length=512,
         beta=args.kl_coef,
         bf16=True,
         gradient_checkpointing=True,
