@@ -14,16 +14,10 @@ judge_tokenizer = None
 judge_model = None
 
 def load_judge_model():
-    """Lazy loads the Prometheus 2 judge model in 4-bit to fit alongside the policy model on 1x H100."""
+    """Lazy loads the Prometheus 2 judge model on CPU in bfloat16 to keep GPU VRAM free for the policy model."""
     global judge_tokenizer, judge_model
     if judge_model is None:
-        logger.info(f"Loading local LLM Judge: {PROMETHEUS_MODEL} in 4-bit quantization...")
-        
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=True
-        )
+        logger.info(f"Loading local LLM Judge: {PROMETHEUS_MODEL} on CPU (bfloat16)...")
         
         judge_tokenizer = AutoTokenizer.from_pretrained(PROMETHEUS_MODEL)
         if judge_tokenizer.pad_token is None:
@@ -31,11 +25,11 @@ def load_judge_model():
             
         judge_model = AutoModelForCausalLM.from_pretrained(
             PROMETHEUS_MODEL,
-            quantization_config=quantization_config,
-            device_map="auto"
+            torch_dtype=torch.bfloat16,
+            device_map="cpu"
         )
         judge_model.eval()
-        logger.info("Prometheus 2 judge loaded successfully in 4-bit.")
+        logger.info("Prometheus 2 judge loaded on CPU successfully.")
 
 def _extract_text_from_completion(completion) -> str:
     """
@@ -110,7 +104,7 @@ def call_prometheus_judge(prompt: str, completion: str, reference: str) -> float
         # Fallback if the tokenizer doesn't support chat templates
         prompt_text = f"{sys_prompt}\n\n{user_prompt}\n\nEvaluation:"
     
-    inputs = judge_tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048).to(judge_model.device)
+    inputs = judge_tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048).to("cpu")
     
     try:
         with torch.no_grad():
