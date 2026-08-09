@@ -283,6 +283,7 @@ def run_grpo_training(args):
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         num_generations=8,
+        generation_batch_size=8,
         beta=args.kl_coef,
         bf16=True,
         gradient_checkpointing=True,
