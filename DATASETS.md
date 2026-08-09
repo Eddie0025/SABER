@@ -69,3 +69,4 @@ The fixed epoch count is merely a guideline. The **actual stopping criterion** i
    - Standard datasets: Checkpoint every 1 epoch.
    - Small/High-Stakes datasets (Meta-Reasoner, Planner): Checkpoint every 0.5 epochs.
 3. **Manual Validation Check**: For Meta-Reasoner and Planner decomposition, automated eval metrics are inherently softer. Manually inspect a handful of generations at each checkpoint rather than relying purely on automated metrics.
+

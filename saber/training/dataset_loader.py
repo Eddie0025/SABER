@@ -11,12 +11,12 @@ DATASET_REGISTRY = {
     "python": [{"path": "sahil2801/CodeAlpaca-20k", "split": "train"}],
     "javascript": [{"path": "TokenBender/code_instructions_122k_alpaca_style", "split": "train"}],
     "sql": [{"path": "b-mc2/sql-create-context", "split": "train"}],
-    "architecture_qa": [{"path": "teknium/OpenHermes-2.5", "split": "train"}],
-    "architecture_planner": [{"path": "teknium/OpenHermes-2.5", "split": "train"}],
+    "architecture_qa": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
+    "architecture_planner": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
     "medical": [{"path": "openlifescienceai/medmcqa", "split": "train"}],
     "science": [{"path": "allenai/sciq", "split": "train"}],
-    "orchestrator": [{"path": "teknium/OpenHermes-2.5", "split": "train"}],
-    "meta_reasoner": [{"path": "teknium/OpenHermes-2.5", "split": "train"}]
+    "orchestrator": [{"path": "HuggingFaceH4/no_robots", "split": "train"}],
+    "meta_reasoner": [{"path": "HuggingFaceH4/no_robots", "split": "train"}]
 }
 
 def apply_chatml_formatting(example):
@@ -24,14 +24,22 @@ def apply_chatml_formatting(example):
     Normalizes dataset into ChatML.
     Assumes standard QA datasets have 'question'/'instruction' and 'answer'/'output'/'response' fields.
     """
+    # no_robots uses 'prompt' and 'messages' natively. Let's pull from standard keys first.
     q = example.get('question') or example.get('instruction') or example.get('prompt') or ''
+    
+    # Handle HuggingFaceH4/no_robots conversational structure natively
+    if not q and 'messages' in example and isinstance(example['messages'], list) and len(example['messages']) > 0:
+        q = example['messages'][0].get('content', '')
+        
     # For SQL datasets with context
     context = example.get('context', '')
     if context and q:
         q = f"Context:\n{context}\n\nQuestion:\n{q}"
     
     a = example.get('answer') or example.get('output') or example.get('response') or example.get('solution') or ''
-    
+    if not a and 'messages' in example and isinstance(example['messages'], list) and len(example['messages']) > 1:
+        a = example['messages'][1].get('content', '')
+        
     # Format: <|im_start|>user\n{query}<|im_end|>\n<|im_start|>assistant\n{response}<|im_end|>
     text = f"<|im_start|>user\n{q}<|im_end|>\n<|im_start|>assistant\n{a}<|im_end|>"
     return {"text": text, "question": q, "answer": a}
@@ -63,16 +71,21 @@ def load_specialist_dataset(specialist_name: str, max_samples: int = 20000) -> A
                 logger.info(f"Subsampling {len(dset)} -> {max_samples} samples for {specialist_name} to prevent catastrophic forgetting.")
                 dset = dset.shuffle(seed=42).select(range(max_samples))
                 
-            datasets_list.append(dset)
+            if len(dset) > 0:
+                datasets_list.append(dset)
         except Exception as e:
             logger.warning(f"Could not load {dset_config['path']}: {e}. Skipping.")
     
     if not datasets_list:
-        logger.error(f"Failed to load any datasets for {specialist_name}.")
+        logger.error(f"Failed to load any datasets for {specialist_name}. Ensure network is up and datasets are correctly formatted.")
         return None
         
     from datasets import concatenate_datasets
     combined_dataset = concatenate_datasets(datasets_list)
+    
+    if len(combined_dataset) == 0:
+        logger.error(f"Combined dataset for {specialist_name} is empty after filtering!")
+        return None
     
     # Ensure combined dataset doesn't exceed cap
     if len(combined_dataset) > max_samples:
