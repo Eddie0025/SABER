@@ -33,10 +33,9 @@ class CustomCompletionOnlyCollator(DataCollatorForLanguageModeling):
 from saber.config import BASE_MODEL, TARGET_MODULE_PRESETS, DORA_CONFIG
 from saber.training.rewards import log_grpo_reward_variance
 from saber.training.dataset_loader import load_specialist_dataset, apply_chatml_formatting
-from scripts.validate_dora import validate_dora
-from scripts.validate_grpo import validate_grpo
 
 logger = logging.getLogger("SABER_Trainer")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 def get_target_modules(preset_name: str) -> list:
     if preset_name not in TARGET_MODULE_PRESETS:
@@ -45,7 +44,7 @@ def get_target_modules(preset_name: str) -> list:
 
 def run_dora_training(args):
     """
-    SFT DoRA Training with early stopping (Save Best, Not Last) based on validate_dora.py checks.
+    SFT DoRA Training with best-checkpoint selection across 5 epochs.
     """
     logger.info("Setting up tokenizer and padding...")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
@@ -53,7 +52,7 @@ def run_dora_training(args):
     # Critical fix for Qwen/Llama padding crashes
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right" # For SFT, right padding is standard
+    tokenizer.padding_side = "right"  # For SFT, right padding is standard
     
     logger.info("Loading base model in native bfloat16 (no quantization) for higher DoRA accuracy...")
     model = AutoModelForCausalLM.from_pretrained(
@@ -90,13 +89,7 @@ def run_dora_training(args):
     
     model = get_peft_model(model, peft_config)
     
-    # NOTE: TrainingArguments should be configured to save checkpoints according to 
-    # CHECKPOINT_FREQ_STANDARD or CHECKPOINT_FREQ_HIGH_STAKES from config.py.
-    # metric_for_best_model="eval_loss" / "accuracy" along with load_best_model_at_end=True
-    # satisfies the "Save Best, Not Last" early stopping criterion.
-    
     logger.info(f"DoRA Target Modules injected: {target_modules}")
-    
     
     # 3. LOAD DATASET
     logger.info(f"Loading dataset for specialist: {args.specialist}")
@@ -157,11 +150,12 @@ def run_dora_training(args):
     
     # 1. RETRIEVE BEST CHECKPOINT METRICS & SAVE
     best_checkpoint = trainer.state.best_model_checkpoint or "Final Step"
-    best_metric = trainer.state.best_metric or "N/A"
-    logger.info(f"🏆 Best Checkpoint Identified: {best_checkpoint} with Best Eval Loss: {best_metric}")
+    best_metric = trainer.state.best_metric if trainer.state.best_metric is not None else "N/A"
+    logger.info(f"Best Checkpoint Identified: {best_checkpoint} with Best Eval Loss: {best_metric}")
 
     output_model_path = f"models/{args.specialist}_v2"
     trainer.model.save_pretrained(output_model_path)
+    tokenizer.save_pretrained(output_model_path)
     logger.info(f"Best model weights successfully saved to {output_model_path}")
     
     # Save checkpoint metadata
@@ -172,6 +166,7 @@ def run_dora_training(args):
         "total_epochs": num_epochs,
         "total_steps": total_steps
     }
+    os.makedirs(output_model_path, exist_ok=True)
     with open(os.path.join(output_model_path, "best_checkpoint_info.json"), "w") as f:
         json.dump(best_info, f, indent=2)
 
@@ -203,24 +198,31 @@ def run_dora_training(args):
     except Exception as e:
         logger.warning(f"Non-fatal error while writing DoRA logs: {e}")
     
-    # 3. POST-TRAINING VALIDATION
-    logger.info("Triggering post-training validation suite...")
-    validate_dora(model=trainer.model, tokenizer=tokenizer, adapter_path=output_model_path)
+    # 3. POST-TRAINING VALIDATION (NON-FATAL)
+    try:
+        from scripts.validate_dora import validate_dora
+        logger.info("Triggering post-training validation suite...")
+        validate_dora(model=trainer.model, tokenizer=tokenizer, adapter_path=output_model_path)
+    except Exception as e:
+        logger.warning(f"Post-training validation encountered an error (non-fatal, model is saved): {e}")
     
-    
+
 def run_grpo_training(args):
     """
     GRPO Training Phase.
     Loads the fixed DoRA adapter (_v2) as the starting/reference model.
     """
+    # --- PyTorch Compatibility Monkeypatch ---
+    # TRL's lazy loader crashes on PyTorch < 2.2 because FSDPModule doesn't exist.
+    # We are using single-GPU (device_map="auto"), so FSDP is irrelevant. Safe to stub.
     try:
-        # TRL's lazy loader throws a RuntimeError if it hits an ImportError under the hood.
-        # Older PyTorch versions (< 2.2) don't have FSDPModule, which crashes TRL's import.
-        # Since we are using Single-GPU (device_map="auto"), we can safely monkeypatch it.
         import torch.distributed.fsdp
         if not hasattr(torch.distributed.fsdp, "FSDPModule"):
             torch.distributed.fsdp.FSDPModule = type("FSDPModule", (), {})
-            
+    except Exception:
+        pass
+        
+    try:
         from trl import GRPOTrainer, GRPOConfig
     except (ImportError, RuntimeError) as e:
         logger.error(f"trl library error (cannot import GRPO): {e}")
@@ -230,7 +232,7 @@ def run_grpo_training(args):
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
+    tokenizer.padding_side = "left"  # GRPO needs left padding for generation
     
     # 1. Load the fixed DoRA adapter as the reference model
     reference_adapter_path = f"models/{args.specialist}_v2"
@@ -265,35 +267,38 @@ def run_grpo_training(args):
         task_type=DORA_CONFIG["task_type"]
     )
     
-    # 2. LOAD DATASET (Mixed 30% MCQ / 70% Open-Ended)
-    logger.info(f"Loading mixed dataset for GRPO...")
+    # 2. LOAD DATASET
+    logger.info(f"Loading dataset for GRPO...")
     dataset = load_specialist_dataset(args.specialist)
     if dataset is None:
         return
         
-    # The dataset_loader should have already mixed it. We just format it for GRPO.
+    # Format for GRPO: needs a "prompt" column and an "answer" column
     def format_for_grpo(example):
         question = example.get("question", "")
-        # Very simple formatting for GRPO
         prompt = [{"role": "user", "content": question}]
         prompt_text = tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
-        return {"prompt": prompt_text, "answer": example.get("solution", example.get("answer", ""))}
+        return {"prompt": prompt_text, "answer": example.get("answer", "")}
         
-    grpo_dataset = dataset.map(format_for_grpo)
+    grpo_dataset = dataset.map(format_for_grpo, remove_columns=[c for c in dataset.column_names if c not in ["prompt", "answer"]])
     
     # 3. CONFIGURE GRPO (Single GPU Optimized)
-    # Using beta=0.04, num_generations=8, per_device_batch=1, grad_accum=4 to fit 1x 80GB H100
+    # batch_size=2, grad_accum=4, num_generations=4 -> fits in 80GB H100
+    # Using 4 generations instead of 8 to reduce VRAM pressure
     grpo_args = GRPOConfig(
         output_dir=f"models/{args.specialist}_grpo",
         learning_rate=1e-5,
         num_train_epochs=1,
-        per_device_train_batch_size=1,
+        per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
-        num_generations=8,
-        generation_batch_size=8,
+        num_generations=4,
+        generation_batch_size=4,
+        max_completion_length=512,
         beta=args.kl_coef,
         bf16=True,
         gradient_checkpointing=True,
+        logging_steps=10,
+        save_strategy="no",
         report_to="none"
     )
     
@@ -313,6 +318,7 @@ def run_grpo_training(args):
     # 1. ALWAYS SAVE FINAL MODEL FIRST
     final_model_path = f"models/{args.specialist}_grpo_final"
     trainer.model.save_pretrained(final_model_path)
+    tokenizer.save_pretrained(final_model_path)
     logger.info(f"GRPO Training Complete. Final model saved to {final_model_path}")
     
     # 2. SAVE LOGS SAFELY

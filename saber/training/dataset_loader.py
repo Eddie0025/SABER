@@ -21,13 +21,13 @@ DATASET_REGISTRY = {
 
 def apply_chatml_formatting(example):
     """
-    Normalizes dataset into ChatML.
-    Assumes standard QA datasets have 'question'/'instruction' and 'answer'/'output'/'response' fields.
+    Normalizes ANY dataset format into ChatML.
+    Handles: standard QA, code-alpaca, SQL, MedMCQA, SciQ, no_robots conversational.
     """
-    # no_robots uses 'prompt' and 'messages' natively. Let's pull from standard keys first.
+    # --- EXTRACT QUESTION ---
     q = example.get('question') or example.get('instruction') or example.get('prompt') or ''
     
-    # Handle HuggingFaceH4/no_robots conversational structure natively
+    # Handle HuggingFaceH4/no_robots conversational structure
     if not q and 'messages' in example and isinstance(example['messages'], list) and len(example['messages']) > 0:
         q = example['messages'][0].get('content', '')
         
@@ -36,7 +36,37 @@ def apply_chatml_formatting(example):
     if context and q:
         q = f"Context:\n{context}\n\nQuestion:\n{q}"
     
-    a = example.get('answer') or example.get('output') or example.get('response') or example.get('solution') or ''
+    # --- EXTRACT ANSWER ---
+    a = ''
+    
+    # 1. MedMCQA: uses 'cop' (0-3 index) + 'opa'/'opb'/'opc'/'opd' option text
+    if 'cop' in example and 'opa' in example:
+        cop_idx = example.get('cop', -1)
+        options = [example.get('opa', ''), example.get('opb', ''), example.get('opc', ''), example.get('opd', '')]
+        option_labels = ['A', 'B', 'C', 'D']
+        if isinstance(cop_idx, int) and 0 <= cop_idx < 4:
+            correct_text = options[cop_idx]
+            correct_label = option_labels[cop_idx]
+            # Format question with MCQ options for training
+            q = f"{q}\n\nA. {options[0]}\nB. {options[1]}\nC. {options[2]}\nD. {options[3]}"
+            # Answer includes the label and the explanation if available
+            exp = example.get('exp', '')
+            a = f"{correct_label}. {correct_text}"
+            if exp:
+                a += f"\n\nExplanation: {exp}"
+    
+    # 2. SciQ: uses 'correct_answer' + distractor fields
+    if not a and 'correct_answer' in example:
+        a = example.get('correct_answer', '')
+        support = example.get('support', '')
+        if support:
+            a = f"{a}\n\nExplanation: {support}"
+    
+    # 3. Standard fields: answer, output, response, solution
+    if not a:
+        a = example.get('answer') or example.get('output') or example.get('response') or example.get('solution') or ''
+    
+    # 4. no_robots conversational: extract assistant message
     if not a and 'messages' in example and isinstance(example['messages'], list) and len(example['messages']) > 1:
         a = example['messages'][1].get('content', '')
         
@@ -64,7 +94,7 @@ def load_specialist_dataset(specialist_name: str, max_samples: int = 20000) -> A
             dset = dset.map(apply_chatml_formatting)
             
             # Apply basic filtering (minimum response length)
-            dset = dset.filter(lambda x: len(str(x.get('answer', '')).split()) >= 5)
+            dset = dset.filter(lambda x: len(str(x.get('answer', '')).split()) >= 3)
             
             # Cap dataset size to prevent catastrophic forgetting on massive datasets (e.g. MedMCQA 180k -> 20k)
             if len(dset) > max_samples:
@@ -73,6 +103,9 @@ def load_specialist_dataset(specialist_name: str, max_samples: int = 20000) -> A
                 
             if len(dset) > 0:
                 datasets_list.append(dset)
+                logger.info(f"  -> {len(dset)} examples after formatting and filtering.")
+            else:
+                logger.warning(f"  -> 0 examples after filtering for {dset_config['path']}. Skipping.")
         except Exception as e:
             logger.warning(f"Could not load {dset_config['path']}: {e}. Skipping.")
     
