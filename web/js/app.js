@@ -35,7 +35,6 @@ const elements = {
   toggleSidebarBtn: document.getElementById("toggleSidebarBtn"),
   mobileMenuBtn: document.getElementById("mobileMenuBtn"),
   newChatBtn: document.getElementById("newChatBtn"),
-  clearChatBtn: document.getElementById("clearChatBtn"),
   historyList: document.getElementById("historyList"),
   welcomeHero: document.getElementById("welcomeHero"),
   messagesContainer: document.getElementById("messagesContainer"),
@@ -352,16 +351,6 @@ async function sendMessage(text) {
 function setupEventListeners() {
   // New chat button
   elements.newChatBtn.addEventListener("click", createNewSession);
-
-  // Clear chat button
-  elements.clearChatBtn.addEventListener("click", () => {
-    const session = getCurrentSession();
-    if (session) {
-      session.messages = [];
-      saveSessions();
-      renderCurrentChat();
-    }
-  });
 
   // Toggle sidebar
   elements.toggleSidebarBtn.addEventListener("click", () => {
