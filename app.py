@@ -193,9 +193,8 @@ class SaberWebHandler(SimpleHTTPRequestHandler):
                 # Check if live orchestrator exists
                 if LIVE_SABER_AVAILABLE and orchestrator_instance is not None:
                     context = SessionContext()
-                    raw_res = orchestrator_instance.process(query, context)
-                    clean_res = raw_res.split("⚡ SABER Specialist:")[0].strip()
-                    res_data = {"thinking": "", "response": clean_res}
+                    thinking, clean_res = orchestrator_instance.process_with_thinking(query, context, sentinel_mode)
+                    res_data = {"thinking": thinking, "response": clean_res}
                 else:
                     # High-fidelity simulation mode
                     res_data = simulate_saber_response(query, sentinel_mode)
@@ -223,20 +222,40 @@ class SaberWebHandler(SimpleHTTPRequestHandler):
 
 
 def main():
+    global orchestrator_instance
     parser = argparse.ArgumentParser(description="Launch SABER Web UI")
     parser.add_argument("--port", type=int, default=7860, help="Port to bind server (default: 7860)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host address (default: 0.0.0.0)")
+    parser.add_argument("--live", action="store_true", help="Load real base model & DoRA specialist adapters onto GPU")
     args = parser.parse_args()
+
+    if args.live:
+        if not LIVE_SABER_AVAILABLE:
+            print("❌ Cannot start in live mode: PyTorch / PEFT / Transformers not available.")
+        else:
+            print("=" * 60)
+            print("🧠 Initializing LIVE SABER Engine on GPU...")
+            print("=" * 60)
+            try:
+                engine = SpecialistEngine()
+                engine.load_base_model()
+                orchestrator_instance = Orchestrator(engine)
+                print("✅ Live SABER Orchestrator & Specialists loaded successfully!")
+            except Exception as e:
+                print(f"⚠️ Failed to load live models ({e}). Falling back to simulation mode.")
 
     server = ThreadingHTTPServer((args.host, args.port), SaberWebHandler)
     print("=" * 60)
-    print(f"🚀 SABER Web UI is LIVE at: http://localhost:{args.port}")
+    mode_str = "LIVE GPU MODEL" if orchestrator_instance is not None else "SIMULATION MODE"
+    print(f"🚀 SABER Web UI is running ({mode_str}) at: http://localhost:{args.port}")
     print("=" * 60)
     
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down server...")
+        if orchestrator_instance is not None:
+            orchestrator_instance.engine.shutdown()
         server.server_close()
 
 
