@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SABER</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body class="dark-theme">
+  <div class="app-container">
+    
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <button class="new-chat-btn" id="newChatBtn" title="New chat (Ctrl+K)">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          <span>New chat</span>
+          <kbd class="shortcut-badge">⌘K</kbd>
+        </button>
+        <button class="icon-btn toggle-sidebar-btn" id="toggleSidebarBtn" title="Collapse sidebar">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="9" y1="3" x2="9" y2="21"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Chat History List -->
+      <div class="sidebar-history-container" id="historyContainer">
+        <div class="history-group">
+          <div class="history-group-title">Recent</div>
+          <div class="history-list" id="historyList">
+            <!-- Dynamic chat history items will be inserted here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- User footer in sidebar -->
+      <div class="sidebar-footer">
+        <div class="user-profile">
+          <div class="user-avatar">S</div>
+          <div class="user-info">
+            <div class="user-name">SABER AI</div>
+            <div class="user-status">Online</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Workspace -->
+    <main class="chat-workspace">
+      <!-- Top Navigation Bar -->
+      <header class="top-nav">
+        <div class="top-nav-left">
+          <button class="icon-btn mobile-menu-btn" id="mobileMenuBtn">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
+          <div class="model-badge">
+            <span class="model-title">SABER</span>
+            <span class="model-version">2.5</span>
+          </div>
+        </div>
+        <div class="top-nav-right">
+          <button class="icon-btn" id="clearChatBtn" title="Clear current messages">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Messages Scroll Area -->
+      <div class="messages-container" id="messagesContainer">
+        <!-- Welcome Hero View (when no messages) -->
+        <div class="welcome-hero" id="welcomeHero">
+          <div class="hero-logo">
+            <div class="logo-glow"></div>
+            <div class="logo-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                <polyline points="2 17 12 22 22 17"/>
+                <polyline points="2 12 12 17 22 12"/>
+              </svg>
+            </div>
+          </div>
+          <h1 class="hero-title">Where knowledge meets reasoning.</h1>
+          <p class="hero-subtitle">How can SABER help you today?</p>
+
+          <div class="prompt-grid">
+            <button class="prompt-card" data-prompt="Analyze how a double-free vulnerability can lead to arbitrary code execution in glibc.">
+              <div class="prompt-card-icon">🛡️</div>
+              <div class="prompt-card-text">Analyze double-free vulnerability mechanics in glibc</div>
+            </button>
+            <button class="prompt-card" data-prompt="Explain the difference between Liddle syndrome and Apparent Mineralocorticoid Excess in renal pathology.">
+              <div class="prompt-card-icon">🩺</div>
+              <div class="prompt-card-text">Compare Liddle syndrome vs. AME in renal pathology</div>
+            </button>
+            <button class="prompt-card" data-prompt="Architect a globally distributed, real-time presence system for 100M concurrent users.">
+              <div class="prompt-card-icon">⚡</div>
+              <div class="prompt-card-text">Design a 100M-user real-time presence architecture</div>
+            </button>
+            <button class="prompt-card" data-prompt="Derive the Black-Scholes PDE using Itô's Lemma and explain delta-hedging.">
+              <div class="prompt-card-icon">📊</div>
+              <div class="prompt-card-text">Derive the Black-Scholes PDE using Itô's Lemma</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat Stream will be appended here -->
+        <div class="chat-stream" id="chatStream"></div>
+      </div>
+
+      <!-- Bottom Fixed Input Area -->
+      <footer class="input-area">
+        <div class="input-card-wrapper">
+          <div class="input-card" id="inputCard">
+            <textarea 
+              id="messageInput" 
+              placeholder="Message SABER..." 
+              rows="1"
+              autofocus
+            ></textarea>
+            
+            <div class="input-actions-bar">
+              <div class="input-actions-left">
+                <button class="action-toggle-btn active" id="reasoningToggle" title="Toggle Chain of Thought / Extended Thinking">
+                  <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <span>Deep Reason</span>
+                </button>
+              </div>
+              <div class="input-actions-right">
+                <button class="send-btn" id="sendBtn" disabled title="Send message">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Bottom disclaimer -->
+          <div class="input-disclaimer">
+            SABER can make mistakes. Accuracy is not 100% — verify important information.
+          </div>
+        </div>
+      </footer>
+    </main>
+
+  </div>
+
+  <script src="/js/markdown.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
