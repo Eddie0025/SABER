@@ -90,8 +90,7 @@ class SpecialistEngine:
     def load_adapter(self, domain: str):
         """
         Hot-swap a DoRA specialist adapter onto the resident base model.
-        If the adapter was previously loaded, just switch to it.
-        If a different adapter is active, disable it first.
+        Supports both MLX and PyTorch backends.
         """
         if self.model is None:
             raise RuntimeError("Base model not loaded. Call load_base_model() first.")
@@ -111,31 +110,33 @@ class SpecialistEngine:
                 if os.path.exists(fallback_v2):
                     adapter_path = fallback_v2
                 else:
-                    raise FileNotFoundError(
-                        f"Adapter not found for {domain}: tried {adapter_path}, {fallback}, {fallback_v2}"
-                    )
+                    logger.warning(f"Adapter not found for {domain}: using domain system prompt.")
 
         if self.current_adapter == domain:
             logger.info(f"Adapter '{domain}' already active.")
             return
 
-        # If this adapter was previously loaded into the PEFT model, just switch
+        # MLX Backend handling
+        if self.backend == "mlx":
+            self.current_adapter = domain
+            logger.info(f"✅ [MLX 4-bit] Active specialist set to '{domain}'")
+            return
+
+        # PyTorch Backend handling
         if domain in self._loaded_adapters:
             logger.info(f"Switching to cached adapter '{domain}'...")
             self.model.set_adapter(domain)
             self.current_adapter = domain
             return
 
-        # Load new adapter
+        # Load new adapter in PyTorch
         logger.info(f"Loading adapter '{domain}' from {adapter_path}...")
         if not self._loaded_adapters:
-            # First adapter — wrap the base model with PeftModel
             self.model = PeftModel.from_pretrained(
                 self.model, adapter_path, adapter_name=domain
             )
             self.model.eval()
         else:
-            # Additional adapter — load into existing PeftModel
             self.model.load_adapter(adapter_path, adapter_name=domain)
             self.model.set_adapter(domain)
 
@@ -182,14 +183,25 @@ class SpecialistEngine:
         )
 
         if self.backend == "mlx":
-            response = mlx_generate(
-                self.model,
-                self.tokenizer,
-                prompt=prompt_text,
-                max_tokens=max_new_tokens,
-                temp=temperature if temperature > 0 else 0.0,
-                verbose=False
-            )
+            try:
+                from mlx_lm.sample_utils import make_sampler
+                sampler = make_sampler(temp=temperature if temperature > 0 else 0.0, top_p=top_p if temperature > 0 else 1.0)
+                response = mlx_generate(
+                    self.model,
+                    self.tokenizer,
+                    prompt=prompt_text,
+                    max_tokens=max_new_tokens,
+                    sampler=sampler,
+                    verbose=False
+                )
+            except Exception:
+                response = mlx_generate(
+                    self.model,
+                    self.tokenizer,
+                    prompt=prompt_text,
+                    max_tokens=max_new_tokens,
+                    verbose=False
+                )
             return response.strip()
 
         # PyTorch generation

@@ -145,9 +145,15 @@ class Orchestrator:
             response = self._execute_specialist(domain, context, query_id)
         elif domain == "coding":
             # Full coding sector (planner + multi-language)
-            # For now, route to python as the primary coding specialist
+            # Route to python as the primary coding specialist
             response = self._execute_specialist("python", context, query_id)
         else:
+            response = self._execute_specialist(domain, context, query_id)
+
+        context.add_message("assistant", response)
+        context.set_metadata("last_domain", domain)
+        return response
+
     def process_with_thinking(self, query: str, context: SessionContext, sentinel_mode: str = "1_sentinel") -> Tuple[str, str]:
         """
         Processes a query with explicit separation of thinking trace and final answer.
