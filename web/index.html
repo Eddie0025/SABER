@@ -136,28 +136,64 @@
             
             <div class="input-actions-bar">
               <div class="input-actions-left">
-                <!-- 3-Mode Sentinel Selector -->
-                <div class="sentinel-mode-selector" id="sentinelModeSelector">
-                  <button type="button" class="mode-pill-btn" data-mode="bolt" title="Bolt (No Sentinel - Fastest)">
-                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                <!-- Click-to-Open Sentinel Mode Dropdown -->
+                <div class="mode-dropdown-container" id="modeDropdownContainer">
+                  <button type="button" class="mode-trigger-btn" id="modeTriggerBtn" title="Change reasoning mode">
+                    <span class="mode-trigger-icon" id="modeTriggerIcon">
+                      <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                      </svg>
+                    </span>
+                    <span class="mode-trigger-label" id="modeTriggerLabel">1 Sentinel</span>
+                    <svg class="dropdown-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="6 9 12 15 18 9"></polyline>
                     </svg>
-                    <span>Bolt</span>
                   </button>
-                  <button type="button" class="mode-pill-btn active" data-mode="1_sentinel" title="Standard (1 Sentinel - Default)">
-                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    </svg>
-                    <span>1 Sentinel</span>
-                  </button>
-                  <button type="button" class="mode-pill-btn" data-mode="2_sentinel" title="Deep Thinking (2 Sentinel - Maximum Verification)">
-                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="10"/>
-                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-                      <line x1="12" y1="17" x2="12.01" y2="17"/>
-                    </svg>
-                    <span>Deep Thinking</span>
-                  </button>
+
+                  <!-- Floating Dropdown Menu -->
+                  <div class="mode-dropdown-menu" id="modeDropdownMenu">
+                    <div class="dropdown-header">Reasoning & Verification</div>
+                    <div class="dropdown-option" data-mode="bolt">
+                      <div class="dropdown-option-icon bolt-icon">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                      </div>
+                      <div class="dropdown-option-text">
+                        <div class="dropdown-option-title">Bolt</div>
+                        <div class="dropdown-option-desc">No Sentinel · Fastest response</div>
+                      </div>
+                      <div class="dropdown-check">✓</div>
+                    </div>
+
+                    <div class="dropdown-option active" data-mode="1_sentinel">
+                      <div class="dropdown-option-icon standard-icon">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                      </div>
+                      <div class="dropdown-option-text">
+                        <div class="dropdown-option-title">1 Sentinel <span class="default-tag">Default</span></div>
+                        <div class="dropdown-option-desc">Standard reasoning · 1-pass verification</div>
+                      </div>
+                      <div class="dropdown-check">✓</div>
+                    </div>
+
+                    <div class="dropdown-option" data-mode="2_sentinel">
+                      <div class="dropdown-option-icon deep-icon">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <circle cx="12" cy="12" r="10"/>
+                          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                          <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                      </div>
+                      <div class="dropdown-option-text">
+                        <div class="dropdown-option-title">Deep Thinking</div>
+                        <div class="dropdown-option-desc">2 Sentinel · Multi-pass reflection</div>
+                      </div>
+                      <div class="dropdown-check">✓</div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="input-actions-right">

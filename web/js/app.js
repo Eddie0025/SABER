@@ -7,7 +7,26 @@ const state = {
   currentSessionId: null,
   sessions: [],
   isGenerating: false,
-  sentinelMode: "1_sentinel", // "bolt" (no sentinel), "1_sentinel" (default), "2_sentinel" (deep thinking)
+  sentinelMode: "1_sentinel", // "bolt", "1_sentinel" (default), "2_sentinel"
+};
+
+// Mode display configurations
+const MODE_CONFIG = {
+  bolt: {
+    label: "Bolt",
+    iconClass: "bolt",
+    svg: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`,
+  },
+  "1_sentinel": {
+    label: "1 Sentinel",
+    iconClass: "standard",
+    svg: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+  },
+  "2_sentinel": {
+    label: "Deep Thinking",
+    iconClass: "deep",
+    svg: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+  },
 };
 
 // DOM Elements
@@ -23,7 +42,12 @@ const elements = {
   chatStream: document.getElementById("chatStream"),
   messageInput: document.getElementById("messageInput"),
   sendBtn: document.getElementById("sendBtn"),
-  modePillBtns: document.querySelectorAll(".mode-pill-btn"),
+  modeDropdownContainer: document.getElementById("modeDropdownContainer"),
+  modeTriggerBtn: document.getElementById("modeTriggerBtn"),
+  modeTriggerIcon: document.getElementById("modeTriggerIcon"),
+  modeTriggerLabel: document.getElementById("modeTriggerLabel"),
+  modeDropdownMenu: document.getElementById("modeDropdownMenu"),
+  dropdownOptions: document.querySelectorAll(".dropdown-option"),
   promptCards: document.querySelectorAll(".prompt-card"),
 };
 
@@ -314,13 +338,45 @@ function setupEventListeners() {
     elements.sidebar.classList.toggle("mobile-open");
   });
 
-  // 3-Mode Sentinel Selector
-  elements.modePillBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      elements.modePillBtns.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      state.sentinelMode = btn.getAttribute("data-mode") || "1_sentinel";
+  // Click-to-Open Dropdown Trigger
+  elements.modeTriggerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = elements.modeDropdownMenu.classList.toggle("show");
+    elements.modeTriggerBtn.classList.toggle("open", isOpen);
+  });
+
+  // Select option from dropdown
+  elements.dropdownOptions.forEach(option => {
+    option.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const mode = option.getAttribute("data-mode");
+      if (!mode || !MODE_CONFIG[mode]) return;
+
+      // Update state
+      state.sentinelMode = mode;
+
+      // Update UI active state
+      elements.dropdownOptions.forEach(opt => opt.classList.remove("active"));
+      option.classList.add("active");
+
+      // Update trigger button icon & label
+      const config = MODE_CONFIG[mode];
+      elements.modeTriggerLabel.textContent = config.label;
+      elements.modeTriggerIcon.className = `mode-trigger-icon ${config.iconClass}`;
+      elements.modeTriggerIcon.innerHTML = config.svg;
+
+      // Close dropdown
+      elements.modeDropdownMenu.classList.remove("show");
+      elements.modeTriggerBtn.classList.remove("open");
     });
+  });
+
+  // Close dropdown on click outside
+  document.addEventListener("click", (e) => {
+    if (!elements.modeDropdownContainer.contains(e.target)) {
+      elements.modeDropdownMenu.classList.remove("show");
+      elements.modeTriggerBtn.classList.remove("open");
+    }
   });
 
   // Textarea input event
