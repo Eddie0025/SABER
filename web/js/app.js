@@ -125,16 +125,50 @@ function renderHistory() {
     item.className = `history-item ${session.id === state.currentSessionId ? "active" : ""}`;
     item.innerHTML = `
       <div class="history-item-title">${escapeHtml(session.title || "New chat")}</div>
+      <button class="history-item-delete" title="Delete chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </button>
     `;
 
-    item.addEventListener("click", () => {
-      if (session.id !== state.currentSessionId) {
-        loadSession(session.id);
+    // Click item to load
+    item.addEventListener("click", (e) => {
+      if (!e.target.closest(".history-item-delete")) {
+        if (session.id !== state.currentSessionId) {
+          loadSession(session.id);
+        }
       }
     });
 
+    // Delete button click
+    const deleteBtn = item.querySelector(".history-item-delete");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteSession(session.id);
+      });
+    }
+
     elements.historyList.appendChild(item);
   });
+}
+
+function deleteSession(sessionId) {
+  const index = state.sessions.findIndex(s => s.id === sessionId);
+  if (index === -1) return;
+
+  state.sessions.splice(index, 1);
+  saveSessions();
+
+  if (state.sessions.length === 0) {
+    createNewSession();
+  } else if (state.currentSessionId === sessionId) {
+    loadSession(state.sessions[0].id);
+  } else {
+    renderHistory();
+  }
 }
 
 function renderCurrentChat() {
