@@ -13,60 +13,79 @@ from saber.config import (
 
 logger = logging.getLogger("SABER_SpecialistEngine")
 
-# Map string dtype to torch dtype
-DTYPE_MAP = {
-    "bfloat16": torch.bfloat16,
-    "float16": torch.float16,
-    "float32": torch.float32,
-}
+# Check available backends
+try:
+    import mlx.core as mx
+    from mlx_lm import load as mlx_load, generate as mlx_generate
+    MLX_AVAILABLE = True
+except ImportError:
+    MLX_AVAILABLE = False
 
 
 class SpecialistEngine:
     """
     Core SABER inference engine.
     
-    Keeps the Qwen2.5-7B-Instruct base model resident in VRAM and dynamically
-    hot-swaps DoRA adapters for each specialist domain. Only one adapter is
-    active at a time.
+    Supports:
+    - MLX 4-bit (Apple Silicon Metal GPU acceleration - ultra-lightweight ~4.5GB VRAM)
+    - PyTorch (CUDA / Apple Silicon MPS / CPU)
     
-    Usage:
-        engine = SpecialistEngine()
-        engine.load_base_model()
-        
-        # Casual chat (no adapter)
-        response = engine.generate_bare([{"role": "user", "content": "Hello!"}])
-        
-        # Specialist inference
-        engine.load_adapter("cybersecurity")
-        response = engine.generate([{"role": "user", "content": "Explain XSS"}])
-        engine.unload_adapter()
+    Keeps the Qwen2.5-7B-Instruct base model resident and dynamically hot-swaps
+    DoRA specialist adapters.
     """
 
-    def __init__(self):
-        self.model: Optional[AutoModelForCausalLM] = None
-        self.tokenizer: Optional[AutoTokenizer] = None
+    def __init__(self, use_4bit: bool = True):
+        self.use_4bit = use_4bit
+        self.model = None
+        self.tokenizer = None
         self.current_adapter: Optional[str] = None
-        self._loaded_adapters: set = set()  # Track which adapters are loaded into PEFT
+        self._loaded_adapters: set = set()
+        self.backend = "torch"  # "mlx" or "torch"
+        self.device = "cpu"
 
     def load_base_model(self):
-        """Load the base Qwen model into GPU. Called once at startup."""
+        """Load the base Qwen model into GPU/VRAM. Called once at startup."""
         if self.model is not None:
             logger.info("Base model already loaded.")
             return
 
-        dtype = DTYPE_MAP.get(INFERENCE_DTYPE, torch.bfloat16)
-        logger.info(f"Loading base model {BASE_MODEL} in {INFERENCE_DTYPE}...")
+        # Check if Apple Silicon + 4-bit MLX is available
+        if self.use_4bit and MLX_AVAILABLE and torch.backends.mps.is_available():
+            try:
+                self.backend = "mlx"
+                mlx_model_id = "mlx-community/Qwen2.5-7B-Instruct-4bit"
+                logger.info(f"🚀 Loading SABER in 4-bit Metal (MLX) mode from {mlx_model_id}...")
+                self.model, self.tokenizer = mlx_load(mlx_model_id)
+                logger.info("✅ 4-bit MLX base model loaded successfully onto Apple Silicon GPU.")
+                return
+            except Exception as e:
+                logger.warning(f"MLX 4-bit load encountered: {e}. Falling back to PyTorch MPS/CUDA.")
 
+        # PyTorch Backend
+        self.backend = "torch"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+            dtype = torch.bfloat16
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+            dtype = torch.float16
+        else:
+            self.device = "cpu"
+            dtype = torch.float32
+
+        logger.info(f"Loading PyTorch base model {BASE_MODEL} on {self.device} ({dtype})...")
         self.tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
         self.tokenizer.padding_side = "left"
 
         self.model = AutoModelForCausalLM.from_pretrained(
             BASE_MODEL,
             torch_dtype=dtype,
-            device_map="auto",
+            device_map="auto" if self.device != "mps" else None,
         )
+        if self.device == "mps":
+            self.model.to("mps")
         self.model.eval()
-        logger.info("Base model loaded successfully.")
+        logger.info(f"✅ PyTorch base model loaded successfully on {self.device}.")
 
     def load_adapter(self, domain: str):
         """
@@ -161,6 +180,19 @@ class SpecialistEngine:
         prompt_text = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+
+        if self.backend == "mlx":
+            response = mlx_generate(
+                self.model,
+                self.tokenizer,
+                prompt=prompt_text,
+                max_tokens=max_new_tokens,
+                temp=temperature if temperature > 0 else 0.0,
+                verbose=False
+            )
+            return response.strip()
+
+        # PyTorch generation
         inputs = self.tokenizer(prompt_text, return_tensors="pt").to(self.model.device)
 
         with torch.no_grad():
