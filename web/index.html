@@ -136,14 +136,29 @@
             
             <div class="input-actions-bar">
               <div class="input-actions-left">
-                <button class="action-toggle-btn active" id="reasoningToggle" title="Toggle Chain of Thought / Extended Thinking">
-                  <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-                    <line x1="12" y1="17" x2="12.01" y2="17"/>
-                  </svg>
-                  <span>Deep Reason</span>
-                </button>
+                <!-- 3-Mode Sentinel Selector -->
+                <div class="sentinel-mode-selector" id="sentinelModeSelector">
+                  <button type="button" class="mode-pill-btn" data-mode="bolt" title="Bolt (No Sentinel - Fastest)">
+                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    <span>Bolt</span>
+                  </button>
+                  <button type="button" class="mode-pill-btn active" data-mode="1_sentinel" title="Standard (1 Sentinel - Default)">
+                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                    <span>1 Sentinel</span>
+                  </button>
+                  <button type="button" class="mode-pill-btn" data-mode="2_sentinel" title="Deep Thinking (2 Sentinel - Maximum Verification)">
+                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                      <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <span>Deep Thinking</span>
+                  </button>
+                </div>
               </div>
               <div class="input-actions-right">
                 <button class="send-btn" id="sendBtn" disabled title="Send message">

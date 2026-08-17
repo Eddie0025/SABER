@@ -7,7 +7,7 @@ const state = {
   currentSessionId: null,
   sessions: [],
   isGenerating: false,
-  deepReasoning: true,
+  sentinelMode: "1_sentinel", // "bolt" (no sentinel), "1_sentinel" (default), "2_sentinel" (deep thinking)
 };
 
 // DOM Elements
@@ -23,7 +23,7 @@ const elements = {
   chatStream: document.getElementById("chatStream"),
   messageInput: document.getElementById("messageInput"),
   sendBtn: document.getElementById("sendBtn"),
-  reasoningToggle: document.getElementById("reasoningToggle"),
+  modePillBtns: document.querySelectorAll(".mode-pill-btn"),
   promptCards: document.querySelectorAll(".prompt-card"),
 };
 
@@ -253,7 +253,7 @@ async function sendMessage(text) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         query: query,
-        deep_reason: state.deepReasoning,
+        sentinel_mode: state.sentinelMode,
         history: session.messages.slice(0, -1),
       }),
     });
@@ -314,10 +314,13 @@ function setupEventListeners() {
     elements.sidebar.classList.toggle("mobile-open");
   });
 
-  // Deep reason toggle
-  elements.reasoningToggle.addEventListener("click", () => {
-    state.deepReasoning = !state.deepReasoning;
-    elements.reasoningToggle.classList.toggle("active", state.deepReasoning);
+  // 3-Mode Sentinel Selector
+  elements.modePillBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      elements.modePillBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.sentinelMode = btn.getAttribute("data-mode") || "1_sentinel";
+    });
   });
 
   // Textarea input event

@@ -31,12 +31,43 @@ except Exception:
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
-def simulate_saber_response(query: str, deep_reason: bool = True):
+def simulate_saber_response(query: str, sentinel_mode: str = "1_sentinel"):
     """
     Generates high-fidelity simulated responses for interactive testing without GPU checkpoints.
+    Modes:
+    - 'bolt': No sentinel, instant response without reasoning trace.
+    - '1_sentinel': Standard 1-pass verification reasoning.
+    - '2_sentinel': Deep Thinking with 2-pass multi-stage reflection & verification.
     """
     q_lower = query.lower()
     
+    # If bolt mode is selected, zero thinking trace is returned
+    if sentinel_mode == "bolt":
+        # 1. Casual Chat
+        if any(w in q_lower for w in ["hello", "hi", "hey", "how are you", "who are you", "what are you", "thanks"]):
+            return {
+                "thinking": "",
+                "response": "Hello! I am SABER, an AI assistant built for deep technical reasoning, code architecture, and multi-domain problem solving. How can I help you today?"
+            }
+        
+        if any(w in q_lower for w in ["vulnerability", "exploit", "heap", "glibc", "aslr", "xss", "csrf", "double-free", "injection", "kernel"]):
+            response = (
+                "### Vulnerability Analysis: Glibc Heap Double-Free to RCE\n\n"
+                "A **double-free vulnerability** occurs when `free()` is called twice on the same pointer without clearing it. Exploitation in modern `glibc` involves:\n\n"
+                "1. **Tcache Poisoning:** A double-freed chunk creates a circular singly-linked list in the thread-local cache bin.\n"
+                "2. **Pointer Demangling:** On `glibc >= 2.29`, heap safe linking masks pointers; leaking a heap address reveals the per-thread key.\n"
+                "3. **Arbitrary Write:** Overwriting the forward pointer (`fd`) forces subsequent `malloc()` allocations to return an arbitrary target address (such as `__malloc_hook` or a GOT entry), leading to RCE via a one-gadget or ROP payload."
+            )
+            return {"thinking": "", "response": response}
+
+        return {
+            "thinking": "",
+            "response": "Processing complete via **Bolt mode** (direct generation). Ensure all system constraints and interfaces are verified for production deployment."
+        }
+
+    # 1 Sentinel (Standard) vs 2 Sentinel (Deep Thinking)
+    is_deep = (sentinel_mode == "2_sentinel")
+
     # 1. Casual Chat
     if any(w in q_lower for w in ["hello", "hi", "hey", "how are you", "who are you", "what are you", "thanks"]):
         return {
@@ -46,13 +77,24 @@ def simulate_saber_response(query: str, deep_reason: bool = True):
     
     # 2. Cybersecurity
     if any(w in q_lower for w in ["vulnerability", "exploit", "heap", "glibc", "aslr", "xss", "csrf", "double-free", "injection", "kernel"]):
-        thinking = (
-            "1. IDENTIFY: Analyzing memory corruption vector in multi-threaded glibc allocator.\n"
-            "2. ANALYZE: A double-free condition in glibc >= 2.29 triggers tcache count tampering or fastbin dup.\n"
-            "3. HYPOTHESIZE: Bypassing ASLR requires an initial info leak (libc base address) via unsorted bin fd/bk pointers.\n"
-            "4. EVALUATE: Crafting overlapping chunk allocations allows overwriting the tcache next pointer (fd) toward a target GOT entry or __malloc_hook.\n"
-            "5. CONCLUDE: Formulating structured mitigation and exploitation sequence."
-        ) if deep_reason else ""
+        if is_deep:
+            thinking = (
+                "── Pass 1: Initial Reasoning & Threat Model ──\n"
+                "1. IDENTIFY: Memory corruption vector in glibc ptmalloc allocator.\n"
+                "2. ANALYZE: A double-free condition in glibc >= 2.29 triggers tcache count tampering or fastbin dup.\n"
+                "3. HYPOTHESIZE: Bypassing ASLR requires an initial info leak (libc base address) via unsorted bin fd/bk pointers.\n\n"
+                "── Pass 2: Sentinel Adversarial Reflection & Constraint Verification ──\n"
+                "4. VERIFY: Safe-linking pointer mangling (PROTECT_PTR macro) in glibc 2.32+ verified.\n"
+                "5. CROSS-CHECK: Checked __malloc_hook deprecation in glibc 2.34+; fallback target requires exit_funcs or stack frame overwrite.\n"
+                "6. CONCLUDE: Formulating verified end-to-end technical explanation."
+            )
+        else:
+            thinking = (
+                "1. IDENTIFY: Analyzing memory corruption vector in multi-threaded glibc allocator.\n"
+                "2. ANALYZE: A double-free condition creates a circular tcache bin linked list.\n"
+                "3. EVALUATE: Leaking libc pointers bypasses ASLR; tcache poisoning overwrites target address.\n"
+                "4. CONCLUDE: Formulating structured mitigation and exploitation sequence."
+            )
         
         response = (
             "### Vulnerability Analysis: Glibc Heap Double-Free to RCE\n\n"
@@ -70,12 +112,23 @@ def simulate_saber_response(query: str, deep_reason: bool = True):
         
     # 3. Medical / Clinical
     if any(w in q_lower for w in ["syndrome", "blood", "patient", "renal", "hypertension", "medical", "disease", "receptor", "drug"]):
-        thinking = (
-            "1. IDENTIFY: Evaluating differential diagnosis for low-renin, low-aldosterone hypertension with hypokalemic metabolic alkalosis.\n"
-            "2. ANALYZE: Liddle syndrome is an autosomal dominant gain-of-function mutation in ENaC subunit genes (SCNN1B/SCNN1G).\n"
-            "3. CONTRAST: Apparent Mineralocorticoid Excess (AME) involves 11β-HSD2 enzyme deficiency, allowing cortisol to inappropriately activate mineralocorticoid receptors.\n"
-            "4. CONCLUDE: Formulating clinical comparison and pharmacotherapeutic distinctions."
-        ) if deep_reason else ""
+        if is_deep:
+            thinking = (
+                "── Pass 1: Clinical Reasoning & Differential Analysis ──\n"
+                "1. IDENTIFY: Low-renin, low-aldosterone hypertension with hypokalemic metabolic alkalosis.\n"
+                "2. ANALYZE: Primary suspects are monogenic non-aldosterone mineralocorticoid excess states.\n\n"
+                "── Pass 2: Sentinel Biochemical & Pharmacologic Verification ──\n"
+                "3. CONTRAST: Liddle syndrome = ENaC gain-of-function; AME = 11β-HSD2 deficiency allowing cortisol MR hyperactivation.\n"
+                "4. PHARMACOTHERAPY VERIFICATION: Confirmed Amiloride/Triamterene for Liddle; Spironolactone/Dexamethasone for AME.\n"
+                "5. CONCLUDE: Formulating clean clinical table and diagnostic pearls."
+            )
+        else:
+            thinking = (
+                "1. IDENTIFY: Evaluating differential diagnosis for low-renin, low-aldosterone hypertension with hypokalemic metabolic alkalosis.\n"
+                "2. ANALYZE: Liddle syndrome is an autosomal dominant gain-of-function mutation in ENaC subunit genes.\n"
+                "3. CONTRAST: Apparent Mineralocorticoid Excess (AME) involves 11β-HSD2 enzyme deficiency.\n"
+                "4. CONCLUDE: Formulating clinical comparison and pharmacotherapeutic distinctions."
+            )
         
         response = (
             "### Clinical Differential: Liddle Syndrome vs. Apparent Mineralocorticoid Excess (AME)\n\n"
@@ -90,12 +143,22 @@ def simulate_saber_response(query: str, deep_reason: bool = True):
         )
         return {"thinking": thinking, "response": response}
 
-    # 4. Coding / Architecture / General
-    thinking = (
-        "1. IDENTIFY: Analyzing core structural requirements of the query.\n"
-        "2. DECOMPOSE: Breaking down requirements into component specifications, state management, and edge cases.\n"
-        "3. SYNTHESIZE: Formulating optimal implementation strategy."
-    ) if deep_reason else ""
+    # 4. General fallback
+    if is_deep:
+        thinking = (
+            "── Pass 1: Architecture & Structural Decomposition ──\n"
+            "1. IDENTIFY: Analyzing core structural requirements of the query.\n"
+            "2. DECOMPOSE: Breaking down requirements into component specifications and state machines.\n\n"
+            "── Pass 2: Sentinel Fault Tolerance & Edge Case Verification ──\n"
+            "3. VERIFY: Idempotency keys, timeout handling, and partition boundaries.\n"
+            "4. SYNTHESIZE: Formulating optimal implementation strategy."
+        )
+    else:
+        thinking = (
+            "1. IDENTIFY: Analyzing core structural requirements of the query.\n"
+            "2. DECOMPOSE: Breaking down requirements into component specifications and edge cases.\n"
+            "3. SYNTHESIZE: Formulating optimal implementation strategy."
+        )
     
     response = (
         "Here is a comprehensive breakdown for your request:\n\n"
@@ -125,20 +188,17 @@ class SaberWebHandler(SimpleHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 query = data.get("query", "")
-                deep_reason = data.get("deep_reason", True)
+                sentinel_mode = data.get("sentinel_mode", "1_sentinel")
                 
                 # Check if live orchestrator exists
                 if LIVE_SABER_AVAILABLE and orchestrator_instance is not None:
-                    # Run on live model
                     context = SessionContext()
-                    # Strip any internal tags from output for clean UI
                     raw_res = orchestrator_instance.process(query, context)
-                    # Clean out any specialist footers or tags if present
                     clean_res = raw_res.split("⚡ SABER Specialist:")[0].strip()
                     res_data = {"thinking": "", "response": clean_res}
                 else:
                     # High-fidelity simulation mode
-                    res_data = simulate_saber_response(query, deep_reason)
+                    res_data = simulate_saber_response(query, sentinel_mode)
                 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")

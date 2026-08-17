@@ -730,29 +730,57 @@ html, body {
   padding-top: 4px;
 }
 
-.action-toggle-btn {
+/* 3-Mode Sentinel Segmented Pill */
+.sentinel-mode-selector {
+  display: inline-flex;
+  align-items: center;
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  padding: 3px;
+  gap: 2px;
+}
+
+.mode-pill-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: var(--radius-full);
-  background-color: transparent;
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
+  user-select: none;
 }
 
-.action-toggle-btn:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+.mode-pill-btn:hover {
   color: var(--text-primary);
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
-.action-toggle-btn.active {
-  background-color: rgba(139, 92, 246, 0.15);
-  border-color: rgba(139, 92, 246, 0.4);
+.mode-pill-btn.active {
+  background-color: rgba(139, 92, 246, 0.18);
+  color: #d8b4fe;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.mode-pill-btn[data-mode="bolt"].active {
+  background-color: rgba(234, 179, 8, 0.18);
+  color: #fde047;
+}
+
+.mode-pill-btn[data-mode="1_sentinel"].active {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+}
+
+.mode-pill-btn[data-mode="2_sentinel"].active {
+  background-color: rgba(139, 92, 246, 0.22);
   color: #c4b5fd;
 }
 
