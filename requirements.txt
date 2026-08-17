@@ -1,0 +1,22 @@
+# SABER — System Dependencies
+# Core LLM
+torch>=2.1.0
+transformers>=4.40.0
+peft>=0.11.0
+trl>=0.9.0
+accelerate>=0.30.0
+
+# Data & Schema
+pydantic>=2.0.0
+datasets>=2.19.0
+
+# Sentinel KB (embedding search)
+sentence-transformers>=2.7.0
+
+# Apple Silicon (optional — only needed on Mac)
+# mlx>=0.12.0
+# mlx-lm>=0.16.0
+
+# Utilities
+numpy>=1.24.0
+scipy>=1.10.0
